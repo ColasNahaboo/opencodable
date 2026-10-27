@@ -126,16 +126,16 @@ window caps. `-now` converts the remaining dollars into *requests per model*:
   measures each model's burn **ratio** against list price (e.g. Kimi K3.1 Pro
   burns 4× its list cost, MiniMax M3.1 Flash 3× — the endpoint's
   `opencode.allowance` makes this visible); unprobed models assume ratio 1.
-- `reqs_5h` / `reqs_week` / `reqs_month` — requests affordable with the
+- `reqs_5h` / `reqs_wk` / `reqs_mo` — requests affordable with the
   remaining dollars of each window.
-- `usable` / `limited_by` — the minimum and which window binds.
+- `usable` / `limit` — the minimum and which window binds.
 
 The console's per-model spend page is **fetchable directly**: the same Go key
 authorizes `console.opencode.ai/api/usage/models`, so `-now` subtracts your
 real period spend automatically (the `spent_mo` column shows it). A pasted
 console table still works as an offline fallback via `-spent file.tsv` — its
 `model` and last `$cost` columns are parsed and override the live fetch;
-whichever per-model bucket is tighter then competes for the `limited_by`
+whichever per-model bucket is tighter then competes for the `limit`
 verdict (`allowance`).
 
 ### Output adapts to stdout
@@ -146,7 +146,6 @@ verdict (`allowance`).
   values separated by exactly one TAB character, missing fields are empty
   strings, no padding. The `#name…` header row keeps its `#` prefix, so it can
   never be confused with data or with the `# ` legend lines (terminal mode):
-
 ```sh
 opencodable | grep -v '^#' | awk -F'\t' 'NR>1 {print $1, $6}'
 ```
@@ -169,6 +168,10 @@ pareto: yes
 ```
 
 The `-json` flag bypasses TSV entirely and dumps the rows as JSON.
+
+**[TITLES.md](TITLES.md) is the parsing contract**: every view's columns in
+order, with meanings; new columns are always appended at the end; renames,
+removals or reorders bump the major version.
 
 ### Sample probe detail
 

@@ -268,7 +268,10 @@ func runUsage(tty bool) error {
 		}
 		return nil
 	}
-	fmt.Fprintln(os.Stdout, "# Go subscription allowance (percent of plan limit)")
+	fmt.Fprintln(os.Stdout, "# opencodable -usage — remaining Go allowance per usage window")
+	for _, l := range useLegend {
+		fmt.Fprintln(os.Stdout, l)
+	}
 	fmt.Fprintf(os.Stdout, "%-8s  %-8s  %5s  %5s  %-25s  %s\n", "window", "status", "used", "left", "resets_at", "resets_in")
 	for _, w := range ws {
 		fmt.Fprintf(os.Stdout, "%-8s  %-8s  %4.0f%%  %4.0f%%  %-25s  %s\n",
@@ -276,6 +279,16 @@ func runUsage(tty bool) error {
 			w.ResetsAt.Local().Format("2006-01-02 15:04"), resetIn(now, w.ResetsAt))
 	}
 	return nil
+}
+
+// useLegend documents the -usage columns, tty only.
+var useLegend = []string{
+	"# window        usage window: 5h rolling = 20% of the plan limit, week = 50%, month = 100%",
+	"# status        ok | throttled | exhausted (as reported by the endpoint)",
+	"# used_pct      percent of the window allowance already consumed",
+	"# remaining_pct 100 - used_pct",
+	"# resets_at     local time when the window resets",
+	"# resets_in     humanized time until reset",
 }
 
 // resetIn humanizes the duration until a window resets.
@@ -299,6 +312,21 @@ type nowRow struct {
 	usable    int
 	binding   string
 	probeTokS float64
+}
+
+// nowLegend documents the -now columns, tty only.
+var nowLegend = []string{
+	"# opencodable -now — requests still affordable per model in each remaining window",
+	"# name       model display name (models.dev catalog)",
+	"# cost_task  estimated USD per coding-agent request (OpenCode official token profile, base tier)",
+	"# burn_req   allowance dollars one request burns (measured ratio x cost_task)",
+	"# spent_mo   real spend this period (console api), subtracted from the model's allowance",
+	"# reqs_5h    requests affordable with the remaining 5h rolling window budget",
+	"# reqs_wk    requests affordable with the remaining weekly window budget",
+	"# reqs_mo    requests affordable with the remaining monthly window budget",
+	"# usable     min of reqs_5h / reqs_wk / reqs_mo / model allowance — what you can spend now",
+	"# limit      which constraint binds: 5h | week | month | allowance",
+	"# p_tok_s    measured output tok/s on your subscription (from -probe)",
 }
 
 // runNow answers "which model can I use right now": for each model, how many
@@ -393,8 +421,13 @@ func runNow(planName string, pot float64, spentFile map[string]float64, spentGiv
 			numSpeed(r.probeTokS),
 		}
 	}
-	head := []string{"#name", "cost_task", "burn_req", "spent_mo", "reqs_5h", "reqs_week", "reqs_month", "usable", "limited_by", "p_tok_s"}
+	head := []string{"#name", "cost_task", "burn_req", "spent_mo", "reqs_5h", "reqs_wk", "reqs_mo", "usable", "limit", "p_tok_s"}
 	if vertical {
+		if tty {
+			for _, l := range nowLegend {
+				fmt.Fprintln(os.Stdout, l)
+			}
+		}
 		out := os.Stdout
 		for i, r := range rows {
 			if i > 0 {
@@ -415,6 +448,9 @@ func runNow(planName string, pot float64, spentFile map[string]float64, spentGiv
 			fmt.Fprintln(os.Stdout, strings.Join(cells(r), "\t"))
 		}
 		return nil
+	}
+	for _, l := range nowLegend {
+		fmt.Fprintln(os.Stdout, l)
 	}
 	tw := tabwriter.NewWriter(os.Stdout, 0, 2, 2, ' ', 0)
 	fmt.Fprintln(tw, strings.Join(head, "\t"))
