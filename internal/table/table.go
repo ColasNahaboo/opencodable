@@ -16,6 +16,7 @@ import (
 	"opencodable/internal/goplan"
 	"opencodable/internal/modelsdev"
 	"opencodable/internal/normalize"
+	"opencodable/internal/probe"
 )
 
 // Row is one output line: one subscription model with everything joined.
@@ -29,6 +30,8 @@ type Row struct {
 	ReqsMonth     float64 `json:"reqs_month"`
 	TokPerSec     float64 `json:"tok_s"`
 	TTFTSeconds   float64 `json:"ttft_s"`
+	ProbeTokS     float64 `json:"probe_tok_s"`
+	ProbeTTFT     float64 `json:"probe_ttft_s"`
 	AAIntel       float64 `json:"aa_intelligence"`
 	AACoding      float64 `json:"aa_coding"`
 	LiveCodeBench float64 `json:"livecodebench"`
@@ -45,8 +48,9 @@ func f(p *float64) float64 {
 	return *p
 }
 
-// Build joins everything and computes the Pareto flags.
-func Build(models []modelsdev.Model, aas []aa.Model, plan string, peak bool) []Row {
+// Build joins everything and computes the Pareto flags. Measured probe
+// results, when present, take precedence over reported AA speed.
+func Build(models []modelsdev.Model, aas []aa.Model, probes map[string]probe.Result, plan string, peak bool) []Row {
 	slugs := map[string]bool{}
 	speeds := map[string]float64{}
 	bySlug := map[string]aa.Model{}
@@ -86,6 +90,15 @@ func Build(models []modelsdev.Model, aas []aa.Model, plan string, peak bool) []R
 		}
 		rows = append(rows, r)
 	}
+	for i := range rows {
+		if p, ok := probes[rows[i].ID]; ok && p.Error == "" {
+			// Distrust throughput from too-short measurement windows.
+			if p.WindowSeconds >= probe.MinWindow {
+				rows[i].ProbeTokS = p.TokPerSec
+			}
+			rows[i].ProbeTTFT = p.TTFTSeconds
+		}
+	}
 	markPareto(rows)
 	return rows
 }
@@ -97,7 +110,12 @@ func qual(r Row) float64 {
 	return r.AACoding
 }
 
-func speed(r Row) float64 { return r.TokPerSec }
+func speed(r Row) float64 {
+	if r.ProbeTokS > 0 {
+		return r.ProbeTokS
+	}
+	return r.TokPerSec
+}
 
 // markPareto flags rows not dominated on (cost, speed, quality).
 func markPareto(rows []Row) {
@@ -144,7 +162,7 @@ func Sort(rows []Row, key string) {
 // WriteTSV renders the table; missing values print as "-".
 func WriteTSV(w io.Writer, rows []Row) error {
 	tw := tabwriter.NewWriter(w, 0, 2, 2, ' ', 0)
-	if _, err := fmt.Fprintln(tw, "name\tprice_out_1M\tcost_task\tallowance_usd\treqs_month\ttok_s\tttft_s\taa_intelligence\taa_coding\tlivecodebench\tterminalbench\tpareto\tsource"); err != nil {
+	if _, err := fmt.Fprintln(tw, "name\tprice_out_1M\tcost_task\tallowance_usd\treqs_month\ttok_s\tttft_s\tprobe_tok_s\tprobe_ttft_s\taa_intelligence\taa_coding\tlivecodebench\tterminalbench\tpareto\tsource"); err != nil {
 		return err
 	}
 	for _, r := range rows {
@@ -152,11 +170,12 @@ func WriteTSV(w io.Writer, rows []Row) error {
 		if r.variant != "" {
 			src = "aa:" + r.variant
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 			r.Name,
 			num(r.PriceOut1M, true), num(r.CostTask, true),
 			allowance(r), num(r.ReqsMonth, false),
 			num(r.TokPerSec, false), num(r.TTFTSeconds, false),
+			num(r.ProbeTokS, false), num(r.ProbeTTFT, false),
 			num(r.AAIntel, false), num(r.AACoding, false),
 			num(r.LiveCodeBench, false), num(r.TerminalBench, false),
 			yesno(r.Pareto), src)

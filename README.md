@@ -11,13 +11,16 @@ tab-separated text, one line per model.
 | [models.dev](https://models.dev) `api.json` | retail prices ($/1M in/out/cached), context limits, reasoning flags | none |
 | [OpenCode Go docs](https://opencode.ai/v2/docs/console/go/) (hardcoded snapshot in `internal/goplan`) | per-model monthly allowance, official per-request token profile, peak prices | none |
 | [Artificial Analysis](https://artificialanalysis.ai) data API | intelligence/coding indexes, LiveCodeBench, Terminal-Bench, tok/s, TTFT | free key |
-| Live speed probe against your subscription (`--probe`, planned) | real tok/s, TTFT, allowance burn | `OPENCODE_API_KEY` |
+| Live speed probe against your subscription (`-probe`) | real tok/s, TTFT, allowance burn per request | `OPENCODE_API_KEY` |
 
 ## Setup
 
 ```sh
 # Artificial Analysis free API key, either form works:
 export AA_API_KEY=...            # or: echo KEY > .artificialanalysis.key  (git-ignored)
+
+# Only for the live speed probe:
+export OPENCODE_API_KEY=...      # or: echo KEY > .opencode-go.key  (git-ignored)
 ```
 
 ## Usage
@@ -32,6 +35,8 @@ TMP/opencodable -peak                 # DeepSeek peak-hours pricing
 TMP/opencodable -json                 # machine-readable
 TMP/opencodable -refresh              # bypass the 24h cache
 TMP/opencodable -offline              # cache only
+TMP/opencodable -probe                # measure live speed of all models (paid, cached 24h)
+TMP/opencodable -probe-model kimi-k3  # measure one model, print JSON details
 ```
 
 ### Columns
@@ -42,6 +47,10 @@ TMP/opencodable -offline              # cache only
 - `allowance_usd` — monthly usage budget of this model in your plan
 - `reqs_month` — allowance ÷ cost_task ≈ requests/month you get
 - `tok_s`, `ttft_s` — Artificial Analysis median output speed / time to first token
+- `probe_tok_s`, `probe_ttft_s` — **measured on your subscription**: one streamed
+  FizzBuzz request per model (256 max tokens). The gateway routes every model
+  through `/chat/completions`, so one probe path covers all; `-sort speed`
+  prefers measured values when present. Costs a fraction of a cent per model.
 - `aa_intelligence`, `aa_coding`, `livecodebench`, `terminalbench` — benchmark scores
 - `pareto` — `yes` when no other model is simultaneously cheaper-or-equal,
   faster-or-equal and better-or-equal (the "best compromise" shortlist)

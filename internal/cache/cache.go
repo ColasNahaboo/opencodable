@@ -58,3 +58,17 @@ func Load(key string, ttl time.Duration, refresh, offline bool, fetch func() ([]
 	}
 	return b, nil
 }
+
+// Store persists a payload unconditionally (used for live measurements).
+func Store(key string, payload []byte) error {
+	d, err := dir()
+	if err != nil {
+		return err
+	}
+	ent := entry{FetchedAt: time.Now(), Payload: json.RawMessage(payload)}
+	out, err := json.Marshal(ent)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(d, key), out, 0o644)
+}
