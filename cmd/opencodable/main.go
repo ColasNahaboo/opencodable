@@ -12,11 +12,13 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"text/tabwriter"
 	"time"
 
 	"opencodable/internal/aa"
 	"opencodable/internal/bench"
 	"opencodable/internal/cache"
+	"opencodable/internal/cost"
 	"opencodable/internal/goplan"
 	"opencodable/internal/modelsdev"
 	"opencodable/internal/probe"
@@ -38,6 +40,9 @@ func main() {
 		probeAll = flag.Bool("probe", false, "measure live speed of every model (paid requests, ~1-2 min each, cached 24h)")
 		probeOne = flag.String("probe-model", "", "measure live speed of one model ID and print the result")
 		showUse  = flag.Bool("usage", false, "show remaining Go allowance for the 5h/week/month windows")
+		now      = flag.Bool("now", false, "per model: requests still affordable in each remaining window")
+		spent    = flag.String("spent", "", "path to a pasted console 'usage by model' TSV; subtracts real spend from monthly allowances")
+		pot      = flag.Float64("pot", 0, "plan allowance pot in dollars (default: 10 for go, 40 for go-plus)")
 		jsonOut  = flag.Bool("json", false, "JSON output instead of TSV")
 	)
 	flag.Parse()
@@ -52,6 +57,29 @@ func main() {
 
 	if *showUse {
 		if err := runUsage(isTTY(os.Stdout)); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
+
+	if *now {
+		p := *pot
+		if p == 0 {
+			p = 10
+			if *plan == "go-plus" {
+				p = 40
+			}
+		}
+		var spentByModel map[string]float64
+		if *spent != "" {
+			var err error
+			if spentByModel, err = usage.ParseSpentFile(*spent); err != nil {
+				fmt.Fprintln(os.Stderr, "spent file:", err)
+				os.Exit(1)
+			}
+		}
+		if err := runNow(*plan, p, spentByModel, *spent != "", *paid, *privacy, *peak, isTTY(os.Stdout)); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
@@ -245,6 +273,121 @@ func resetIn(from, at time.Time) string {
 		return "now"
 	}
 	return d.Round(time.Minute).String()
+}
+
+// nowRow is one line of the -now table: what this model still affords.
+type nowRow struct {
+	name      string
+	costTask  float64
+	burn      float64 // allowance dollars per request (measured ratio x profile cost)
+	five      int
+	week      int
+	month     int
+	usable    int
+	binding   string
+	probeTokS float64
+}
+
+// runNow answers "which model can I use right now": for each model, how many
+// requests fit in each remaining usage window. The usage endpoint meters one
+// shared pot (assumed = plan price, override with -pot); measured probe burn
+// ratios make the per-request allowance cost model-specific.
+func runNow(planName string, pot float64, spent map[string]float64, spentGiven, paid, privacy, peak, tty bool) error {
+	models, err := modelsdev.Fetch("opencode-go", false, false)
+	if err != nil {
+		return err
+	}
+	key, err := probe.Key()
+	if err != nil {
+		return err
+	}
+	ws, err := usage.Fetch(key)
+	if err != nil {
+		return err
+	}
+	budgets := usage.RemainingBudgets(ws, pot)
+	fmt.Fprintf(os.Stderr, "# pot=$%.0f, remaining: 5h=$%.2f week=$%.2f month=$%.2f (-spent adds per-model buckets)\n",
+		pot, budgets.Five, budgets.Week, budgets.Month)
+
+	var rows []nowRow
+	for _, m := range models {
+		c := cost.PerRequest(m, peak)
+		if paid && c == 0 {
+			continue
+		}
+		if privacy && goplan.TrainsOnData(m.ID) {
+			continue
+		}
+		if c <= 0 {
+			continue
+		}
+		mult := 1.0
+		speed := 0.0
+		if p, ok := cachedProbe(m.ID); ok && p.Error == "" {
+			speed = p.TokPerSec
+			if p.ListCost > 0 {
+				mult = p.Allowance / p.ListCost
+			}
+		}
+		b := budgets
+		if spentGiven {
+			if allow, unlim := goplan.Allowance(m.ID, planName); !unlim {
+				mm := allow - spent[m.ID]
+				b.ModelMonth = &mm
+			}
+		}
+		five, week, month, usable, binding := usage.Requests(b, mult*c)
+		rows = append(rows, nowRow{
+			name: m.Name, costTask: c, burn: mult * c,
+			five: five, week: week, month: month, usable: usable,
+			binding: binding, probeTokS: speed,
+		})
+	}
+	slices.SortStableFunc(rows, func(a, b nowRow) int {
+		if a.usable != b.usable {
+			return b.usable - a.usable
+		}
+		return strings.Compare(a.name, b.name)
+	})
+
+	cells := func(r nowRow) []string {
+		return []string{
+			r.name, numMoney(r.costTask), numMoney(r.burn),
+			strconv.Itoa(r.five), strconv.Itoa(r.week), strconv.Itoa(r.month),
+			strconv.Itoa(r.usable), r.binding,
+			numSpeed(r.probeTokS),
+		}
+	}
+	head := []string{"#name", "cost_task", "burn_req", "reqs_5h", "reqs_week", "reqs_month", "usable", "limited_by", "p_tok_s"}
+	if !tty {
+		fmt.Fprintln(os.Stdout, strings.Join(head, "\t"))
+		for _, r := range rows {
+			fmt.Fprintln(os.Stdout, strings.Join(cells(r), "\t"))
+		}
+		return nil
+	}
+	tw := tabwriter.NewWriter(os.Stdout, 0, 2, 2, ' ', 0)
+	fmt.Fprintln(tw, strings.Join(head, "\t"))
+	for _, r := range rows {
+		fmt.Fprintln(tw, strings.Join(cells(r), "\t"))
+	}
+	return tw.Flush()
+}
+
+func numMoney(v float64) string {
+	if v == 0 {
+		return ""
+	}
+	s := strconv.FormatFloat(v, 'f', 5, 64)
+	s = strings.TrimRight(s, "0")
+	return "$" + strings.TrimSuffix(s, ".")
+}
+
+func numSpeed(v float64) string {
+	if v == 0 {
+		return ""
+	}
+	return strconv.FormatFloat(v, 'f', 1, 64)
 }
 
 func runOneProbe(modelID string, refresh bool) error {

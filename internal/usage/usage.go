@@ -6,6 +6,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"strconv"
+	"strings"
 	"time"
 )
 
@@ -76,4 +79,94 @@ func parse(r io.Reader) ([]Window, error) {
 		mk("week", u.Weekly.Status, u.Weekly.Percent, u.Weekly.ResetsAt),
 		mk("month", u.Monthly.Status, u.Monthly.Percent, u.Monthly.ResetsAt),
 	}, nil
+}
+
+// Budgets is the remaining allowance dollars per window. ModelMonth nil =
+// per-model bucket unknown; otherwise it constrains the month window.
+type Budgets struct {
+	Five       float64 // 5h rolling window
+	Week       float64
+	Month      float64
+	ModelMonth *float64 // per-model bucket remaining, nil = unknown
+}
+
+// RemainingBudgets converts usage windows into remaining allowance dollars,
+// given the plan pot (the monthly dollar-equivalent the percentages meter)
+// and the documented window caps (5h = 20%, weekly = 50%, monthly = 100%).
+func RemainingBudgets(ws []Window, pot float64) Budgets {
+	caps := map[string]float64{"5h": 0.2, "week": 0.5, "month": 1.0}
+	b := Budgets{}
+	for _, w := range ws {
+		rem := pot * caps[w.Name] * (1 - w.Percent/100)
+		switch w.Name {
+		case "5h":
+			b.Five = rem
+		case "week":
+			b.Week = rem
+		case "month":
+			b.Month = rem
+		}
+	}
+	return b
+}
+
+// Requests returns how many requests of the given allowance burn each window
+// can still afford, the usable (binding) count, and which window binds. The
+// per-model bucket, when known, constrains the month window.
+func Requests(b Budgets, burnPerReq float64) (five, week, month, usable int, binding string) {
+	if burnPerReq <= 0 {
+		return 0, 0, 0, 0, "-"
+	}
+	floor := func(v float64) int { return int(v/burnPerReq + 1e-9) }
+	five = floor(b.Five)
+	week = floor(b.Week)
+	month = floor(b.Month)
+	usable, binding = five, "5h"
+	if week < usable {
+		usable, binding = week, "week"
+	}
+	if month < usable {
+		usable, binding = month, "month"
+	}
+	if b.ModelMonth != nil {
+		if mm := floor(*b.ModelMonth); mm < usable {
+			usable, binding = mm, "allowance"
+		}
+	}
+	return
+}
+
+// ParseSpentFile reads a console "usage by model" paste (tab or 2+-space
+// separated lines: model id, counts..., last field a $cost, "<$0.01" allowed)
+// and returns spent allowance dollars per model ID.
+func ParseSpentFile(path string) (map[string]float64, error) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	out := map[string]float64{}
+	for _, line := range strings.Split(string(b), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		fields := splitFields(line)
+		if len(fields) < 2 {
+			continue
+		}
+		cost := strings.TrimPrefix(strings.TrimPrefix(fields[len(fields)-1], "<"), "$")
+		v, err := strconv.ParseFloat(cost, 64)
+		if err != nil || v < 0 {
+			continue
+		}
+		out[fields[0]] = v
+	}
+	return out, nil
+}
+
+// splitFields splits on tabs or runs of two or more spaces.
+func splitFields(line string) []string {
+	return strings.FieldsFunc(line, func(r rune) bool {
+		return r == '\t' || r == ' '
+	})
 }

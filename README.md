@@ -99,6 +99,8 @@ opencodable -peak                    # DeepSeek peak-hours pricing
 opencodable -probe                   # measure live speed of every model (paid, cached 24h)
 opencodable -probe-model kimi-k3     # measure one model, full JSON details
 opencodable -usage                   # remaining Go allowance: 5h / weekly / monthly windows
+opencodable -now                     # requests still affordable per model in each window
+opencodable -now -spent pasted.tsv   # same, minus your real per-model spend (console paste)
 opencodable -json                    # machine-readable rows, no legend
 opencodable -refresh                 # refetch everything, ignore the 24h cache
 opencodable -offline                 # cache only, no network
@@ -106,12 +108,33 @@ opencodable -offline                 # cache only, no network
 
 All flags: `-provider` (models.dev provider, default `opencode-go`), `-plan`,
 `-sort` (`name|price|speed|quality|reqs`), `-pareto`, `-paid`, `-privacy`,
-`-peak`, `-probe`, `-probe-model`, `-usage`, `-json`, `-refresh`, `-offline`.
+`-peak`, `-probe`, `-probe-model`, `-usage`, `-now`, `-spent`, `-pot`, `-json`,
+`-refresh`, `-offline`.
 
 `-usage` reads the live allowance endpoint and prints, per window (5h rolling
 = 20% of the plan's monthly limit, weekly = 50%, monthly = 100%), the percent
 used, the percent remaining, and when the window resets — in the same
 tty-padded / piped-TABs style as the model table.
+
+### Choosing a model right now: `-now`
+
+The usage endpoint meters **one shared pot** (assumed to be the plan price:
+$10 for Go, $40 for Go Plus; override with `-pot`), divided by the documented
+window caps. `-now` converts the remaining dollars into *requests per model*:
+
+- `burn_req` — allowance dollars one request of this model burns. The probe
+  measures each model's burn **ratio** against list price (e.g. Kimi K3.1 Pro
+  burns 4× its list cost, MiniMax M3.1 Flash 3× — the endpoint's
+  `opencode.allowance` makes this visible); unprobed models assume ratio 1.
+- `reqs_5h` / `reqs_week` / `reqs_month` — requests affordable with the
+  remaining dollars of each window.
+- `usable` / `limited_by` — the minimum and which window binds.
+
+The console's per-model spend page is session-authenticated (no API access),
+but you can paste it into a file and pass `-spent file.tsv` — its `model`
+and last `$cost` columns are parsed and subtracted from each model's monthly
+allowance bucket, which then also competes for the `limited_by` verdict
+(`allowance`).
 
 ### Output adapts to stdout
 
