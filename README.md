@@ -1,88 +1,212 @@
 # opencodable
 
-Rank the models of an [OpenCode](https://opencode.ai) Go subscription by the
-best compromise of **price, speed and quality**, right now. Output is plain
-tab-separated text, one line per model.
+**Find the best compromise of price, speed and quality among the models of your
+OpenCode subscription — right now, in your terminal.**
 
-## Data sources
+```
+name             price_out_1M  cost_task  allowance_usd  reqs_month  probe_tok_s  aa_intelligence  swebench_verified  pareto
+Kimi K3.1 Pro    $10           $0.0204    $15            735.3       78.7         55.1             -                  yes
+Gemini 4 Argon   $10           $0.019     $30            1578.9      85.8         52.6             -                  yes
+Kimi K3          $15           $0.0306    $15            490.2       799.1        43.6             -                  yes
+Hy3              $0.58         $0.00279   $60            21506.9     615.8        25.3             -                  yes
+```
 
-| Source | Gives | Auth |
-|---|---|---|
-| [models.dev](https://models.dev) `api.json` | retail prices ($/1M in/out/cached), context limits, reasoning flags | none |
-| [OpenCode Go docs](https://opencode.ai/v2/docs/console/go/) (hardcoded snapshot in `internal/goplan`) | per-model monthly allowance, official per-request token profile, peak prices | none |
-| [Artificial Analysis](https://artificialanalysis.ai) data API | intelligence/coding/math indexes, LiveCodeBench, Terminal-Bench, IFBench, long-context reasoning, tok/s, TTFT | free key |
-| [SWE-bench Verified](https://www.swebench.com/) leaderboard JSON | % resolved, best recorded agent run | none |
-| Live speed probe against your subscription (`-probe`) | real tok/s, TTFT, allowance burn per request | `OPENCODE_API_KEY` |
+---
 
-Dropped with cause: LiveBench (data files not machine-accessible), Aider
-polyglot (public YAML files stale since 2025-10, no 2026 models).
+## Overview
 
-## Setup
+`opencodable` is a single Go binary (standard library only, zero dependencies)
+that joins four data sources — your subscription's catalog, OpenCode's own plan
+data, Artificial Analysis benchmarks, and live measurements of *your* endpoints —
+into one tab-separated table, one line per model. It ranks models by price,
+speed and quality, flags the non-dominated ones (Pareto), and tells you how
+many requests per month each model actually buys you under your plan.
+
+## The problem
+
+Choosing a model inside a subscription like OpenCode Go is confusing:
+
+- **Retail prices mislead.** The subscription bills through *per-model monthly
+  allowances* (e.g. $15/month for GLM-5.3, $60/month for GLM-5.3-Flash), not
+  token prices — so the "cheapest" model is not the one that gives you the most
+  usable work.
+- **Consumption differs wildly.** Reasoning models burn far more tokens per
+  request than flash models; list prices per 1M tokens do not translate into
+  requests you can actually make.
+- **Benchmark sites compare the wrong set.** Public leaderboards (Artificial
+  Analysis, BenchLM, Vellum…) rank the whole market, not the ~40 models your
+  subscription exposes, and their speed numbers reflect *their* hosts, not your
+  provider's routing.
+- **No CLI exists for this.** Everything is a website; nothing outputs plain,
+  scriptable text about *your* plan.
+
+## The solution
+
+One command joins everything into a decision table:
+
+1. **Catalog & prices** — `models.dev` `api.json` (the source OpenCode itself
+   uses): retail $/1M input/output/cached prices, context limits, reasoning flags.
+2. **Subscription reality** — OpenCode's public Go/Go Plus tables, snapshotted
+   in `internal/goplan`: per-model monthly allowances, OpenCode's own
+   estimated token consumption per coding-agent request, peak-hour price
+   overrides, and privacy flags (which models train on your prompts).
+3. **Quality & reported speed** — Artificial Analysis data API (free key):
+   intelligence/coding/math indexes, LiveCodeBench, Terminal-Bench, IFBench,
+   long-context reasoning, plus median output tok/s and time-to-first-token.
+4. **Measured speed (opt-in)** — a live probe streams a fixed prompt through
+   your actual subscription endpoint and measures tok/s, TTFT and allowance
+   burn per model. Measured values take precedence over reported ones.
+
+The join handles name mismatches between sources (alias table: `mimo-v2.5` →
+`mimo-v2-5-0424`, etc.) and marks every row with a **Pareto flag**: `yes` when
+no other model is simultaneously cheaper-or-equal, faster-or-equal *and*
+better-or-equal. That shortlist is the answer to "what is the best compromise?".
+
+## Installation
+
+Requires Go 1.26+.
 
 ```sh
-# Artificial Analysis free API key, either form works:
-export AA_API_KEY=...            # or: echo KEY > .artificialanalysis.key  (git-ignored)
-
-# Only for the live speed probe:
-export OPENCODE_API_KEY=...      # or: echo KEY > .opencode-go.key  (git-ignored)
+git clone <this repo>
+cd opencodable
+go build -o ~/.local/bin/opencodable ./cmd/opencodable
 ```
+
+## Configuration
+
+No config file. Two optional keys, read from the environment or from
+git-ignored dot-files in the working directory:
+
+| Key | Purpose | Required? |
+|---|---|---|
+| `AA_API_KEY` or `.artificialanalysis.key` | benchmark quality/speed columns | recommended (free at artificialanalysis.ai) |
+| `OPENCODE_API_KEY` or `.opencode-go.key` | live speed probe (`-probe`) | only for probing |
+
+Without any key you still get prices, allowances and per-request costs; quality
+and speed columns print as `-`.
 
 ## Usage
 
 ```sh
-go build -o TMP/opencodable ./cmd/opencodable
-TMP/opencodable                       # ranked by quality, all subscription models
-TMP/opencodable -pareto -paid         # only the non-dominated paid models
-TMP/opencodable -sort speed           # name|price|speed|quality|reqs
-TMP/opencodable -plan go-plus         # allowances for the Go Plus plan
-TMP/opencodable -peak                 # DeepSeek peak-hours pricing
-TMP/opencodable -json                 # machine-readable
-TMP/opencodable -refresh              # bypass the 24h cache
-TMP/opencodable -offline              # cache only
-TMP/opencodable -probe                # measure live speed of all models (paid, cached 24h)
-TMP/opencodable -probe-model kimi-k3  # measure one model, print JSON details
-TMP/opencodable -privacy              # hide contributor models (they train on your prompts)
-TMP/opencodable -peak                 # DeepSeek peak-hours pricing
+opencodable                          # all subscription models, ranked by quality
+opencodable -pareto -paid            # the non-dominated paid models only
+opencodable -sort reqs               # most requests per month first
+opencodable -privacy                 # exclude models that train on your prompts
+opencodable -plan go-plus            # allowances for the Go Plus plan (default: go)
+opencodable -peak                    # DeepSeek peak-hours pricing
+opencodable -probe                   # measure live speed of every model (paid, cached 24h)
+opencodable -probe-model kimi-k3     # measure one model, full JSON details
+opencodable -json                    # machine-readable rows, no legend
+opencodable -refresh                 # refetch everything, ignore the 24h cache
+opencodable -offline                 # cache only, no network
 ```
 
-Every TSV output starts with a `#` legend block explaining each column; JSON
-output (`-json`) has no legend.
+All flags: `-provider` (models.dev provider, default `opencode-go`), `-plan`,
+`-sort` (`name|price|speed|quality|reqs`), `-pareto`, `-paid`, `-privacy`,
+`-peak`, `-probe`, `-probe-model`, `-json`, `-refresh`, `-offline`.
 
-### Columns
+Every TSV output begins with a `#` legend block explaining each column; the
+column header row is commented too, so `grep -v '^#'` strips everything but data.
 
-- `price_out_1M` — retail price per 1M output tokens (models.dev)
-- `cost_task` — estimated USD per coding-agent request, using OpenCode's
-  official token profile for that model (input + cached-read + output)
-- `allowance_usd` — monthly usage budget of this model in your plan
-- `reqs_month` — allowance ÷ cost_task ≈ requests/month you get
-- `tok_s`, `ttft_s` — Artificial Analysis median output speed / time to first token
-- `probe_tok_s`, `probe_ttft_s` — **measured on your subscription**: one streamed
-  FizzBuzz request per model. Thinking models get a bigger token budget when
-  reasoning would swallow the answer; ultra-fast models get a long-output
-  prompt so the timing window is trustworthy. `-sort speed` prefers measured
-  values. Costs a few cents total per full run.
-- `aa_intelligence`, `aa_coding`, `aa_math`, `livecodebench`, `terminalbench`,
-  `ifbench`, `aa_lcr` — benchmark scores via Artificial Analysis
-- `swebench_verified` — SWE-bench Verified % resolved (best recorded agent
-  run per model); sparse, the official board covers few current models
-- `pareto` — `yes` when no other model is simultaneously cheaper-or-equal,
-  faster-or-equal and better-or-equal (the "best compromise" shortlist)
-- `source` — AA reasoning-effort variant used when the base slug has no speed
+### Sample probe detail
 
-The full legend ships with every table as `#` lines above the header row.
+```json
+$ opencodable -probe-model kimi-k3.1-pro
+{
+  "model_id": "kimi-k3.1-pro",
+  "tok_s": 78.67,
+  "ttft_s": 6.60,
+  "window_s": 5.57,
+  "output_tokens": 438,
+  "reasoning_tokens": 283,
+  "allowance_burned": 0.018352
+}
+```
 
-Missing data prints as `-`. Free models show `-` prices; `-paid` hides them.
+## Columns
+
+| Column | Meaning |
+|---|---|
+| `name` | model display name (models.dev) |
+| `price_out_1M` | retail USD per 1M output tokens |
+| `cost_task` | estimated USD per coding-agent request (OpenCode's official token profile, base tier) |
+| `allowance_usd` | monthly usage budget of this model in your plan; `unlimited` for free models |
+| `reqs_month` | allowance ÷ cost_task ≈ requests per month |
+| `tok_s`, `ttft_s` | Artificial Analysis reported output speed / time to first token |
+| `probe_tok_s`, `probe_ttft_s` | **measured on your subscription** via `-probe` |
+| `aa_intelligence`, `aa_coding`, `aa_math` | Artificial Analysis composite indexes |
+| `livecodebench`, `terminalbench`, `ifbench`, `aa_lcr` | per-benchmark pass rates % (via AA) |
+| `swebench_verified` | SWE-bench Verified % resolved, best recorded agent run |
+| `pareto` | `yes` = not dominated on (cost, speed, quality) |
+| `source` | `aa:<effort>` when speed came from that AA reasoning-effort variant |
+
+Missing data prints as `-` — never a wrong score.
+
+## Data sources
+
+| Source | Provides | Auth |
+|---|---|---|
+| [models.dev](https://models.dev) | prices, context limits, reasoning flags | none |
+| [OpenCode Go docs](https://opencode.ai/v2/docs/console/go/) | allowances, token profiles, peak prices, privacy | none |
+| [Artificial Analysis](https://artificialanalysis.ai) | benchmark indexes, reported speed | free key |
+| [SWE-bench Verified](https://www.swebench.com/) leaderboard JSON | agentic repo-fixing % resolved | none |
+| Your subscription endpoint (probe) | real tok/s, TTFT, allowance burn | `OPENCODE_API_KEY` |
+
+Dropped with cause: LiveBench (data files not machine-accessible), Aider
+polyglot (public YAML files stale since 2025-10).
+
+## What the first full run found
+
+On the OpenCode Go plan (October 2026):
+
+- **Kimi K3.1 Pro** is the quality ceiling (intelligence 55.1, long-context
+  reasoning 86.3%) but its $15 allowance buys only ~735 requests/month.
+- **Kimi K3** generates at a measured **~800 tok/s** — near-frontier quality at
+  absurd throughput, but the thinnest allowance (~490 requests/month).
+- **DeepSeek V4.1 Flash** and **MiMo-V2.6-Flash** deliver six-digit
+  requests-per-month; ideal daily drivers for routine agent work.
+- **Your routes often beat the public numbers**: Grok 4.7 measured 172 tok/s vs
+  AA's 76; Hy3 measured 616 vs 80. OpenCode negotiates reserved capacity —
+  but routing varies hour to hour (GLM-5.3-Flash measured 38 then 113 tok/s),
+  which is exactly why the probe exists.
+- **Thinking costs latency**: Qwen3.7 Plus takes ~29 s to its first content
+  token; Muse Spark 1.3 ~15 s. Prefer `probe_ttft_s` when responsiveness matters.
+- **Privacy has a price**: Muse Spark contributor models are 25-45× cheaper per
+  request than peers, in exchange for training on your prompts (`-privacy`
+  filters them).
 
 ## Design notes
 
-- Go stdlib only (no dependencies) so a future Rust rewrite is mechanical.
-- Responses are cached 24h in `~/.cache/opencodable/`.
-- Alias table `internal/normalize/normalize.go` maps models.dev IDs to AA
-  slugs (e.g. `mimo-v2.5` → `mimo-v2-5-0424`); unmatched models get `-` scores,
-  never wrong ones.
-- Retail prices are the comparison basis; your subscription bills through the
-  allowance system instead — that's why `reqs_month` matters more than
-  `price_out_1M` for choosing a daily driver.
-- Known AA artifact: TTFT for reasoning models includes thinking time (e.g.
-  Claude Haiku 5.5 shows ~247 s median); prefer `tok_s` for throughput and
-  treat `ttft_s` as "time to first answer token".
+- **Standard library only.** No Go dependencies, no frameworks — a future Rust
+  rewrite is a mechanical translation.
+- **Caching.** All fetches are cached 24h in `~/.cache/opencodable/`;
+  `-refresh` forces refetch, `-offline` forbids network. Probe failures are
+  retried on the next run rather than served stale for 24h.
+- **Probe robustness.** Thinking models stream `reasoning_content` first and
+  can exhaust a small token budget before answering, so the probe escalates the
+  budget on failure. Ultra-fast models finish inside a window too short to
+  divide by, so the probe retries with a long-output prompt and only trusts
+  tok/s from windows ≥ 1 s.
+- **Known artifact.** AA's `ttft_s` for reasoning models includes thinking time
+  (e.g. Claude Haiku 5.5 ~247 s median) — treat it as time to first *answer* token.
+- **Prices are the comparison basis.** Your subscription bills allowances, not
+  retail; that is why `reqs_month` matters more than `price_out_1M` for
+  choosing a daily driver.
+
+## Roadmap
+
+- `-privacy` awareness in Pareto scoring (currently a pre-filter)
+- Peak/off-peak *scheduling advice* (when DeepSeek is cheapest)
+- Optional LMArena Elo column
+- Multi-provider comparison (`-provider any`)
+- Rust port of the same pipeline
+
+## Contributing
+
+The interesting places to contribute: `internal/normalize/aliases.go` (name
+matching), `internal/goplan/goplan.go` (subscription snapshot — update when
+OpenCode changes plans), `internal/bench/` (new benchmark feeds).
+
+## License
+
+To be decided.
