@@ -132,7 +132,7 @@ func TestWriteVertical(t *testing.T) {
 		{Name: "m2", AACoding: 70},
 	}
 	var b strings.Builder
-	if err := WriteVertical(&b, rows, false); err != nil {
+	if err := WriteVertical(&b, rows); err != nil {
 		t.Fatal(err)
 	}
 	out := b.String()

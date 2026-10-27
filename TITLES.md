@@ -49,7 +49,8 @@ Piped header: `#name	cost_tok	cost_task	allowance	reqs_mo	tok_s	ttft_s	p_tok_s	p
 On a terminal: same columns, padded for readability, missing values shown as
 `-`, preceded by a `#`-prefixed legend block. `-vertical` emits one model per
 block of `field: value` lines (same keys, empty fields skipped, blank line
-between records).
+between records) and omits the prose legend block: the field names are the
+legend.
 
 ## View: `-usage` (allowance windows)
 

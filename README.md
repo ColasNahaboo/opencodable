@@ -181,7 +181,7 @@ opencodable | grep -v '^#' | awk -F'\t' '{print $1, $6}'
 `-vertical` renders one model per block of `field: value` lines with blank
 lines between records and empty fields skipped — much easier to read with a
 screen reader than a wide table, and applies to both the model table and
-`-now`:
+`-now`. No prose legend block is printed: the field names are the legend.
 
 ```sh
 $ opencodable -pareto -paid -vertical
@@ -366,6 +366,9 @@ This repository is developed by me, a human hobbyist in my personal time in clos
 
 ## History
 
+- v0.1.1 2026-10-27 `-vertical` no longer prints the prose legend (the field
+  names are the legend), better for screen readers. TITLES.md still changes
+  until v1.0.0.
 - v0.1.0 2026-10-27 Canonical module path, privacy tri-state with fail-closed
   `-privacy`, context/output columns, `-doctor`, `-window-estimate`,
   cache/parser hardening, CI, cross-platform release builds. TITLES.md still

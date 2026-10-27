@@ -29,7 +29,7 @@ import (
 )
 
 // version is displayed at the bottom of the -h help text.
-var version = "v0.1.0"
+var version = "v0.1.1"
 
 func main() {
 	// The probe uses its own longer client; all catalog/benchmark/usage
@@ -211,7 +211,7 @@ func main() {
 		return
 	}
 	if *vertical {
-		if err := table.WriteVertical(os.Stdout, rows, isTTY(os.Stdout)); err != nil {
+		if err := table.WriteVertical(os.Stdout, rows); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
@@ -670,11 +670,6 @@ func runNow(planName string, spentFile map[string]float64, spentGiven, paid, pri
 		return json.NewEncoder(os.Stdout).Encode(out)
 	}
 	if vertical {
-		if tty {
-			for _, l := range nowLegend {
-				fmt.Fprintln(os.Stdout, l)
-			}
-		}
 		out := os.Stdout
 		for i, r := range rows {
 			if i > 0 {
