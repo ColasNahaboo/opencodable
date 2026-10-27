@@ -3,6 +3,8 @@
 **Find the best compromise of price, speed and quality among the models of your
 OpenCode subscription — right now, in your terminal.**
 
+[MIT licensed](LICENSE) · single Go binary · zero dependencies · Go 1.26+
+
 ```
 name             price_out_1M  cost_task  allowance_usd  reqs_month  probe_tok_s  aa_intelligence  swebench_verified  pareto
 Kimi K3.1 Pro    $10           $0.0204    $15            735.3       78.7         55.1             -                  yes
@@ -67,7 +69,7 @@ better-or-equal. That shortlist is the answer to "what is the best compromise?".
 Requires Go 1.26+.
 
 ```sh
-git clone <this repo>
+git clone https://github.com/ColasNahaboo/opencodable
 cd opencodable
 go build -o ~/.local/bin/opencodable ./cmd/opencodable
 ```
@@ -155,25 +157,27 @@ Missing data prints as `-` — never a wrong score.
 Dropped with cause: LiveBench (data files not machine-accessible), Aider
 polyglot (public YAML files stale since 2025-10).
 
-## What the first full run found
+## What live probing tends to reveal
 
-On the OpenCode Go plan (October 2026):
+Observations from full runs on the OpenCode Go plan (first: October 2026 —
+expect the specific numbers to drift; the patterns below are stable):
 
-- **Kimi K3.1 Pro** is the quality ceiling (intelligence 55.1, long-context
-  reasoning 86.3%) but its $15 allowance buys only ~735 requests/month.
-- **Kimi K3** generates at a measured **~800 tok/s** — near-frontier quality at
-  absurd throughput, but the thinnest allowance (~490 requests/month).
-- **DeepSeek V4.1 Flash** and **MiMo-V2.6-Flash** deliver six-digit
-  requests-per-month; ideal daily drivers for routine agent work.
-- **Your routes often beat the public numbers**: Grok 4.7 measured 172 tok/s vs
-  AA's 76; Hy3 measured 616 vs 80. OpenCode negotiates reserved capacity —
-  but routing varies hour to hour (GLM-5.3-Flash measured 38 then 113 tok/s),
-  which is exactly why the probe exists.
-- **Thinking costs latency**: Qwen3.7 Plus takes ~29 s to its first content
-  token; Muse Spark 1.3 ~15 s. Prefer `probe_ttft_s` when responsiveness matters.
-- **Privacy has a price**: Muse Spark contributor models are 25-45× cheaper per
-  request than peers, in exchange for training on your prompts (`-privacy`
-  filters them).
+- **Allowance ≠ value.** High-quality flagship models often carry the thinnest
+  monthly allowances (e.g. $15), while mid-tier models buy orders of magnitude
+  more requests — `reqs_month` flips the usual leaderboard ordering.
+- **Your routes can beat public numbers.** Subscription endpoints frequently
+  measure *faster* than aggregator averages (reserved capacity), but routing
+  varies hour to hour and per model — sometimes 2-3×. Site-reported speeds are
+  a starting point; `-probe` is the ground truth for your setup.
+- **Thinking costs latency.** Heavy-reasoning models can take tens of seconds
+  before their first content token even while streaming fast afterwards.
+  Judge responsiveness by `probe_ttft_s`, throughput by `probe_tok_s`.
+- **Privacy has a price.** Contributor models are an order of magnitude
+  cheaper per request in exchange for training on your prompts; `-privacy`
+  filters them out when that matters.
+- **Free models are real quality.** Time-limited free tiers on the plan
+  sometimes benchmark in the same range as paid mid-tier models — worth
+  probing before paying attention to price at all.
 
 ## Design notes
 
@@ -209,4 +213,4 @@ OpenCode changes plans), `internal/bench/` (new benchmark feeds).
 
 ## License
 
-To be decided.
+[MIT](LICENSE) © Colas Nahaboo
