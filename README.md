@@ -1,5 +1,7 @@
 # opencodable
 
+![banner](.github/assets/banner.png)
+
 **Find the best compromise of price, speed and quality among the models of your
 OpenCode subscription — right now, in your terminal.**
 
