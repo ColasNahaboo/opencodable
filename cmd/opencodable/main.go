@@ -109,10 +109,19 @@ func main() {
 		}
 		return
 	}
-	if err := table.WriteTSV(os.Stdout, rows); err != nil {
+	if err := table.WriteTSV(os.Stdout, rows, isTTY(os.Stdout)); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
+}
+
+// isTTY reports whether f is an interactive terminal.
+func isTTY(f *os.File) bool {
+	fi, err := f.Stat()
+	if err != nil {
+		return false
+	}
+	return fi.Mode()&os.ModeCharDevice != 0
 }
 
 // DefaultMaxTokens is the probe generation budget; wide enough for thinking

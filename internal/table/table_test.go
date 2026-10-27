@@ -1,6 +1,9 @@
 package table
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestMarkPareto(t *testing.T) {
 	rows := []Row{
@@ -50,21 +53,87 @@ func TestSort(t *testing.T) {
 	}
 }
 
-func TestNum(t *testing.T) {
+func TestNumOr(t *testing.T) {
 	cases := []struct {
-		v     float64
-		money bool
-		want  string
+		v       float64
+		money   bool
+		missing string
+		want    string
 	}{
-		{0, true, "-"},
-		{10, true, "$10"},
-		{0.0027898000000000003, true, "$0.00279"},
-		{0.00026, true, "$0.00026"},
-		{1578.9, false, "1578.9"},
+		{0, true, "-", "-"},
+		{0, true, "", ""},
+		{10, true, "-", "$10"},
+		{0.0027898000000000003, true, "", "$0.00279"},
+		{0.00026, true, "", "$0.00026"},
+		{1578.9, false, "-", "1578.9"},
 	}
 	for _, c := range cases {
-		if got := num(c.v, c.money); got != c.want {
-			t.Errorf("num(%v,%v)=%q want %q", c.v, c.money, got, c.want)
+		if got := numOr(c.v, c.money, c.missing); got != c.want {
+			t.Errorf("numOr(%v,%v,%q)=%q want %q", c.v, c.money, c.missing, got, c.want)
+		}
+	}
+}
+
+func TestWriteTSVMachineMode(t *testing.T) {
+	rows := []Row{
+		{Name: "m1", PriceOut1M: 10, CostTask: 0.02, TokPerSec: 123.45, Pareto: true, variant: "high"},
+		{Name: "m2"},
+	}
+	var b strings.Builder
+	if err := WriteTSV(&b, rows, false); err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimRight(b.String(), "\n"), "\n")
+	nCol := len(headerCells())
+	headJoin := strings.Join(headerCells(), "\t")
+	var row1, row2 []string
+	for _, l := range lines {
+		switch {
+		case strings.HasPrefix(l, "# "): // legend prose: no TAB constraints
+		case l == headJoin:
+			// header
+		default: // data row
+			if got := len(strings.Split(l, "\t")); got != nCol {
+				t.Errorf("line %q has %d fields, want %d", l, got, nCol)
+			}
+			if strings.Contains(l, "  ") {
+				t.Errorf("machine mode must not pad: %q", l)
+			}
+			f := strings.Split(l, "\t")
+			if f[0] == "m1" {
+				row1 = f
+			}
+			if f[0] == "m2" {
+				row2 = f
+			}
+		}
+	}
+	if row1[len(row1)-1] != "aa:high" {
+		t.Errorf("source cell = %q, want aa:high", row1[len(row1)-1])
+	}
+	for i, v := range row2 {
+		if i == 0 {
+			continue
+		}
+		if v != "" {
+			t.Errorf("m2 empty-model field %q = %q, want empty", headerCells()[i], v)
+		}
+	}
+}
+
+func TestWriteTSVTTYMode(t *testing.T) {
+	rows := []Row{{Name: "m1", PriceOut1M: 10}}
+	var b strings.Builder
+	if err := WriteTSV(&b, rows, true); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(b.String(), "-") {
+		t.Error("tty mode must print - for missing values")
+	}
+	// header and data aligned by tabwriter: at least one padded gap
+	for _, l := range strings.Split(b.String(), "\n") {
+		if strings.HasPrefix(l, "m1") && !strings.Contains(l, "  ") {
+			t.Errorf("tty mode must pad columns: %q", l)
 		}
 	}
 }

@@ -167,35 +167,97 @@ func Sort(rows []Row, key string) {
 	sort.SliceStable(rows, func(i, j int) bool { return less(rows[i], rows[j]) })
 }
 
-// WriteTSV renders the table; missing values print as "-". A legend block of
-// #-prefixed lines explains every column.
-func WriteTSV(w io.Writer, rows []Row) error {
+// WriteTSV renders the table. A legend block of #-prefixed lines explains
+// every column. On a terminal the columns are padded for readability and
+// missing values show as "-"; when stdout is piped, every row (header
+// included) is strict single-TAB separated values with empty fields for
+// missing data, for easy machine parsing.
+func WriteTSV(w io.Writer, rows []Row, tty bool) error {
 	for _, l := range legend {
 		if _, err := fmt.Fprintln(w, l); err != nil {
 			return err
 		}
 	}
-	tw := tabwriter.NewWriter(w, 0, 2, 2, ' ', 0)
-	if _, err := fmt.Fprintln(tw, "#name\tprice_out_1M\tcost_task\tallowance_usd\treqs_month\ttok_s\tttft_s\tprobe_tok_s\tprobe_ttft_s\taa_intelligence\taa_coding\taa_math\tlivecodebench\tterminalbench\tifbench\taa_lcr\tswebench_verified\tpareto\tsource"); err != nil {
-		return err
+	missing := ""
+	if tty {
+		missing = "-"
 	}
+	lines := make([]string, 0, len(rows)+1)
+	lines = append(lines, strings.Join(headerCells(), "\t"))
 	for _, r := range rows {
-		src := ""
-		if r.variant != "" {
-			src = "aa:" + r.variant
-		}
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
-			r.Name,
-			num(r.PriceOut1M, true), num(r.CostTask, true),
-			allowance(r), num(r.ReqsMonth, false),
-			num(r.TokPerSec, false), num(r.TTFTSeconds, false),
-			num(r.ProbeTokS, false), num(r.ProbeTTFT, false),
-			num(r.AAIntel, false), num(r.AACoding, false), num(r.AAMath, false),
-			num(r.LiveCodeBench, false), num(r.TerminalBench, false),
-			num(r.IFBench, false), num(r.LCR, false), num(r.SWEBench, false),
-			yesno(r.Pareto), src)
+		lines = append(lines, strings.Join(rowCells(r, missing), "\t"))
 	}
-	return tw.Flush()
+	if tty {
+		tw := tabwriter.NewWriter(w, 0, 2, 2, ' ', 0)
+		for _, l := range lines {
+			if _, err := fmt.Fprintln(tw, l); err != nil {
+				return err
+			}
+		}
+		return tw.Flush()
+	}
+	for _, l := range lines {
+		if _, err := fmt.Fprintln(w, l); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func headerCells() []string {
+	return []string{
+		"#name", "price_out_1M", "cost_task", "allowance_usd", "reqs_month",
+		"tok_s", "ttft_s", "probe_tok_s", "probe_ttft_s",
+		"aa_intelligence", "aa_coding", "aa_math",
+		"livecodebench", "terminalbench", "ifbench", "aa_lcr",
+		"swebench_verified", "pareto", "source",
+	}
+}
+
+// rowCells returns the field values of one row; missing becomes "-" on a
+// terminal and the empty string when piped.
+func rowCells(r Row, missing string) []string {
+	src := ""
+	if r.variant != "" {
+		src = "aa:" + r.variant
+	}
+	pareto := ""
+	if r.Pareto {
+		pareto = "yes"
+	}
+	return []string{
+		r.Name,
+		numOr(r.PriceOut1M, true, missing), numOr(r.CostTask, true, missing),
+		allowanceOr(r, missing), numOr(r.ReqsMonth, false, missing),
+		numOr(r.TokPerSec, false, missing), numOr(r.TTFTSeconds, false, missing),
+		numOr(r.ProbeTokS, false, missing), numOr(r.ProbeTTFT, false, missing),
+		numOr(r.AAIntel, false, missing), numOr(r.AACoding, false, missing), numOr(r.AAMath, false, missing),
+		numOr(r.LiveCodeBench, false, missing), numOr(r.TerminalBench, false, missing),
+		numOr(r.IFBench, false, missing), numOr(r.LCR, false, missing), numOr(r.SWEBench, false, missing),
+		pareto, src,
+	}
+}
+
+func numOr(v float64, money bool, missing string) string {
+	if v == 0 {
+		return missing
+	}
+	if money {
+		s := strconv.FormatFloat(v, 'f', 5, 64)
+		s = strings.TrimRight(s, "0")
+		return "$" + strings.TrimSuffix(s, ".")
+	}
+	return strconv.FormatFloat(v, 'f', 1, 64)
+}
+
+func allowanceOr(r Row, missing string) string {
+	if r.Unlimited {
+		return "unlimited"
+	}
+	if r.AllowanceUSD == 0 {
+		return missing
+	}
+	return numOr(r.AllowanceUSD, true, missing)
 }
 
 // legend documents each column, one #-prefixed line per column.
@@ -227,33 +289,4 @@ func WriteJSON(w io.Writer, rows []Row) error {
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
 	return enc.Encode(rows)
-}
-
-func allowance(r Row) string {
-	if r.Unlimited {
-		return "unlimited"
-	}
-	if r.AllowanceUSD == 0 {
-		return "-"
-	}
-	return num(r.AllowanceUSD, true)
-}
-
-func num(v float64, money bool) string {
-	if v == 0 {
-		return "-"
-	}
-	if money {
-		s := strconv.FormatFloat(v, 'f', 5, 64)
-		s = strings.TrimRight(s, "0")
-		return "$" + strings.TrimSuffix(s, ".")
-	}
-	return strconv.FormatFloat(v, 'f', 1, 64)
-}
-
-func yesno(b bool) string {
-	if b {
-		return "yes"
-	}
-	return ""
 }
