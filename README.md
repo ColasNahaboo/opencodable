@@ -107,6 +107,19 @@ All flags: `-provider` (models.dev provider, default `opencode-go`), `-plan`,
 `-sort` (`name|price|speed|quality|reqs`), `-pareto`, `-paid`, `-privacy`,
 `-peak`, `-probe`, `-probe-model`, `-json`, `-refresh`, `-offline`.
 
+### Output adapts to stdout
+
+- **Interactive terminal**: columns are padded into a visually aligned table,
+  missing values show as `-`.
+- **Piped or redirected**: strict machine format — every row is values
+  separated by exactly one TAB character, missing fields are empty strings,
+  no padding. The legend block and the `#name…` header row keep their `#`
+  prefix, so parsing is simply "skip lines starting with `#`":
+
+```sh
+opencodable | grep -v '^#' | awk -F'\t' 'NR>1 {print $1, $6}'
+```
+
 Every TSV output begins with a `#` legend block explaining each column; the
 column header row is commented too, so `grep -v '^#'` strips everything but data.
 
