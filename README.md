@@ -130,11 +130,13 @@ window caps. `-now` converts the remaining dollars into *requests per model*:
   remaining dollars of each window.
 - `usable` / `limited_by` — the minimum and which window binds.
 
-The console's per-model spend page is session-authenticated (no API access),
-but you can paste it into a file and pass `-spent file.tsv` — its `model`
-and last `$cost` columns are parsed and subtracted from each model's monthly
-allowance bucket, which then also competes for the `limited_by` verdict
-(`allowance`).
+The console's per-model spend page is **fetchable directly**: the same Go key
+authorizes `console.opencode.ai/api/usage/models`, so `-now` subtracts your
+real period spend automatically (the `spent_mo` column shows it). A pasted
+console table still works as an offline fallback via `-spent file.tsv` — its
+`model` and last `$cost` columns are parsed and override the live fetch;
+whichever per-model bucket is tighter then competes for the `limited_by`
+verdict (`allowance`).
 
 ### Output adapts to stdout
 
@@ -196,6 +198,7 @@ Missing data prints as `-` (terminal) or empty (piped) — never a wrong score.
 | [OpenCode Go docs](https://opencode.ai/v2/docs/console/go/) | allowances, token profiles, peak prices, privacy | none |
 | [Artificial Analysis](https://artificialanalysis.ai) | benchmark indexes, reported speed | free key |
 | [SWE-bench Verified](https://www.swebench.com/) leaderboard JSON | agentic repo-fixing % resolved | none |
+| [Console usage API](https://console.opencode.ai/api/usage) (`/usage/models`) | per-model spend for the current period | same Go key |
 | Your subscription endpoint (probe) | real tok/s, TTFT, allowance burn | `OPENCODE_API_KEY` |
 
 Dropped with cause: LiveBench (data files not machine-accessible), Aider

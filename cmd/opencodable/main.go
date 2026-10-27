@@ -18,6 +18,7 @@ import (
 	"opencodable/internal/aa"
 	"opencodable/internal/bench"
 	"opencodable/internal/cache"
+	"opencodable/internal/consoleapi"
 	"opencodable/internal/cost"
 	"opencodable/internal/goplan"
 	"opencodable/internal/modelsdev"
@@ -280,6 +281,7 @@ type nowRow struct {
 	name      string
 	costTask  float64
 	burn      float64 // allowance dollars per request (measured ratio x profile cost)
+	spentMo   float64 // real spend this period (console api or -spent file)
 	five      int
 	week      int
 	month     int
@@ -292,7 +294,7 @@ type nowRow struct {
 // requests fit in each remaining usage window. The usage endpoint meters one
 // shared pot (assumed = plan price, override with -pot); measured probe burn
 // ratios make the per-request allowance cost model-specific.
-func runNow(planName string, pot float64, spent map[string]float64, spentGiven, paid, privacy, peak, tty bool) error {
+func runNow(planName string, pot float64, spentFile map[string]float64, spentGiven, paid, privacy, peak, tty bool) error {
 	models, err := modelsdev.Fetch("opencode-go", false, false)
 	if err != nil {
 		return err
@@ -306,8 +308,30 @@ func runNow(planName string, pot float64, spent map[string]float64, spentGiven, 
 		return err
 	}
 	budgets := usage.RemainingBudgets(ws, pot)
-	fmt.Fprintf(os.Stderr, "# pot=$%.0f, remaining: 5h=$%.2f week=$%.2f month=$%.2f (-spent adds per-model buckets)\n",
-		pot, budgets.Five, budgets.Week, budgets.Month)
+
+	// Real per-model spend for the current period, straight from the console
+	// API with the same key; the -spent paste file overrides when given.
+	spent := map[string]float64{}
+	var liveErr error
+	if !spentGiven {
+		var mu []consoleapi.ModelSpend
+		if mu, liveErr = consoleapi.FetchModelUsage(key); liveErr == nil {
+			for _, s := range mu {
+				spent[s.Model] = s.CostUSD
+			}
+		}
+	} else {
+		spent = spentFile
+	}
+	src := "console api"
+	if spentGiven {
+		src = "-spent file"
+	} else if liveErr != nil {
+		src = "unavailable: " + liveErr.Error()
+	}
+
+	fmt.Fprintf(os.Stderr, "# pot=$%.0f, remaining: 5h=$%.2f week=$%.2f month=$%.2f (per-model spend: %s)\n",
+		pot, budgets.Five, budgets.Week, budgets.Month, src)
 
 	var rows []nowRow
 	for _, m := range models {
@@ -330,15 +354,15 @@ func runNow(planName string, pot float64, spent map[string]float64, spentGiven, 
 			}
 		}
 		b := budgets
-		if spentGiven {
-			if allow, unlim := goplan.Allowance(m.ID, planName); !unlim {
+		if allow, unlim := goplan.Allowance(m.ID, planName); !unlim {
+			if _, known := spent[m.ID]; known || !spentGiven || liveErr == nil {
 				mm := allow - spent[m.ID]
 				b.ModelMonth = &mm
 			}
 		}
 		five, week, month, usable, binding := usage.Requests(b, mult*c)
 		rows = append(rows, nowRow{
-			name: m.Name, costTask: c, burn: mult * c,
+			name: m.Name, costTask: c, burn: mult * c, spentMo: spent[m.ID],
 			five: five, week: week, month: month, usable: usable,
 			binding: binding, probeTokS: speed,
 		})
@@ -352,13 +376,13 @@ func runNow(planName string, pot float64, spent map[string]float64, spentGiven, 
 
 	cells := func(r nowRow) []string {
 		return []string{
-			r.name, numMoney(r.costTask), numMoney(r.burn),
+			r.name, numMoney(r.costTask), numMoney(r.burn), numMoney(r.spentMo),
 			strconv.Itoa(r.five), strconv.Itoa(r.week), strconv.Itoa(r.month),
 			strconv.Itoa(r.usable), r.binding,
 			numSpeed(r.probeTokS),
 		}
 	}
-	head := []string{"#name", "cost_task", "burn_req", "reqs_5h", "reqs_week", "reqs_month", "usable", "limited_by", "p_tok_s"}
+	head := []string{"#name", "cost_task", "burn_req", "spent_mo", "reqs_5h", "reqs_week", "reqs_month", "usable", "limited_by", "p_tok_s"}
 	if !tty {
 		fmt.Fprintln(os.Stdout, strings.Join(head, "\t"))
 		for _, r := range rows {
