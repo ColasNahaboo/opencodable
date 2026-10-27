@@ -35,7 +35,7 @@ func main() {
 		out := flag.CommandLine.Output()
 		fmt.Fprintf(out, "Usage of %s:\n", os.Args[0])
 		flag.PrintDefaults()
-		fmt.Fprintf(out, "\nopencodable %s — output spec: TITLES.md\n", version)
+		fmt.Fprintf(out, "\nopencodable %s — https://github.com/ColasNahaboo/opencodable\n", version)
 	}
 	var (
 		provider = flag.String("provider", "opencode-go", "models.dev provider to rank")
