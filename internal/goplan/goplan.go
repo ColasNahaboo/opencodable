@@ -6,6 +6,8 @@
 // verified 2026-10-27).
 package goplan
 
+import "strings"
+
 // Profile is OpenCode's estimated token consumption of one coding-agent
 // request for a given model.
 type Profile struct {
@@ -22,40 +24,42 @@ type entry struct {
 	Profile *Profile
 	// Peak-price override (USD/1M), for models billed by time of day.
 	Peak *[3]float64 // input, output, cache_read
+	// TrainsOnData: the model trains on request data (OpenCode privacy table).
+	TrainsOnData bool
 }
 
 // allowances by models.dev model ID.
 var table = map[string]entry{
-	"glm-5.3-flash":              {60, 180, &Profile{1000, 55000, 200}, nil},
-	"glm-5.3":                    {15, 120, &Profile{700, 52000, 150}, nil},
-	"glm-5.2":                    {60, 180, &Profile{700, 52000, 150}, nil},
-	"kimi-k3.1-pro":              {15, 60, &Profile{1050, 76500, 300}, nil},
-	"kimi-k3":                    {15, 60, &Profile{1050, 76500, 300}, nil},
-	"kimi-k2.7-code":             {60, 180, &Profile{870, 55000, 200}, nil},
-	"longcat-2.0":                {60, 240, &Profile{920, 88900, 200}, nil},
-	"step-5-preview":             {15, 60, &Profile{1000, 55000, 200}, nil},
-	"beam-free":                  {0, 0, nil, nil},
-	"iceman-contributor-free":    {0, 0, nil, nil},
-	"mimo-v2.6-flash":            {60, 120, &Profile{830, 71500, 295}, nil},
-	"mimo-v2.6-pro":              {15, 60, &Profile{790, 86000, 305}, nil},
-	"mimo-v2.5":                  {60, 120, &Profile{830, 71500, 295}, nil},
-	"mimo-v2.5-pro":              {15, 60, &Profile{790, 86000, 305}, nil},
-	"minimax-m3.1-flash":         {20, 80, &Profile{500, 49400, 360}, nil},
-	"minimax-m3":                 {60, 180, &Profile{510, 56000, 190}, nil},
-	"muse-spark-1.3-contributor": {60, 120, &Profile{620, 71400, 300}, nil},
-	"muse-spark-1.2-contributor": {60, 120, &Profile{620, 71400, 300}, nil},
-	"qwen3.8-max":                {15, 60, &Profile{420, 66000, 200}, nil},
-	"qwen3.8-flash":              {30, 90, &Profile{600, 58000, 200}, nil},
-	"qwen3.7-plus":               {60, 180, &Profile{500, 57000, 190}, nil},
-	"deepseek-v4.1-flash":        {80, 160, &Profile{410, 71300, 310}, &[3]float64{0.30, 1.20, 0.006}},
-	"deepseek-v4-pro":            {15, 60, &Profile{750, 82000, 290}, &[3]float64{1.32, 3.96, 0.044}},
-	"hy4-preview":                {30, 120, &Profile{830, 71500, 295}, nil},
-	"hy3":                        {60, 240, &Profile{830, 71500, 295}, nil},
-	"grok-4.7":                   {15, 60, &Profile{390, 32500, 120}, nil},
-	"gpt-6-luna":                 {15, 60, &Profile{1000, 50000, 220}, nil},
-	"gpt-5.6-luna":               {15, 60, &Profile{1000, 50000, 220}, nil},
-	"claude-haiku-5-5":           {15, 60, &Profile{1100, 55000, 240}, nil},
-	"gemini-4-argon":             {30, 120, nil, nil},
+	"glm-5.3-flash":              {60, 180, &Profile{1000, 55000, 200}, nil, false},
+	"glm-5.3":                    {15, 120, &Profile{700, 52000, 150}, nil, false},
+	"glm-5.2":                    {60, 180, &Profile{700, 52000, 150}, nil, false},
+	"kimi-k3.1-pro":              {15, 60, &Profile{1050, 76500, 300}, nil, false},
+	"kimi-k3":                    {15, 60, &Profile{1050, 76500, 300}, nil, false},
+	"kimi-k2.7-code":             {60, 180, &Profile{870, 55000, 200}, nil, false},
+	"longcat-2.0":                {60, 240, &Profile{920, 88900, 200}, nil, false},
+	"step-5-preview":             {15, 60, &Profile{1000, 55000, 200}, nil, false},
+	"beam-free":                  {0, 0, nil, nil, false},
+	"iceman-contributor-free":    {0, 0, nil, nil, true},
+	"mimo-v2.6-flash":            {60, 120, &Profile{830, 71500, 295}, nil, false},
+	"mimo-v2.6-pro":              {15, 60, &Profile{790, 86000, 305}, nil, false},
+	"mimo-v2.5":                  {60, 120, &Profile{830, 71500, 295}, nil, false},
+	"mimo-v2.5-pro":              {15, 60, &Profile{790, 86000, 305}, nil, false},
+	"minimax-m3.1-flash":         {20, 80, &Profile{500, 49400, 360}, nil, false},
+	"minimax-m3":                 {60, 180, &Profile{510, 56000, 190}, nil, false},
+	"muse-spark-1.3-contributor": {60, 120, &Profile{620, 71400, 300}, nil, true},
+	"muse-spark-1.2-contributor": {60, 120, &Profile{620, 71400, 300}, nil, true},
+	"qwen3.8-max":                {15, 60, &Profile{420, 66000, 200}, nil, false},
+	"qwen3.8-flash":              {30, 90, &Profile{600, 58000, 200}, nil, false},
+	"qwen3.7-plus":               {60, 180, &Profile{500, 57000, 190}, nil, false},
+	"deepseek-v4.1-flash":        {80, 160, &Profile{410, 71300, 310}, &[3]float64{0.30, 1.20, 0.006}, false},
+	"deepseek-v4-pro":            {15, 60, &Profile{750, 82000, 290}, &[3]float64{1.32, 3.96, 0.044}, false},
+	"hy4-preview":                {30, 120, &Profile{830, 71500, 295}, nil, false},
+	"hy3":                        {60, 240, &Profile{830, 71500, 295}, nil, false},
+	"grok-4.7":                   {15, 60, &Profile{390, 32500, 120}, nil, false},
+	"gpt-6-luna":                 {15, 60, &Profile{1000, 50000, 220}, nil, false},
+	"gpt-5.6-luna":               {15, 60, &Profile{1000, 50000, 220}, nil, false},
+	"claude-haiku-5-5":           {15, 60, &Profile{1100, 55000, 240}, nil, false},
+	"gemini-4-argon":             {30, 120, nil, nil, false},
 }
 
 // GenericProfile is used when a model has no official estimate.
@@ -92,4 +96,14 @@ func PeakPrice(id string) ([3]float64, bool) {
 		return *e.Peak, true
 	}
 	return [3]float64{}, false
+}
+
+// TrainsOnData reports whether the model trains on request data
+// (OpenCode privacy table); unknown "contributor" models count as yes
+// by convention.
+func TrainsOnData(id string) bool {
+	if e, ok := table[id]; ok {
+		return e.TrainsOnData
+	}
+	return strings.Contains(id, "contributor")
 }

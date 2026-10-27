@@ -30,6 +30,8 @@ type Model struct {
 		LiveCode *float64 `json:"livecodebench"`
 		Terminal *float64 `json:"terminalbench_v4_0"`
 		Term2    *float64 `json:"terminalbench_v2_1"`
+		IFBench  *float64 `json:"ifbench"`
+		LCR      *float64 `json:"lcr"`
 	} `json:"evaluations"`
 	PriceOut    float64 `json:"price_1m_output_tokens"`
 	TokPerSec   float64 `json:"median_output_tokens_per_second"`
