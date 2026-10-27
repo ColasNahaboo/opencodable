@@ -58,6 +58,9 @@ One command joins everything into a decision table:
 4. **Measured speed (opt-in)** — a live probe streams a fixed prompt through
    your actual subscription endpoint and measures tok/s, TTFT and allowance
    burn per model. Measured values take precedence over reported ones.
+5. **Live allowance state** — the Go usage endpoint (5h/week/month windows)
+   and the console usage API (per-model period spend, same key) make `-usage`
+   and `-now` answer "what can I use right now and how much of it".
 
 The join handles name mismatches between sources (alias table: `mimo-v2.5` →
 `mimo-v2-5-0424`, etc.) and marks every row with a **Pareto flag**: `yes` when
@@ -99,9 +102,10 @@ opencodable -peak                    # DeepSeek peak-hours pricing
 opencodable -probe                   # measure live speed of every model (paid, cached 24h)
 opencodable -probe-model kimi-k3     # measure one model, full JSON details
 opencodable -usage                   # remaining Go allowance: 5h / weekly / monthly windows
-opencodable -now                     # requests still affordable per model in each window
-opencodable -now -spent pasted.tsv   # same, minus your real per-model spend (console paste)
-opencodable -json                    # machine-readable rows, no legend
+opencodable -now                     # requests still affordable per model, per window (spend auto-fetched)
+opencodable -spent pasted.tsv -now   # offline fallback: subtract spend from a pasted console table
+opencodable -vertical                # one model per 'field: value' block (screen readers)
+opencodable -json                    # machine-readable output for every view
 opencodable -refresh                 # refetch everything, ignore the 24h cache
 opencodable -offline                 # cache only, no network
 ```
@@ -275,9 +279,10 @@ expect the specific numbers to drift; the patterns below are stable):
 
 ## Contributing
 
-The interesting places to contribute: `internal/normalize/aliases.go` (name
-matching), `internal/goplan/goplan.go` (subscription snapshot — update when
-OpenCode changes plans), `internal/bench/` (new benchmark feeds).
+The interesting places to contribute: `internal/normalize/normalize.go` (name
+matching and the alias table), `internal/goplan/goplan.go` (subscription
+snapshot — update when OpenCode changes plans), `internal/bench/` (new
+benchmark feeds). Any output change must respect [TITLES.md](TITLES.md).
 
 ## License
 
