@@ -10,6 +10,8 @@ import (
 	"fmt"
 	"os"
 	"slices"
+	"strconv"
+	"strings"
 	"time"
 
 	"opencodable/internal/aa"
@@ -19,6 +21,7 @@ import (
 	"opencodable/internal/modelsdev"
 	"opencodable/internal/probe"
 	"opencodable/internal/table"
+	"opencodable/internal/usage"
 )
 
 func main() {
@@ -34,12 +37,21 @@ func main() {
 		offline  = flag.Bool("offline", false, "use cache only, no network")
 		probeAll = flag.Bool("probe", false, "measure live speed of every model (paid requests, ~1-2 min each, cached 24h)")
 		probeOne = flag.String("probe-model", "", "measure live speed of one model ID and print the result")
+		showUse  = flag.Bool("usage", false, "show remaining Go allowance for the 5h/week/month windows")
 		jsonOut  = flag.Bool("json", false, "JSON output instead of TSV")
 	)
 	flag.Parse()
 
 	if *probeOne != "" {
 		if err := runOneProbe(*probeOne, *refresh); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
+
+	if *showUse {
+		if err := runUsage(isTTY(os.Stdout)); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
@@ -188,6 +200,51 @@ func loadOrProbe(modelID, key string, refresh bool) probe.Result {
 func mustJSON(v any) []byte {
 	b, _ := json.Marshal(v)
 	return b
+}
+
+// runUsage prints the remaining Go allowance windows, tty-padded or piped as
+// strict TABs, in the same style as the model table.
+func runUsage(tty bool) error {
+	key, err := probe.Key()
+	if err != nil {
+		return err
+	}
+	ws, err := usage.Fetch(key)
+	if err != nil {
+		return err
+	}
+	now := time.Now()
+	if !tty {
+		fmt.Fprintln(os.Stdout, strings.Join(
+			[]string{"#window", "status", "used_pct", "remaining_pct", "resets_at", "resets_in"}, "\t"))
+		for _, w := range ws {
+			fmt.Fprintln(os.Stdout, strings.Join([]string{
+				w.Name, w.Status,
+				strconv.FormatFloat(w.Percent, 'f', 0, 64),
+				strconv.FormatFloat(w.Remaining(), 'f', 0, 64),
+				w.ResetsAt.Local().Format(time.RFC3339),
+				resetIn(now, w.ResetsAt),
+			}, "\t"))
+		}
+		return nil
+	}
+	fmt.Fprintln(os.Stdout, "# Go subscription allowance (percent of plan limit)")
+	fmt.Fprintf(os.Stdout, "%-8s  %-8s  %5s  %5s  %-25s  %s\n", "window", "status", "used", "left", "resets at", "resets in")
+	for _, w := range ws {
+		fmt.Fprintf(os.Stdout, "%-8s  %-8s  %4.0f%%  %4.0f%%  %-25s  %s\n",
+			w.Name, w.Status, w.Percent, w.Remaining(),
+			w.ResetsAt.Local().Format("2006-01-02 15:04"), resetIn(now, w.ResetsAt))
+	}
+	return nil
+}
+
+// resetIn humanizes the duration until a window resets.
+func resetIn(from, at time.Time) string {
+	d := at.Sub(from)
+	if d <= 0 {
+		return "now"
+	}
+	return d.Round(time.Minute).String()
 }
 
 func runOneProbe(modelID string, refresh bool) error {

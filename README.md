@@ -98,6 +98,7 @@ opencodable -plan go-plus            # allowances for the Go Plus plan (default:
 opencodable -peak                    # DeepSeek peak-hours pricing
 opencodable -probe                   # measure live speed of every model (paid, cached 24h)
 opencodable -probe-model kimi-k3     # measure one model, full JSON details
+opencodable -usage                   # remaining Go allowance: 5h / weekly / monthly windows
 opencodable -json                    # machine-readable rows, no legend
 opencodable -refresh                 # refetch everything, ignore the 24h cache
 opencodable -offline                 # cache only, no network
@@ -105,7 +106,12 @@ opencodable -offline                 # cache only, no network
 
 All flags: `-provider` (models.dev provider, default `opencode-go`), `-plan`,
 `-sort` (`name|price|speed|quality|reqs`), `-pareto`, `-paid`, `-privacy`,
-`-peak`, `-probe`, `-probe-model`, `-json`, `-refresh`, `-offline`.
+`-peak`, `-probe`, `-probe-model`, `-usage`, `-json`, `-refresh`, `-offline`.
+
+`-usage` reads the live allowance endpoint and prints, per window (5h rolling
+= 20% of the plan's monthly limit, weekly = 50%, monthly = 100%), the percent
+used, the percent remaining, and when the window resets — in the same
+tty-padded / piped-TABs style as the model table.
 
 ### Output adapts to stdout
 
