@@ -28,7 +28,7 @@ import (
 )
 
 // version is displayed at the bottom of the -h help text.
-var version = "v0.1.2"
+var version = "v0.1.3"
 
 func main() {
 	// The probe uses its own longer client; all catalog/benchmark/usage

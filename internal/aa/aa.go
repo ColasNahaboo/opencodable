@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/ColasNahaboo/opencodable/internal/cache"
+	"github.com/ColasNahaboo/opencodable/internal/config"
 )
 
 const modelsURL = "https://artificialanalysis.ai/api/v2/data/llms/models"
@@ -39,11 +40,11 @@ type Model struct {
 }
 
 // Fetch loads all AA LLM rows, using a 24h disk cache. The key comes from
-// AA_API_KEY or .artificialanalysis.key in the working directory. The key is
-// only needed for a network fetch: -offline can use an existing cache without
-// one.
+// AA_API_KEY (environment or opencodable.conf) or the legacy
+// .artificialanalysis.key dot-file. The key is only needed for a network
+// fetch: -offline can use an existing cache without one.
 func Fetch(refresh, offline bool) ([]Model, error) {
-	key := os.Getenv("AA_API_KEY")
+	key, _ := config.Value("AA_API_KEY")
 	if key == "" {
 		if b, err := os.ReadFile(".artificialanalysis.key"); err == nil {
 			key = strings.TrimSpace(string(b))
@@ -51,7 +52,7 @@ func Fetch(refresh, offline bool) ([]Model, error) {
 	}
 	b, err := cache.Load("aa-models.json", 24*time.Hour, refresh, offline, func() ([]byte, error) {
 		if key == "" {
-			return nil, fmt.Errorf("no Artificial Analysis key: set AA_API_KEY or create .artificialanalysis.key")
+			return nil, fmt.Errorf("no Artificial Analysis key: set AA_API_KEY (env or opencodable.conf) or create .artificialanalysis.key")
 		}
 		req, err := http.NewRequest(http.MethodGet, modelsURL, nil)
 		if err != nil {

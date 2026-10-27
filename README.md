@@ -82,16 +82,34 @@ and writes checksums.
 
 ## Configuration
 
-No config file. Two optional keys, read from the environment or from
-git-ignored dot-files in the working directory:
+Two optional keys, each resolved in order: **environment variable →
+`opencodable.conf` → git-ignored dot-file in the working directory**:
 
 | Key | Purpose | Required? |
 |---|---|---|
 | `AA_API_KEY` or `.artificialanalysis.key` | benchmark quality/speed columns | recommended (free at artificialanalysis.ai) |
 | `OPENCODE_API_KEY` or `.opencode-go.key` | live speed probe (`-probe`) | only for probing |
 
-Without any key you still get prices, allowances and per-request costs; quality
-and speed columns print as `-`.
+`opencodable.conf` is a simple `key=value` file (one setting per line, `#`
+comments; keys mirror the environment variables) in the per-user config
+directory:
+
+| OS | Path |
+|---|---|
+| Linux | `$XDG_CONFIG_HOME/opencodable/opencodable.conf` (default `~/.config/...`) |
+| macOS | `~/Library/Application Support/opencodable/opencodable.conf` |
+| Windows | `%AppData%\opencodable\opencodable.conf` |
+
+```ini
+# ~/.config/opencodable/opencodable.conf
+OPENCODE_API_KEY=your-key
+AA_API_KEY=your-key
+```
+
+`-doctor` prints where each key was found (`env`, `config`, `dotfile`,
+`none`) and warns about unknown keys in the file (typos). Without any key you
+still get prices, allowances and per-request costs; quality and speed columns
+print as `-`.
 
 ## Usage
 
@@ -370,6 +388,9 @@ This repository is developed by me, a human hobbyist in my personal time in clos
 
 ## History
 
+- v0.1.3 2026-10-27 API keys also read from `opencodable.conf`
+  (`key=value`) in the per-user config directory; `-doctor` shows each key's
+  source and warns on unknown config keys.
 - v0.1.2 2026-10-27 `-doctor` follows the output conventions (`# ` legend,
   `#id…` header, strict TABs when piped; still experimental, not in
   TITLES.md), tag-triggered GitHub releases, single-source probe trust

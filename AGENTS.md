@@ -34,6 +34,7 @@ internal/normalize/    name matching + alias table (models.dev ↔ AA slugs)
 internal/cost/         per-request cost model
 internal/table/        join, Pareto, TSV/vertical/JSON rendering
 internal/cache/        24h disk cache (~/.cache/opencodable/)
+internal/config/       opencodable.conf (key=value API keys) in UserConfigDir
 ```
 
 ## Hard rules
@@ -98,6 +99,10 @@ internal/cache/        24h disk cache (~/.cache/opencodable/)
   from zero prices (`modelsdev.Model.Free`).
 - **Cache hardening**: keys are sanitized (no traversal), writes are
   temp-file + rename, permissions are 0700/0600. `cache.Age` feeds `-doctor`.
+- **Key resolution order** (both APIs): environment variable →
+  `opencodable.conf` (`key=value`, in `os.UserConfigDir()/opencodable/`) →
+  legacy cwd dot-file. `internal/config` owns the file; never print values,
+  and `-doctor` reports only the source and unknown key names.
 - **Doctor**: `-doctor` audits plan/AA/SWE/probe coverage without running a
   probe; keep `buildDoctorRows` pure and tested.
 

@@ -14,6 +14,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"github.com/ColasNahaboo/opencodable/internal/config"
 )
 
 // endpoint is a var so tests can point it at a fake server.
@@ -88,15 +90,16 @@ type Result struct {
 	Error         string  `json:"error,omitempty"`
 }
 
-// Key returns the subscription key from OPENCODE_API_KEY or .opencode-go.key.
+// Key returns the subscription key from OPENCODE_API_KEY (environment or
+// opencodable.conf) or the legacy .opencode-go.key dot-file.
 func Key() (string, error) {
-	if k := os.Getenv("OPENCODE_API_KEY"); k != "" {
+	if k, ok := config.Value("OPENCODE_API_KEY"); ok && k != "" {
 		return k, nil
 	}
 	if b, err := os.ReadFile(".opencode-go.key"); err == nil {
 		return strings.TrimSpace(string(b)), nil
 	}
-	return "", fmt.Errorf("no OpenCode Go key: set OPENCODE_API_KEY or create .opencode-go.key")
+	return "", fmt.Errorf("no OpenCode Go key: set OPENCODE_API_KEY (env or opencodable.conf) or create .opencode-go.key")
 }
 
 type sseChunk struct {

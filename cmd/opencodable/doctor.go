@@ -12,6 +12,7 @@ import (
 	"github.com/ColasNahaboo/opencodable/internal/aa"
 	"github.com/ColasNahaboo/opencodable/internal/bench"
 	"github.com/ColasNahaboo/opencodable/internal/cache"
+	"github.com/ColasNahaboo/opencodable/internal/config"
 	"github.com/ColasNahaboo/opencodable/internal/goplan"
 	"github.com/ColasNahaboo/opencodable/internal/modelsdev"
 	"github.com/ColasNahaboo/opencodable/internal/normalize"
@@ -45,7 +46,8 @@ type doctorReport struct {
 	MissingSWE    int               `json:"missing_swe"`
 	TrustedProbes int               `json:"trusted_probes"`
 	Caches        map[string]string `json:"caches"`
-	Keys          map[string]bool   `json:"keys"`
+	Keys          map[string]string `json:"keys"` // env | config | dotfile | none
+	ConfigUnknown []string          `json:"config_unknown,omitempty"`
 	AAError       string            `json:"aa_error,omitempty"`
 	SWEError      string            `json:"swe_error,omitempty"`
 	Rows          []doctorRow       `json:"rows"`
@@ -131,13 +133,15 @@ func hasFile(path string) bool {
 	return err == nil
 }
 
-func aaKeyPresent() bool {
-	return os.Getenv("AA_API_KEY") != "" || hasFile(".artificialanalysis.key")
-}
-
-func goKeyPresent() bool {
-	_, err := probe.Key()
-	return err == nil
+// keySource reports where a key resolves from: env | config | dotfile | none.
+func keySource(envName, dotfile string) string {
+	if s := config.Source(envName); s != "" {
+		return s
+	}
+	if hasFile(dotfile) {
+		return "dotfile"
+	}
+	return "none"
 }
 
 // runDoctor audits plan/AA/SWE/probe coverage and prints where the joins are
@@ -178,11 +182,12 @@ func runDoctor(refresh, offline, jsonOut bool) error {
 			"aa":         cacheAgeLabel("aa-models.json"),
 			"swe-bench":  cacheAgeLabel("swebench.json"),
 		},
-		Keys: map[string]bool{
-			"artificial_analysis": aaKeyPresent(),
-			"opencode_go":         goKeyPresent(),
+		Keys: map[string]string{
+			"artificial_analysis": keySource("AA_API_KEY", ".artificialanalysis.key"),
+			"opencode_go":         keySource("OPENCODE_API_KEY", ".opencode-go.key"),
 		},
-		Rows: rows,
+		ConfigUnknown: config.Unknown(),
+		Rows:          rows,
 	}
 	for _, r := range rows {
 		switch r.Plan {
@@ -219,7 +224,10 @@ func runDoctor(refresh, offline, jsonOut bool) error {
 	fmt.Fprintf(os.Stderr, "caches: models.dev %s | AA %s | SWE-bench %s | trusted probes %d\n",
 		report.Caches["models.dev"], report.Caches["aa"], report.Caches["swe-bench"], report.TrustedProbes)
 	fmt.Fprintf(os.Stderr, "keys: AA %s | OpenCode Go %s\n",
-		yesNo(report.Keys["artificial_analysis"]), yesNo(report.Keys["opencode_go"]))
+		report.Keys["artificial_analysis"], report.Keys["opencode_go"])
+	for _, k := range report.ConfigUnknown {
+		fmt.Fprintf(os.Stderr, "warning: opencodable.conf has unknown key %q (typo?)\n", k)
+	}
 	fmt.Fprintf(os.Stderr, "coverage: %d models | plan missing %d | free not in plan %d | AA missing %d | SWE missing %d\n",
 		report.Models, report.MissingPlan, report.FreeNotInPlan, report.MissingAA, report.MissingSWE)
 	if report.AAError != "" {
@@ -294,11 +302,4 @@ func orMissing(v, missing string) string {
 		return missing
 	}
 	return v
-}
-
-func yesNo(v bool) string {
-	if v {
-		return "yes"
-	}
-	return "no"
 }
