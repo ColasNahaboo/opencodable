@@ -90,6 +90,16 @@ func TestRunRejectsNoContent(t *testing.T) {
 	}
 }
 
+func TestNewSessionID(t *testing.T) {
+	a, b := newSessionID(), newSessionID()
+	if a == b {
+		t.Fatalf("session IDs collided: %q", a)
+	}
+	if !strings.HasPrefix(a, "opencodable-") {
+		t.Errorf("session ID %q lacks prefix", a)
+	}
+}
+
 func TestRunFlagsImplausibleBurst(t *testing.T) {
 	srv := sseServer(t, []string{
 		"W10", chunk("Hello"), "W10", chunk(" world"), usageChunk(600, 0),

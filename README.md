@@ -65,10 +65,20 @@ better-or-equal. That shortlist is the answer to "what is the best compromise?".
 Requires Go 1.26+.
 
 ```sh
+go install github.com/ColasNahaboo/opencodable/cmd/opencodable@latest
+```
+
+Or build from a clone:
+
+```sh
 git clone https://github.com/ColasNahaboo/opencodable
 cd opencodable
 go build -o ~/.local/bin/opencodable ./cmd/opencodable
 ```
+
+Prebuilt archives for linux/darwin/windows on amd64/arm64 are attached to
+GitHub releases; `scripts/build-release.sh [version]` rebuilds them locally
+and writes checksums.
 
 ## Configuration
 
@@ -89,24 +99,28 @@ and speed columns print as `-`.
 opencodable                          # all subscription models, ranked by quality
 opencodable -pareto -paid            # the non-dominated paid models only
 opencodable -sort reqs               # most requests per month first
-opencodable -privacy                 # exclude models that train on your prompts
+opencodable -privacy                 # exclude models that train on your prompts, or whose status is unknown
 opencodable -plan go-plus            # allowances for the Go Plus plan (default: go)
 opencodable -peak                    # DeepSeek peak-hours pricing
 opencodable -probe                   # measure live speed of every model (paid, cached 24h)
+opencodable -probe -probe-max-allowance 1  # stop after $1 of allowance burn
 opencodable -probe-model kimi-k3     # measure one model, full JSON details
 opencodable -usage                   # remaining Go allowance: 5h / weekly / monthly windows
 opencodable -now                     # requests still affordable per model, per window (spend auto-fetched)
+opencodable -now -window-estimate    # also scale 5h/week caps by account-wide usage
 opencodable -spent pasted.tsv -now   # offline fallback: subtract spend from a pasted console table
 opencodable -vertical                # one model per 'field: value' block (screen readers)
 opencodable -json                    # machine-readable output for every view
+opencodable -doctor                  # audit plan/AA/SWE/probe coverage
 opencodable -refresh                 # refetch everything, ignore the 24h cache
 opencodable -offline                 # cache only for catalog/benchmarks/probes
 ```
 
 All flags: `-provider` (models.dev provider, default `opencode-go`), `-plan`,
 `-sort` (`name|price|speed|quality|reqs`), `-pareto`, `-paid`, `-privacy`,
-`-peak`, `-probe`, `-probe-model`, `-usage`, `-now`, `-spent`,
-`-vertical`, `-json`, `-refresh`, `-offline`.
+`-peak`, `-probe`, `-probe-model`, `-probe-max-allowance`, `-usage`, `-now`,
+`-window-estimate`, `-spent`, `-vertical`, `-json`, `-refresh`, `-offline`,
+`-doctor`.
 
 `-usage` reads the live allowance endpoint and prints, per window (5h = 20%,
 weekly = 50%, monthly = 100% of each model's monthly limit), the percent used,
@@ -131,6 +145,8 @@ shared pot and no `-pot` flag. `-now` turns those caps into requests:
   Subtracted from the model's monthly limit.
 - `reqs_5h` / `reqs_wk` — requests in the model's 5h / weekly cap. These are
   fresh-window upper bounds: the API does not expose per-model window spend.
+  With `-window-estimate`, they are scaled by the account-wide remaining
+  percentages from the usage endpoint (an explicit estimate, not per-model).
 - `reqs_mo` — requests left in the monthly limit after `spent_mo`.
 - `usable` / `limit` — the minimum and which constraint binds: `5h`, `week`,
   `month`, `unlimited`, or `unknown`.
@@ -141,6 +157,14 @@ spend is fetched automatically. A pasted console table via `-spent file.tsv`
 is the offline fallback. Free models (zero prices) show `limit=unlimited` with
 empty counts, even when the snapshot lacks their entry; paid models missing
 from the plan snapshot show `limit=unknown` rather than a fake zero.
+
+### Coverage audit: `-doctor`
+
+`-doctor` joins the same sources and prints one row per model: plan status
+(`yes` / `free` / `missing`), AA slug, SWE-bench score, privacy verdict,
+cached probe status, and warnings. It also prints the plan snapshot date,
+cache ages, key presence, and coverage counts. It never runs a probe; `-json`
+returns the same report as an object.
 
 ### Output adapts to stdout
 
@@ -225,8 +249,9 @@ $ opencodable -probe-model kimi-k3.1-pro
 
 `-json` keys are exactly the column titles below (minus the `#` on `name`),
 plus JSON-only extras: `id` (models.dev model ID) and `unlimited` (boolean,
-free models). `-now` also carries `known` and `spent_known` so its zero counts
-can be interpreted. See [TITLES.md](TITLES.md) for the full contract.
+free models). `-now` also carries `known`, `spent_known` and
+`window_estimate` so its zero/scaled counts can be interpreted. See
+[TITLES.md](TITLES.md) for the full contract.
 
 | Column | Meaning |
 |---|---|
@@ -242,6 +267,8 @@ can be interpreted. See [TITLES.md](TITLES.md) for the full contract.
 | `swe_b` | SWE-bench Verified % resolved, best recorded agent run |
 | `pareto` | `yes` = not dominated on (cost, speed, quality) after `-paid`/`-privacy` filtering |
 | `src` | `aa:<effort>` when speed came from that AA reasoning-effort variant |
+| `privacy` | `safe`, `trains`, or `unknown` (no plan-snapshot verdict) |
+| `ctx_k`, `out_k` | context window / maximum output in thousands of tokens (models.dev) |
 
 Missing data prints as `-` (terminal) or empty (piped) — never a wrong score.
 
@@ -276,7 +303,7 @@ expect the specific numbers to drift; the patterns below are stable):
   Judge responsiveness by `p_ttft_s`, throughput by `p_tok_s`.
 - **Privacy has a price.** Contributor models are an order of magnitude
   cheaper per request in exchange for training on your prompts; `-privacy`
-  filters them out when that matters.
+  hides both training models and models whose privacy status is unknown.
 - **Free models are real quality.** Time-limited free tiers on the plan
   sometimes benchmark in the same range as paid mid-tier models — worth
   probing before paying attention to price at all.
@@ -296,12 +323,14 @@ expect the specific numbers to drift; the patterns below are stable):
   divide by, so the probe retries with a long-output prompt and only trusts
   tok/s from windows ≥ 1 s. A short window (< 2 s) above 500 tok/s, or any rate
   above 1000 tok/s, is flagged suspect and kept out of ranking/`-now`; the raw
-  probe JSON still shows it for inspection.
+  probe JSON still shows it for inspection. Probes send a unique
+  `x-opencode-session` per run and an `opencodable/<version>` user agent;
+  `-probe-max-allowance` caps the total allowance a run may burn.
 - **Allowance math.** Limits are per model: 5h = 20%, week = 50%, month = 100%
   of that model's monthly dollar limit. `-now` uses actual console token counts
   at Go prices when a model has enough traffic, otherwise the official profile.
-  The usage endpoint's percentages are aggregate and are not used to derive
-  per-model counts.
+  The usage endpoint's percentages are aggregate; `-window-estimate` optionally
+  applies them as a uniform scaling factor to every model's 5h/weekly caps.
 - **Known artifact.** AA's `ttft_s` for reasoning models includes thinking time
   (e.g. Claude Haiku 5.5 ~247 s median) — treat it as time to first *answer* token.
 - **Allowances are the comparison basis.** Your subscription bills per-model
@@ -311,7 +340,8 @@ expect the specific numbers to drift; the patterns below are stable):
 
 ## Roadmap
 
-- Per-model 5h/weekly spend (the API exposes only aggregate window percentages)
+- True per-model 5h/weekly spend (the API exposes only aggregate percentages;
+  `-window-estimate` is a uniform approximation)
 - Peak/off-peak *scheduling advice* (when DeepSeek is cheapest)
 - Optional LMArena Elo column
 - Multi-provider comparison (`-provider any`)
@@ -336,6 +366,10 @@ This repository is developed by me, a human hobbyist in my personal time in clos
 
 ## History
 
+- v0.1.0 2026-10-27 Canonical module path, privacy tri-state with fail-closed
+  `-privacy`, context/output columns, `-doctor`, `-window-estimate`,
+  cache/parser hardening, CI, cross-platform release builds. TITLES.md still
+  changes until v1.0.0.
 - v0.0.2 2026-10-27 Per-model `-now` limits (no shared pot), allowance spend
   from console token counts, Pareto after filters, deterministic ordering,
   probe sanity checks. TITLES.md still changes until v1.0.0.

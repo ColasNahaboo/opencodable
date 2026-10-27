@@ -4,7 +4,7 @@ import (
 	"math"
 	"testing"
 
-	"opencodable/internal/modelsdev"
+	"github.com/ColasNahaboo/opencodable/internal/modelsdev"
 )
 
 func TestFromTokens(t *testing.T) {

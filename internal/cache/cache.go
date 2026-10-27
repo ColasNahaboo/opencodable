@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -20,7 +21,64 @@ func dir() (string, error) {
 		return "", err
 	}
 	d := filepath.Join(base, "opencodable")
-	return d, os.MkdirAll(d, 0o755)
+	if err := os.MkdirAll(d, 0o700); err != nil {
+		return "", err
+	}
+	_ = os.Chmod(d, 0o700)
+	return d, nil
+}
+
+// safeKey keeps an untrusted key (provider names, model IDs) inside the cache
+// directory. It is not a cryptographic mapping; it just prevents traversal.
+func safeKey(key string) string {
+	key = strings.NewReplacer("/", "_", "\\", "_", ":", "_").Replace(key)
+	key = filepath.Base(key)
+	switch key {
+	case "", ".", "..":
+		return "invalid-key.json"
+	}
+	return key
+}
+
+func readEntry(path string) (entry, bool) {
+	var ent entry
+	b, err := os.ReadFile(path)
+	if err != nil || json.Unmarshal(b, &ent) != nil {
+		return entry{}, false
+	}
+	return ent, true
+}
+
+// writeEntry writes atomically: a crash or concurrent run must not leave a
+// truncated JSON envelope in the cache.
+func writeEntry(path string, ent entry) error {
+	b, err := json.Marshal(ent)
+	if err != nil {
+		return err
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".tmp-*")
+	if err != nil {
+		return err
+	}
+	name := tmp.Name()
+	if _, err := tmp.Write(b); err != nil {
+		tmp.Close()
+		os.Remove(name)
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		os.Remove(name)
+		return err
+	}
+	if err := os.Chmod(name, 0o600); err != nil {
+		os.Remove(name)
+		return err
+	}
+	if err := os.Rename(name, path); err != nil {
+		os.Remove(name)
+		return err
+	}
+	return nil
 }
 
 // Load returns the cached payload for key if fresh enough, otherwise calls
@@ -31,9 +89,10 @@ func Load(key string, ttl time.Duration, refresh, offline bool, fetch func() ([]
 	if err != nil {
 		return nil, err
 	}
+	key = safeKey(key)
 	path := filepath.Join(d, key)
-	var ent entry
-	if b, err := os.ReadFile(path); err == nil && json.Unmarshal(b, &ent) == nil {
+	ent, ok := readEntry(path)
+	if ok {
 		if !refresh && time.Since(ent.FetchedAt) < ttl {
 			return ent.Payload, nil
 		}
@@ -52,9 +111,9 @@ func Load(key string, ttl time.Duration, refresh, offline bool, fetch func() ([]
 		}
 		return nil, err
 	}
-	ent = entry{FetchedAt: time.Now(), Payload: json.RawMessage(b)}
-	if out, err := json.Marshal(ent); err == nil {
-		_ = os.WriteFile(path, out, 0o644)
+	if err := writeEntry(path, entry{FetchedAt: time.Now(), Payload: json.RawMessage(b)}); err != nil {
+		// A cache write failure should not discard a good network result.
+		return b, nil
 	}
 	return b, nil
 }
@@ -65,10 +124,18 @@ func Store(key string, payload []byte) error {
 	if err != nil {
 		return err
 	}
-	ent := entry{FetchedAt: time.Now(), Payload: json.RawMessage(payload)}
-	out, err := json.Marshal(ent)
+	return writeEntry(filepath.Join(d, safeKey(key)), entry{FetchedAt: time.Now(), Payload: json.RawMessage(payload)})
+}
+
+// Age reports how long ago the cached entry was fetched.
+func Age(key string) (time.Duration, bool) {
+	d, err := dir()
 	if err != nil {
-		return err
+		return 0, false
 	}
-	return os.WriteFile(filepath.Join(d, key), out, 0o644)
+	ent, ok := readEntry(filepath.Join(d, safeKey(key)))
+	if !ok || ent.FetchedAt.IsZero() {
+		return 0, false
+	}
+	return time.Since(ent.FetchedAt), true
 }

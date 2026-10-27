@@ -1,5 +1,9 @@
 # opencodable — plan
 
+> Historical design notes (2026-10-27). For current behavior, flags and
+> columns see [README.md](README.md), [TITLES.md](TITLES.md) and
+> [AGENTS.md](AGENTS.md); several details below have changed since.
+
 A Go CLI that answers one question: **given the models available in my OpenCode Go
 subscription, what is the best compromise of price, speed and quality, right now?**
 

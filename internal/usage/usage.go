@@ -81,6 +81,40 @@ func parse(r io.Reader) ([]Window, error) {
 	}, nil
 }
 
+// WindowFactors are the remaining fractions of the aggregate 5h and weekly
+// windows. They let -now scale each model's caps by the account-wide usage
+// reported by the endpoint; this is an estimate, because the endpoint does
+// not expose per-model window spend.
+type WindowFactors struct {
+	Five float64
+	Week float64
+}
+
+// RemainingFactors converts the endpoint percentages into remaining
+// fractions, defaulting to 1 (full window) when a window is absent.
+func RemainingFactors(ws []Window) WindowFactors {
+	f := WindowFactors{Five: 1, Week: 1}
+	clamp := func(v float64) float64 {
+		if v < 0 {
+			return 0
+		}
+		if v > 1 {
+			return 1
+		}
+		return v
+	}
+	for _, w := range ws {
+		rem := clamp(1 - w.Percent/100)
+		switch w.Name {
+		case "5h":
+			f.Five = rem
+		case "week":
+			f.Week = rem
+		}
+	}
+	return f
+}
+
 // Budgets is the remaining allowance dollars per window. Go limits are
 // per model: a model's 5h and weekly caps are 20% and 50% of its own
 // monthly limit, and Month is what remains of that monthly limit.
@@ -151,7 +185,8 @@ func ParseSpentFile(path string) (map[string]float64, error) {
 			continue
 		}
 		cost := strings.TrimPrefix(strings.TrimPrefix(fields[len(fields)-1], "<"), "$")
-		v, err := strconv.ParseFloat(cost, 64)
+		cost = strings.ReplaceAll(cost, ",", "")
+		v, err := strconv.ParseFloat(strings.TrimSpace(cost), 64)
 		if err != nil || v < 0 {
 			continue
 		}
@@ -160,9 +195,37 @@ func ParseSpentFile(path string) (map[string]float64, error) {
 	return out, nil
 }
 
-// splitFields splits on tabs or runs of two or more spaces.
+// splitFields splits on tabs or runs of two or more spaces. A single space
+// stays inside a field, so display names such as "Kimi K3.1 Pro" survive a
+// console paste.
 func splitFields(line string) []string {
-	return strings.FieldsFunc(line, func(r rune) bool {
-		return r == '\t' || r == ' '
-	})
+	var fields []string
+	var b strings.Builder
+	spaces := 0
+	flush := func() {
+		if b.Len() > 0 {
+			fields = append(fields, b.String())
+			b.Reset()
+		}
+	}
+	for _, r := range line {
+		switch {
+		case r == '\t':
+			flush()
+			spaces = 0
+		case r == ' ':
+			spaces++
+			if spaces >= 2 {
+				flush()
+			}
+		default:
+			if spaces == 1 && b.Len() > 0 {
+				b.WriteByte(' ')
+			}
+			spaces = 0
+			b.WriteRune(r)
+		}
+	}
+	flush()
+	return fields
 }

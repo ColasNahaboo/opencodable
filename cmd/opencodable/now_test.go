@@ -4,8 +4,8 @@ import (
 	"math"
 	"testing"
 
-	"opencodable/internal/cost"
-	"opencodable/internal/modelsdev"
+	"github.com/ColasNahaboo/opencodable/internal/cost"
+	"github.com/ColasNahaboo/opencodable/internal/modelsdev"
 )
 
 func testModel(id, name string, in, out, cached float64) modelsdev.Model {
@@ -21,7 +21,7 @@ func TestBuildNowRowsUsesPerModelLimits(t *testing.T) {
 	deepseek := testModel("deepseek-v4.1-flash", "DeepSeek V4.1 Flash", 0.15, 0.60, 0.003)
 	rows := buildNowRows(
 		[]modelsdev.Model{kimi, deepseek},
-		map[string]spendInfo{}, true, "go", false, false, false, nil,
+		map[string]spendInfo{}, true, "go", false, false, false, 0, 0, nil,
 	)
 	if len(rows) != 2 {
 		t.Fatalf("got %d rows, want 2", len(rows))
@@ -48,7 +48,7 @@ func TestBuildNowRowsUsesPerModelLimits(t *testing.T) {
 	}
 
 	// Go Plus doubles the monthly limit: 20% of $60 / $0.0204 = 588.
-	plus := buildNowRows([]modelsdev.Model{kimi}, nil, false, "go-plus", false, false, false, nil)
+	plus := buildNowRows([]modelsdev.Model{kimi}, nil, false, "go-plus", false, false, false, 0, 0, nil)
 	if plus[0].five != 588 {
 		t.Errorf("Go Plus Kimi 5h = %d, want 588", plus[0].five)
 	}
@@ -63,12 +63,24 @@ func TestBuildNowRowsUsesPerModelLimits(t *testing.T) {
 	}
 }
 
+func TestBuildNowRowsWindowEstimate(t *testing.T) {
+	kimi := testModel("kimi-k3.1-pro", "Kimi K3.1 Pro", 2, 10, 0.2)
+	rows := buildNowRows([]modelsdev.Model{kimi}, nil, false, "go", false, false, false, 0.5, 0.5, nil)
+	kt := cost.PerRequest(kimi, false)
+	if got, want := rows[0].five, int(0.2*15*0.5/kt+1e-9); got != want {
+		t.Errorf("scaled 5h = %d, want %d", got, want)
+	}
+	if got, want := rows[0].week, int(0.5*15*0.5/kt+1e-9); got != want {
+		t.Errorf("scaled week = %d, want %d", got, want)
+	}
+}
+
 func TestBuildNowRowsUsesMeasuredBurn(t *testing.T) {
 	deepseek := testModel("deepseek-v4.1-flash", "DeepSeek V4.1 Flash", 0.15, 0.60, 0.003)
 	spend := map[string]spendInfo{
 		"deepseek-v4.1-flash": {usd: 0.50, reqs: 100, known: true},
 	}
-	rows := buildNowRows([]modelsdev.Model{deepseek}, spend, true, "go", false, false, false, nil)
+	rows := buildNowRows([]modelsdev.Model{deepseek}, spend, true, "go", false, false, false, 0, 0, nil)
 	if len(rows) != 1 {
 		t.Fatalf("got %d rows, want 1", len(rows))
 	}
@@ -87,7 +99,7 @@ func TestBuildNowRowsFallsBackToOfficialBurn(t *testing.T) {
 	spend := map[string]spendInfo{
 		"deepseek-v4.1-flash": {usd: 0.50, reqs: 10, known: true}, // too few requests
 	}
-	rows := buildNowRows([]modelsdev.Model{deepseek}, spend, true, "go", false, false, false, nil)
+	rows := buildNowRows([]modelsdev.Model{deepseek}, spend, true, "go", false, false, false, 0, 0, nil)
 	want := cost.PerRequest(deepseek, false)
 	if math.Abs(rows[0].burn-want) > 1e-12 {
 		t.Errorf("burn = %v, want official %v", rows[0].burn, want)
@@ -100,7 +112,7 @@ func TestBuildNowRowsUnknownAndUnlimited(t *testing.T) {
 	freeUnknown := testModel("cat-jam-free", "Cat Jam Free", 0, 0, 0)
 	rows := buildNowRows(
 		[]modelsdev.Model{unknown, free, freeUnknown},
-		map[string]spendInfo{}, false, "go", false, false, false, nil,
+		map[string]spendInfo{}, false, "go", false, false, false, 0, 0, nil,
 	)
 	if len(rows) != 3 {
 		t.Fatalf("got %d rows, want 3", len(rows))
@@ -121,11 +133,12 @@ func TestBuildNowRowsUnknownAndUnlimited(t *testing.T) {
 
 func TestBuildNowRowsFilters(t *testing.T) {
 	muse := testModel("muse-spark-1.3-contributor", "Muse Spark", 0.10, 0.20, 0.002)
+	unknown := testModel("space-bunny", "Space Bunny", 1, 2, 0.1)
 	free := testModel("beam-free", "Beam Free", 0, 0, 0)
-	if rows := buildNowRows([]modelsdev.Model{muse}, nil, false, "go", false, false, true, nil); len(rows) != 0 {
-		t.Errorf("-privacy kept %d contributor rows", len(rows))
+	if rows := buildNowRows([]modelsdev.Model{muse, unknown}, nil, false, "go", false, false, true, 0, 0, nil); len(rows) != 0 {
+		t.Errorf("-privacy kept %d rows with trains/unknown status", len(rows))
 	}
-	if rows := buildNowRows([]modelsdev.Model{free}, nil, false, "go", false, true, false, nil); len(rows) != 0 {
+	if rows := buildNowRows([]modelsdev.Model{free}, nil, false, "go", false, true, false, 0, 0, nil); len(rows) != 0 {
 		t.Errorf("-paid kept %d free rows", len(rows))
 	}
 }

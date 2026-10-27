@@ -1,3 +1,3 @@
-module opencodable
+module github.com/ColasNahaboo/opencodable
 
-go 1.26.8
+go 1.26.0

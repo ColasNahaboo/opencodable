@@ -2,8 +2,8 @@
 package cost
 
 import (
-	"opencodable/internal/goplan"
-	"opencodable/internal/modelsdev"
+	"github.com/ColasNahaboo/opencodable/internal/goplan"
+	"github.com/ColasNahaboo/opencodable/internal/modelsdev"
 )
 
 // PerRequest estimates the USD cost of one coding-agent request for the

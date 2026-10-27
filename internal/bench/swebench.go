@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"time"
 
-	"opencodable/internal/cache"
-	"opencodable/internal/normalize"
+	"github.com/ColasNahaboo/opencodable/internal/cache"
+	"github.com/ColasNahaboo/opencodable/internal/normalize"
 )
 
 const swebenchURL = "https://raw.githubusercontent.com/SWE-bench/swe-bench.github.io/master/data/leaderboards.json"

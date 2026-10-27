@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"opencodable/internal/cache"
+	"github.com/ColasNahaboo/opencodable/internal/cache"
 )
 
 const modelsURL = "https://artificialanalysis.ai/api/v2/data/llms/models"

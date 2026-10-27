@@ -28,6 +28,10 @@ type entry struct {
 	TrainsOnData bool
 }
 
+// SnapshotDate is the date the plan data below was verified against the
+// public docs; -doctor prints it.
+const SnapshotDate = "2026-10-27"
+
 // allowances by models.dev model ID.
 var table = map[string]entry{
 	"glm-5.3-flash":              {60, 180, &Profile{1000, 55000, 200}, nil, false},
@@ -73,6 +77,9 @@ func Known(id string) bool {
 	return ok
 }
 
+// Count returns the number of models in the plan snapshot.
+func Count() int { return len(table) }
+
 // Allowance returns the monthly usage budget for the plan ("go"|"go-plus").
 // unlimited=true when the model has no per-model cap.
 func Allowance(id, plan string) (usd float64, unlimited bool) {
@@ -106,12 +113,42 @@ func PeakPrice(id string) ([3]float64, bool) {
 	return [3]float64{}, false
 }
 
-// TrainsOnData reports whether the model trains on request data
-// (OpenCode privacy table); unknown "contributor" models count as yes
-// by convention.
-func TrainsOnData(id string) bool {
+// Privacy reports whether the model trains on request data and whether the
+// snapshot knows the answer. Unknown "contributor" models count as training
+// by convention; other unknown IDs have no privacy verdict.
+func Privacy(id string) (trains, known bool) {
 	if e, ok := table[id]; ok {
-		return e.TrainsOnData
+		return e.TrainsOnData, true
 	}
-	return strings.Contains(id, "contributor")
+	if strings.Contains(id, "contributor") {
+		return true, true
+	}
+	return false, false
+}
+
+// PrivacyLabel is the human/TSV form of Privacy: safe | trains | unknown.
+func PrivacyLabel(id string) string {
+	trains, known := Privacy(id)
+	switch {
+	case !known:
+		return "unknown"
+	case trains:
+		return "trains"
+	default:
+		return "safe"
+	}
+}
+
+// ExcludedByPrivacy reports whether -privacy should hide the model: it
+// trains on request data, or its privacy status is unknown (fail closed).
+func ExcludedByPrivacy(id string) bool {
+	trains, known := Privacy(id)
+	return trains || !known
+}
+
+// TrainsOnData reports whether the model trains on request data. It is the
+// non-fail-closed predicate; use ExcludedByPrivacy for the -privacy filter.
+func TrainsOnData(id string) bool {
+	trains, _ := Privacy(id)
+	return trains
 }

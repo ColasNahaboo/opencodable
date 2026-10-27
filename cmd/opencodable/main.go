@@ -16,25 +16,26 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"opencodable/internal/aa"
-	"opencodable/internal/bench"
-	"opencodable/internal/cache"
-	"opencodable/internal/consoleapi"
-	"opencodable/internal/cost"
-	"opencodable/internal/goplan"
-	"opencodable/internal/modelsdev"
-	"opencodable/internal/probe"
-	"opencodable/internal/table"
-	"opencodable/internal/usage"
+	"github.com/ColasNahaboo/opencodable/internal/aa"
+	"github.com/ColasNahaboo/opencodable/internal/bench"
+	"github.com/ColasNahaboo/opencodable/internal/cache"
+	"github.com/ColasNahaboo/opencodable/internal/consoleapi"
+	"github.com/ColasNahaboo/opencodable/internal/cost"
+	"github.com/ColasNahaboo/opencodable/internal/goplan"
+	"github.com/ColasNahaboo/opencodable/internal/modelsdev"
+	"github.com/ColasNahaboo/opencodable/internal/probe"
+	"github.com/ColasNahaboo/opencodable/internal/table"
+	"github.com/ColasNahaboo/opencodable/internal/usage"
 )
 
 // version is displayed at the bottom of the -h help text.
-var version = "v0.0.2"
+var version = "v0.1.0"
 
 func main() {
 	// The probe uses its own longer client; all catalog/benchmark/usage
 	// fetches share this timeout.
 	http.DefaultClient.Timeout = 30 * time.Second
+	probe.Version = version
 
 	flag.Usage = func() {
 		out := flag.CommandLine.Output()
@@ -48,14 +49,17 @@ func main() {
 		sortKey  = flag.String("sort", "quality", "sort: name|price|speed|quality|reqs")
 		pareto   = flag.Bool("pareto", false, "only Pareto-optimal rows")
 		paid     = flag.Bool("paid", false, "hide free models (cost_task = 0)")
-		privacy  = flag.Bool("privacy", false, "hide models that train on request data (contributor models)")
+		privacy  = flag.Bool("privacy", false, "hide models that train on request data or have unknown privacy status")
 		peak     = flag.Bool("peak", false, "use peak-hours prices (DeepSeek)")
 		refresh  = flag.Bool("refresh", false, "bypass the 24h cache and refetch")
 		offline  = flag.Bool("offline", false, "cache only for catalog/benchmarks/probes; -usage still needs network")
 		probeAll = flag.Bool("probe", false, "measure live speed of every model (paid requests, cached 24h)")
 		probeOne = flag.String("probe-model", "", "measure live speed of one model ID and print the result")
+		probeMax = flag.Float64("probe-max-allowance", 0, "stop -probe after this many allowance dollars (0 = no limit)")
 		showUse  = flag.Bool("usage", false, "show remaining Go allowance for the 5h/week/month windows")
 		now      = flag.Bool("now", false, "per model: requests affordable in each Go window, using the model's own monthly limit")
+		winEst   = flag.Bool("window-estimate", false, "scale -now 5h/week caps by the account-wide usage percentages (estimate)")
+		doctor   = flag.Bool("doctor", false, "audit plan/AA/SWE/probe coverage and exit")
 		spent    = flag.String("spent", "", "path to a pasted console 'usage by model' TSV; offline fallback for per-model spend")
 		vertical = flag.Bool("vertical", false, "one model per block of 'field: value' lines (screen-reader friendly); applies to the table and -now")
 		jsonOut  = flag.Bool("json", false, "JSON output instead of TSV")
@@ -100,7 +104,19 @@ func main() {
 				os.Exit(1)
 			}
 		}
-		if err := runNow(*plan, spentByModel, *spent != "", *paid, *privacy, *peak, *vertical, *jsonOut, *refresh, *offline, isTTY(os.Stdout)); err != nil {
+		if err := runNow(*plan, spentByModel, *spent != "", *paid, *privacy, *peak, *winEst, *vertical, *jsonOut, *refresh, *offline, isTTY(os.Stdout)); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
+
+	if *doctor {
+		if *provider != "opencode-go" {
+			fmt.Fprintln(os.Stderr, "-doctor only supports -provider opencode-go")
+			os.Exit(2)
+		}
+		if err := runDoctor(*refresh, *offline, *jsonOut); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
@@ -138,11 +154,12 @@ func main() {
 				os.Exit(1)
 			}
 		}
+		burned := 0.0
 		for _, m := range models {
-			if *privacy && goplan.TrainsOnData(m.ID) {
+			if *privacy && goplan.ExcludedByPrivacy(m.ID) {
 				continue
 			}
-			r := loadOrProbe(m.ID, key, *refresh, *offline)
+			r, fresh := loadOrProbe(m.ID, key, *refresh, *offline)
 			probes[m.ID] = r
 			suspect := ""
 			if r.Suspect {
@@ -150,6 +167,16 @@ func main() {
 			}
 			fmt.Fprintf(os.Stderr, "probe %-32s tok/s=%-7.1f ttft=%-6.2fs allowance=$%.6f%s %s\n",
 				m.ID, r.TokPerSec, r.TTFTSeconds, r.Allowance, suspect, r.Error)
+			if fresh {
+				burned += r.Allowance
+			}
+			if *probeMax > 0 && burned >= *probeMax {
+				fmt.Fprintf(os.Stderr, "probe: stopping after $%.6f allowance burned (limit $%.6f)\n", burned, *probeMax)
+				break
+			}
+		}
+		if !*offline {
+			fmt.Fprintf(os.Stderr, "probe total allowance burned: $%.6f\n", burned)
 		}
 	}
 
@@ -159,7 +186,7 @@ func main() {
 	}
 	if *privacy {
 		rows = slices.DeleteFunc(rows, func(r table.Row) bool {
-			return goplan.TrainsOnData(r.ID)
+			return goplan.ExcludedByPrivacy(r.ID)
 		})
 	}
 	// Pareto is relative to the set the user actually sees: a model hidden
@@ -228,18 +255,20 @@ func cachedProbe(modelID string) (probe.Result, bool) {
 // loadOrProbe returns the cached measurement or runs a fresh one. Escalation:
 // thinking models that never reach content get a bigger budget; fast models
 // with a too-short window get the long prompt.
-func loadOrProbe(modelID, key string, refresh, offline bool) probe.Result {
+func loadOrProbe(modelID, key string, refresh, offline bool) (probe.Result, bool) {
 	if offline {
 		if r, ok := cachedProbe(modelID); ok {
-			return r
+			return r, false
 		}
-		return probe.Result{ModelID: modelID, Error: "offline and no cached measurement"}
+		return probe.Result{ModelID: modelID, Error: "offline and no cached measurement"}, false
 	}
+	fresh := false
 	run := func(long bool, maxTokens int64) probe.Result {
 		runOne := probe.Run
 		if long {
 			runOne = probe.RunLong
 		}
+		fresh = true
 		r, err := runOne(modelID, key, maxTokens)
 		if err != nil {
 			return probe.Result{ModelID: modelID, Error: err.Error()}
@@ -253,7 +282,7 @@ func loadOrProbe(modelID, key string, refresh, offline bool) probe.Result {
 		cached.Normalize()
 	}
 	if cached.Trusted() {
-		return cached
+		return cached, false
 	}
 	r := cached
 	if r.Error != "" {
@@ -271,7 +300,7 @@ func loadOrProbe(modelID, key string, refresh, offline bool) probe.Result {
 	if r.Error == "" {
 		_ = cache.Store("probe-"+modelID+".json", mustJSON(r))
 	}
-	return r
+	return r, fresh
 }
 
 func mustJSON(v any) []byte {
@@ -396,8 +425,8 @@ var nowLegend = []string{
 	"# cost_task  official allowance cost per request (OpenCode token profile, base tier)",
 	"# burn_req   allowance dollars one request burns: measured from console tokens when the model has >=50 requests this period, else cost_task",
 	"# spent_mo   allowance dollars spent this period (console tokens at Go prices, or -spent); subtracted from the model's monthly limit",
-	"# reqs_5h    requests in the model's 5h cap (20% of its monthly limit; fresh-window upper bound)",
-	"# reqs_wk    requests in the model's weekly cap (50% of its monthly limit; fresh-window upper bound)",
+	"# reqs_5h    requests in the model's 5h cap (20% of its monthly limit; fresh-window upper bound, scaled by -window-estimate)",
+	"# reqs_wk    requests in the model's weekly cap (50% of its monthly limit; fresh-window upper bound, scaled by -window-estimate)",
 	"# reqs_mo    requests left in the model's monthly limit after spent_mo",
 	"# usable     min of reqs_5h / reqs_wk / reqs_mo — what you can use now",
 	"# limit      binding constraint: 5h | week | month | unlimited | unknown",
@@ -407,10 +436,16 @@ var nowLegend = []string{
 // buildNowRows is the testable core of -now. Go limits are per model: the
 // 5h and weekly windows are 20% and 50% of that model's monthly limit, and
 // the monthly window is what remains of it. Spend is in allowance dollars.
-func buildNowRows(models []modelsdev.Model, spend map[string]spendInfo, spendKnown bool, planName string, peak, paid, privacy bool, speeds map[string]float64) []nowRow {
+func buildNowRows(models []modelsdev.Model, spend map[string]spendInfo, spendKnown bool, planName string, peak, paid, privacy bool, fiveFactor, weekFactor float64, speeds map[string]float64) []nowRow {
+	if fiveFactor <= 0 {
+		fiveFactor = 1
+	}
+	if weekFactor <= 0 {
+		weekFactor = 1
+	}
 	var rows []nowRow
 	for _, m := range models {
-		if privacy && goplan.TrainsOnData(m.ID) {
+		if privacy && goplan.ExcludedByPrivacy(m.ID) {
 			continue
 		}
 		costTask := cost.PerRequest(m, peak)
@@ -456,8 +491,8 @@ func buildNowRows(models []modelsdev.Model, spend map[string]spendInfo, spendKno
 			spent = 0 // explicit assumption, reported on stderr
 		}
 		b := usage.Budgets{
-			Five:  0.20 * allow,
-			Week:  0.50 * allow,
+			Five:  0.20 * allow * fiveFactor,
+			Week:  0.50 * allow * weekFactor,
 			Month: allow - spent,
 		}
 		five, week, month, usable, binding := usage.Requests(b, burn)
@@ -498,7 +533,7 @@ func nowRank(r nowRow) int {
 // requests fit in its own Go 5h/weekly/monthly windows. There is no shared
 // pot: the docs define the windows as percentages of each model's monthly
 // limit. Per-model spend is measured from console token counts at Go prices.
-func runNow(planName string, spentFile map[string]float64, spentGiven, paid, privacy, peak, vertical, jsonOut, refresh, offline, tty bool) error {
+func runNow(planName string, spentFile map[string]float64, spentGiven, paid, privacy, peak, windowEstimate, vertical, jsonOut, refresh, offline, tty bool) error {
 	models, err := modelsdev.Fetch("opencode-go", refresh, offline)
 	if err != nil {
 		return err
@@ -563,8 +598,31 @@ func runNow(planName string, spentFile map[string]float64, spentGiven, paid, pri
 		fmt.Fprintf(os.Stderr, "# warning: %d console rows had no token counts; used their reported cost as allowance spend\n", fallback)
 	}
 
+	var fiveFactor, weekFactor float64
+	if windowEstimate {
+		switch {
+		case offline:
+			fmt.Fprintln(os.Stderr, "# window estimate: offline; using full 5h/week caps")
+		default:
+			key, kerr := probe.Key()
+			if kerr != nil {
+				fmt.Fprintf(os.Stderr, "# window estimate: %v; using full 5h/week caps\n", kerr)
+				break
+			}
+			ws, uerr := usage.Fetch(key)
+			if uerr != nil {
+				fmt.Fprintf(os.Stderr, "# window estimate: %v; using full 5h/week caps\n", uerr)
+				break
+			}
+			f := usage.RemainingFactors(ws)
+			fiveFactor, weekFactor = f.Five, f.Week
+			fmt.Fprintf(os.Stderr, "# window estimate: 5h %.0f%% left, week %.0f%% left (account-wide; applied to every model)\n",
+				f.Five*100, f.Week*100)
+		}
+	}
+
 	speeds := cachedProbeSpeeds(models)
-	rows := buildNowRows(models, spend, spendKnown, planName, peak, paid, privacy, speeds)
+	rows := buildNowRows(models, spend, spendKnown, planName, peak, paid, privacy, fiveFactor, weekFactor, speeds)
 
 	cells := func(r nowRow) []string {
 		switch {
@@ -583,20 +641,21 @@ func runNow(planName string, spentFile map[string]float64, spentGiven, paid, pri
 	head := []string{"#name", "cost_task", "burn_req", "spent_mo", "reqs_5h", "reqs_wk", "reqs_mo", "usable", "limit", "p_tok_s"}
 	if jsonOut {
 		type jsonNow struct {
-			ID         string  `json:"id"`
-			Name       string  `json:"name"`
-			CostTask   float64 `json:"cost_task"`
-			BurnReq    float64 `json:"burn_req"`
-			SpentMo    float64 `json:"spent_mo"`
-			SpentKnown bool    `json:"spent_known"`
-			Reqs5h     int     `json:"reqs_5h"`
-			ReqsWk     int     `json:"reqs_wk"`
-			ReqsMo     int     `json:"reqs_mo"`
-			Usable     int     `json:"usable"`
-			Limit      string  `json:"limit"`
-			Unlimited  bool    `json:"unlimited"`
-			Known      bool    `json:"known"`
-			ProbeTokS  float64 `json:"p_tok_s"`
+			ID             string  `json:"id"`
+			Name           string  `json:"name"`
+			CostTask       float64 `json:"cost_task"`
+			BurnReq        float64 `json:"burn_req"`
+			SpentMo        float64 `json:"spent_mo"`
+			SpentKnown     bool    `json:"spent_known"`
+			Reqs5h         int     `json:"reqs_5h"`
+			ReqsWk         int     `json:"reqs_wk"`
+			ReqsMo         int     `json:"reqs_mo"`
+			Usable         int     `json:"usable"`
+			Limit          string  `json:"limit"`
+			Unlimited      bool    `json:"unlimited"`
+			Known          bool    `json:"known"`
+			WindowEstimate bool    `json:"window_estimate"`
+			ProbeTokS      float64 `json:"p_tok_s"`
 		}
 		out := make([]jsonNow, 0, len(rows))
 		for _, r := range rows {
@@ -605,7 +664,7 @@ func runNow(planName string, spentFile map[string]float64, spentGiven, paid, pri
 				SpentMo: r.spentMo, SpentKnown: r.spentOK,
 				Reqs5h: r.five, ReqsWk: r.week, ReqsMo: r.month,
 				Usable: r.usable, Limit: r.binding, Unlimited: r.unlimited,
-				Known: r.known, ProbeTokS: r.probeTokS,
+				Known: r.known, WindowEstimate: windowEstimate, ProbeTokS: r.probeTokS,
 			})
 		}
 		return json.NewEncoder(os.Stdout).Encode(out)
@@ -693,7 +752,7 @@ func runOneProbe(modelID string, refresh, offline bool) error {
 			return err
 		}
 	}
-	r := loadOrProbe(modelID, key, refresh, offline)
+	r, _ := loadOrProbe(modelID, key, refresh, offline)
 	enc := json.NewEncoder(os.Stdout)
 	enc.SetIndent("", "  ")
 	return enc.Encode(r)

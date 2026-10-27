@@ -5,6 +5,8 @@ package probe
 import (
 	"bufio"
 	"bytes"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -16,6 +18,21 @@ import (
 
 // endpoint is a var so tests can point it at a fake server.
 var endpoint = "https://opencode.ai/inference/go/openai/v1/chat/completions"
+
+// Version is set by the command so the probe identifies itself honestly.
+var Version = "dev"
+
+// sessionID prefixes every probe session. One process = one probe run; the
+// model ID is appended per request so each probe is its own conversation.
+var sessionID = newSessionID()
+
+func newSessionID() string {
+	var b [8]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return fmt.Sprintf("opencodable-%d", time.Now().UnixNano())
+	}
+	return "opencodable-" + hex.EncodeToString(b[:])
+}
 
 // Prompt is the fixed probe prompt: long enough to measure throughput,
 // short enough to cost a fraction of a cent.
@@ -137,8 +154,8 @@ func runPrompt(modelID, key, prompt string, maxTokens int64) (Result, error) {
 	}
 	req.Header.Set("Authorization", "Bearer "+key)
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("User-Agent", "opencodable/0.1")
-	req.Header.Set("x-opencode-session", "opencodable-probe")
+	req.Header.Set("User-Agent", "opencodable/"+Version)
+	req.Header.Set("x-opencode-session", sessionID+"-"+modelID)
 
 	start := time.Now()
 	client := &http.Client{Timeout: 3 * time.Minute}

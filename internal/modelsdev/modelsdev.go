@@ -10,7 +10,7 @@ import (
 	"sort"
 	"time"
 
-	"opencodable/internal/cache"
+	"github.com/ColasNahaboo/opencodable/internal/cache"
 )
 
 const catalogURL = "https://models.dev/api.json"

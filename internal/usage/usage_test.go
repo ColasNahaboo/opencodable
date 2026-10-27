@@ -49,6 +49,25 @@ func TestHumanizeDuration(t *testing.T) {
 	}
 }
 
+func TestRemainingFactors(t *testing.T) {
+	f := RemainingFactors([]Window{
+		{Name: "5h", Percent: 20},
+		{Name: "week", Percent: 40},
+		{Name: "month", Percent: 90},
+	})
+	if f.Five != 0.8 || f.Week != 0.6 {
+		t.Errorf("factors = %+v, want 0.8/0.6", f)
+	}
+	f = RemainingFactors([]Window{})
+	if f.Five != 1 || f.Week != 1 {
+		t.Errorf("empty factors = %+v, want 1/1", f)
+	}
+	f = RemainingFactors([]Window{{Name: "5h", Percent: 150}})
+	if f.Five != 0 {
+		t.Errorf("over-used factor = %v, want 0", f.Five)
+	}
+}
+
 func TestRequests(t *testing.T) {
 	b := Budgets{Five: 1.98, Week: 4.6, Month: 8.3}
 	five, week, month, usable, binding := Requests(b, 0.02)
@@ -81,6 +100,7 @@ func TestParseSpentFile(t *testing.T) {
 	f := t.TempDir() + "/spent.tsv"
 	content := "glm-5.3-flash\t232\t1.0M\t29.3M\t-\t107.8k\t$1.09\n" +
 		"kimi-k3.1-pro\t3\t312\t-\t-\t950\t<$0.01\n" +
+		"Kimi K3.1 Pro  100  1.0M  $1,234.56\n" +
 		"# comment line\n" +
 		"garbage line\n"
 	if err := os.WriteFile(f, []byte(content), 0o644); err != nil {
@@ -95,6 +115,9 @@ func TestParseSpentFile(t *testing.T) {
 	}
 	if spent["kimi-k3.1-pro"] != 0.01 {
 		t.Errorf("kimi spend = %v, want 0.01 (<$0.01 rounds up)", spent["kimi-k3.1-pro"])
+	}
+	if spent["Kimi K3.1 Pro"] != 1234.56 {
+		t.Errorf("display-name spend = %v, want 1234.56", spent["Kimi K3.1 Pro"])
 	}
 	if v, ok := spent["garbage"]; ok {
 		t.Errorf("garbage line parsed as %v", v)

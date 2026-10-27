@@ -5,6 +5,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/ColasNahaboo/opencodable/internal/modelsdev"
 )
 
 func TestMarkPareto(t *testing.T) {
@@ -110,8 +112,9 @@ func TestWriteTSVMachineMode(t *testing.T) {
 			}
 		}
 	}
-	if row1[len(row1)-1] != "aa:high" {
-		t.Errorf("source cell = %q, want aa:high", row1[len(row1)-1])
+	srcIdx := slices.Index(headerCells(), "src")
+	if row1[srcIdx] != "aa:high" {
+		t.Errorf("source cell = %q, want aa:high", row1[srcIdx])
 	}
 	for i, v := range row2 {
 		if i == 0 {
@@ -251,4 +254,32 @@ func paretoOf(rows []Row, id string) bool {
 		}
 	}
 	return false
+}
+
+func TestBuildContextAndPrivacyColumns(t *testing.T) {
+	rows := Build([]modelsdev.Model{
+		{
+			ID: "glm-5.3", Name: "GLM-5.3",
+			Limit: modelsdev.Context{Context: 1_000_000, Output: 131_072},
+			Cost:  modelsdev.Cost{Input: 1.4, Output: 4.4, CacheRead: 0.26},
+		},
+		{
+			ID: "space-bunny", Name: "Space Bunny",
+			Limit: modelsdev.Context{Context: 200_000},
+			Cost:  modelsdev.Cost{Input: 1, Output: 2},
+		},
+	}, nil, nil, nil, "go", false)
+	if len(rows) != 2 {
+		t.Fatalf("got %d rows", len(rows))
+	}
+	byID := map[string]Row{}
+	for _, r := range rows {
+		byID[r.ID] = r
+	}
+	if got := byID["glm-5.3"]; got.Privacy != "safe" || got.CtxK != 1000 || got.OutK != 131.072 {
+		t.Errorf("glm row = privacy %q ctx %v out %v", got.Privacy, got.CtxK, got.OutK)
+	}
+	if got := byID["space-bunny"]; got.Privacy != "unknown" {
+		t.Errorf("unknown privacy = %q, want unknown", got.Privacy)
+	}
 }

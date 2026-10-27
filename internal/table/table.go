@@ -12,12 +12,12 @@ import (
 	"strings"
 	"text/tabwriter"
 
-	"opencodable/internal/aa"
-	"opencodable/internal/cost"
-	"opencodable/internal/goplan"
-	"opencodable/internal/modelsdev"
-	"opencodable/internal/normalize"
-	"opencodable/internal/probe"
+	"github.com/ColasNahaboo/opencodable/internal/aa"
+	"github.com/ColasNahaboo/opencodable/internal/cost"
+	"github.com/ColasNahaboo/opencodable/internal/goplan"
+	"github.com/ColasNahaboo/opencodable/internal/modelsdev"
+	"github.com/ColasNahaboo/opencodable/internal/normalize"
+	"github.com/ColasNahaboo/opencodable/internal/probe"
 )
 
 // Row is one output line: one subscription model with everything joined.
@@ -45,6 +45,9 @@ type Row struct {
 	SWEBench      float64 `json:"swe_b"`
 	Pareto        bool    `json:"pareto"`
 	Src           string  `json:"src,omitempty"`
+	Privacy       string  `json:"privacy"`
+	CtxK          float64 `json:"ctx_k"`
+	OutK          float64 `json:"out_k"`
 }
 
 func f(p *float64) float64 {
@@ -72,7 +75,12 @@ func Build(models []modelsdev.Model, aas []aa.Model, probes map[string]probe.Res
 
 	var rows []Row
 	for _, m := range models {
-		r := Row{Name: m.Name, ID: m.ID, PriceOut1M: m.Cost.Output}
+		r := Row{
+			Name: m.Name, ID: m.ID, PriceOut1M: m.Cost.Output,
+			Privacy: goplan.PrivacyLabel(m.ID),
+			CtxK:    float64(m.Limit.Context) / 1000,
+			OutK:    float64(m.Limit.Output) / 1000,
+		}
 		r.CostTask = cost.PerRequest(m, peak)
 		allow, unlim := goplan.Allowance(m.ID, plan)
 		if !goplan.Known(m.ID) && m.Free() {
@@ -274,7 +282,7 @@ func headerCells() []string {
 		"tok_s", "ttft_s", "p_tok_s", "p_ttft_s",
 		"aa_int", "aa_code", "aa_math",
 		"code_b", "term_b", "if_b", "aa_lcr",
-		"swe_b", "pareto", "src",
+		"swe_b", "pareto", "src", "privacy", "ctx_k", "out_k",
 	}
 }
 
@@ -285,6 +293,10 @@ func rowCells(r Row, missing string) []string {
 	if r.Pareto {
 		pareto = "yes"
 	}
+	privacy := r.Privacy
+	if privacy == "" {
+		privacy = missing
+	}
 	return []string{
 		r.Name,
 		numOr(r.PriceOut1M, true, missing), numOr(r.CostTask, true, missing),
@@ -294,7 +306,8 @@ func rowCells(r Row, missing string) []string {
 		numOr(r.AAIntel, false, missing), numOr(r.AACoding, false, missing), numOr(r.AAMath, false, missing),
 		numOr(r.LiveCodeBench, false, missing), numOr(r.TerminalBench, false, missing),
 		numOr(r.IFBench, false, missing), numOr(r.LCR, false, missing), numOr(r.SWEBench, false, missing),
-		pareto, r.Src,
+		pareto, r.Src, privacy,
+		numOr(r.CtxK, false, missing), numOr(r.OutK, false, missing),
 	}
 }
 
@@ -340,8 +353,11 @@ var legend = []string{
 	"# if_b        IFBench instruction-following pass rate % (via AA)",
 	"# aa_lcr      AA Long-Context Reasoning pass rate %",
 	"# swe_b       SWE-bench Verified % resolved, best recorded agent run (swebench.com)",
-	"# pareto      yes = no other model is cheaper-or-equal, faster-or-equal AND better-or-equal",
+	"# pareto      yes = no other visible model is cheaper-or-equal, faster-or-equal AND better-or-equal",
 	"# src         aa:<effort> = speed from that AA reasoning-effort variant",
+	"# privacy     safe = no training on request data; trains = contributor; unknown = no plan-snapshot verdict",
+	"# ctx_k       context window in thousands of tokens (models.dev)",
+	"# out_k       maximum output tokens in thousands (models.dev)",
 }
 
 // WriteJSON dumps the rows machine-readably.

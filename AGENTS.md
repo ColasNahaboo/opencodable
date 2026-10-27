@@ -21,7 +21,7 @@ are git-ignored credentials — never print, commit, or copy them.
 ## Layout
 
 ```
-cmd/opencodable/       flags, view orchestration (-now, -usage, -probe rendering)
+cmd/opencodable/       flags, view orchestration (-now, -usage, -probe, -doctor)
 internal/modelsdev/    models.dev catalog: prices, limits (authoritative)
 internal/goplan/       OpenCode Go plan SNAPSHOT: allowances, token profiles,
                        peak prices, privacy flags — update when plans change
@@ -74,18 +74,28 @@ internal/cache/        24h disk cache (~/.cache/opencodable/)
   very fast models finish in < 1 s windows (retry with the long prompt;
   `probe.MinWindow` guards the tok/s math). Short windows above
   `probe.HighRateTokS`, or rates above `probe.MaxPlausibleTokS`, are marked
-  `Suspect` and excluded from ranking.
-  Probe failures are cheap — retry live instead of serving a stale error.
+  `Suspect` and excluded from ranking. Probes send a unique
+  `x-opencode-session` and `opencodable/<version>` UA; `-probe-max-allowance`
+  caps a full run's allowance burn. Probe failures are cheap — retry live
+  instead of serving a stale error.
 - **Usage endpoint** (`/inference/go/v1/usage`) reports one aggregate set of
   percentages, not per-model spend. Per-model spend comes from
   `console.opencode.ai/api/usage/models`; filter to `provider ==
   "opencode-go"` (the API also returns pay-as-you-go `opencode` rows) and
   price the token counts at Go rates. `totalCostMicroCents ÷ 1e8` is the
-  console's list cost, not the allowance cost.
+  console's list cost, not the allowance cost. `-window-estimate` scales the
+  per-model 5h/week caps by the endpoint's aggregate remaining percentages;
+  it is an approximation, not per-model window spend.
 - **goplan snapshot**: allowances, profiles and privacy flags are hardcoded
   from the public docs; new OpenCode models need new entries (unknown models
-  fall back to a generic profile; `contributor` in the ID implies
-  trains-on-data).
+  fall back to a generic profile). `goplan.Privacy` is tri-state
+  (`safe`/`trains`/`unknown`); `-privacy` fails closed, hiding both training
+  and unknown models. Free variants missing from the snapshot are inferred
+  from zero prices (`modelsdev.Model.Free`).
+- **Cache hardening**: keys are sanitized (no traversal), writes are
+  temp-file + rename, permissions are 0700/0600. `cache.Age` feeds `-doctor`.
+- **Doctor**: `-doctor` audits plan/AA/SWE/probe coverage without running a
+  probe; keep `buildDoctorRows` pure and tested.
 
 ## Testing
 

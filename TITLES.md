@@ -19,7 +19,7 @@ columns, in order, with their meaning. Scripts can rely on it.
 
 ## View: main table (`opencodable`)
 
-Piped header: `#name	cost_tok	cost_task	allowance	reqs_mo	tok_s	ttft_s	p_tok_s	p_ttft_s	aa_int	aa_code	aa_math	code_b	term_b	if_b	aa_lcr	swe_b	pareto	src`
+Piped header: `#name	cost_tok	cost_task	allowance	reqs_mo	tok_s	ttft_s	p_tok_s	p_ttft_s	aa_int	aa_code	aa_math	code_b	term_b	if_b	aa_lcr	swe_b	pareto	src	privacy	ctx_k	out_k`
 
 | # | Column | Meaning |
 |---|---|---|
@@ -42,6 +42,9 @@ Piped header: `#name	cost_tok	cost_task	allowance	reqs_mo	tok_s	ttft_s	p_tok_s	p
 | 17 | `swe_b` | SWE-bench Verified % resolved, best recorded agent run |
 | 18 | `pareto` | `yes` when no other visible model is cheaper-or-equal, faster-or-equal AND better-or-equal; empty otherwise. Flags are computed after `-paid`/`-privacy` filtering, so a hidden model never dominates a visible one. |
 | 19 | `src` | `aa:<effort>` when the speed came from that AA reasoning-effort variant |
+| 20 | `privacy` | `safe` (no training on request data), `trains` (contributor), or `unknown` (no plan-snapshot verdict) |
+| 21 | `ctx_k` | context window in thousands of tokens (models.dev) |
+| 22 | `out_k` | maximum output tokens in thousands (models.dev) |
 
 On a terminal: same columns, padded for readability, missing values shown as
 `-`, preceded by a `#`-prefixed legend block. `-vertical` emits one model per
@@ -84,7 +87,9 @@ in `internal/goplan`; its 5h and weekly caps are 20% and 50% of that limit.
 There is no shared pot. The usage endpoint reports one aggregate set of
 percentages; it is not used to derive per-model counts. `reqs_5h` and
 `reqs_wk` are caps for a fresh window, not remaining after earlier window
-usage (the API does not expose per-model window spend). Free models (zero
+usage (the API does not expose per-model window spend); `-window-estimate`
+scales those caps by the aggregate remaining percentages as a rough estimate.
+Free models (zero
 prices) show `limit=unlimited` with empty counts, even when the snapshot lacks
 their entry; paid models missing from the plan snapshot show `limit=unknown`.
 Spend uses only `opencode-go` console rows and prices their token counts at Go
@@ -107,8 +112,9 @@ spec covers both formats. Numbers stay numbers, `pareto` stays boolean, and
 - main table: `id` (models.dev model ID, e.g. `kimi-k3.1-pro`) and
   `unlimited` (true for free models; their `allowance` reads 0).
 - `-now`: `id`, `unlimited`, `known` (false when the plan snapshot has no
-  entry) and `spent_known` (false when spend was assumed to be zero). For
-  free/unknown rows the request counts are 0; use `limit` plus these
+  entry), `spent_known` (false when spend was assumed to be zero) and
+  `window_estimate` (true when 5h/week caps were scaled by aggregate usage).
+  For free/unknown rows the request counts are 0; use `limit` plus these
   booleans, not the zero, to interpret them.
 
 Empty/missing values: absent numeric fields mean zero (the table's `-` and
