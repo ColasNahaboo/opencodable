@@ -18,6 +18,8 @@ dist/
 # all dotfiles and dirs, except .gitignore itself
 .*
 !.gitignore
+!.github/
+!.github/**
 
 # Editor/IDE/OS/debuggers
 *~
