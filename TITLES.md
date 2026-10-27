@@ -8,8 +8,8 @@ columns, in order, with their meaning. Scripts can rely on it.
 1. **Column order is fixed.** New columns are always **appended at the end**.
 2. Renaming, removing, or reordering a column is a **breaking change** and
    bumps the **major version**.
-3. **While the repository is not published**, titles may still change freely
-   without notice. Pin a commit if you build on it before release.
+3. Until the **v1.0.0 tag** is pushed, titles may still change freely without
+   notice (pin a commit if you build on it). From v1.0.0 on, rule 2 applies.
 4. Values never contain TAB characters. In piped (non-tty) output, every data
    row has exactly one value per column, separated by single TABs; missing
    values are empty strings. Lines starting with `#` are comments or headers.
@@ -85,9 +85,10 @@ OpenCode.
 
 ## Versioning
 
-- Pre-release: no guarantee, titles may change (see rule 3).
-- After first tagged release: rules 1–2 apply; bump the major version on any
-  rename, removal, or reorder of the columns above.
+- Pre-release (until the `v1.0.0` tag): no guarantee, titles may change (see
+  rule 3).
+- From `v1.0.0` on: rules 1–2 apply; bump the major version on any rename,
+  removal, or reorder of the columns above.
 
 ## JSON output (`-json`, all views)
 
