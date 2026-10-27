@@ -7,14 +7,6 @@ OpenCode subscription — right now, in your terminal.**
 
 [MIT licensed](LICENSE) · single Go binary · zero dependencies · Go 1.26+
 
-```
-name            cost_tok  cost_task  allowance  reqs_mo   p_tok_s  aa_int  swe_b  pareto
-Kimi K3.1 Pro   $10       $0.0204    $15        735.3     78.7     55.1    -      yes
-Gemini 4 Argon  $10       $0.019     $30        1578.9    85.8     52.6    -      yes
-Kimi K3         $15       $0.0306    $15        490.2     799.1    43.6    -      yes
-Hy3             $0.58     $0.00279   $60        21506.9   615.8    25.3    -      yes
-```
-
 ---
 
 ## Overview
@@ -177,6 +169,35 @@ The `-json` flag bypasses TSV entirely and dumps the rows as JSON.
 **[TITLES.md](TITLES.md) is the parsing contract**: every view's columns in
 order, with meanings; new columns are always appended at the end; renames,
 removals or reorders bump the major version.
+
+### Sample output
+
+Main view (`opencodable -pareto -paid -privacy`, columns excerpt — 3 first lines):
+
+```sh
+#name           cost_tok  cost_task  allowance  reqs_mo   p_tok_s  aa_int  swe_b  pareto
+Kimi K3.1 Pro   $10       $0.0204    $15        735.3     78.7     55.1    -      yes
+Gemini 4 Argon  $10       $0.019     $30        1578.9    85.8     52.6    -      yes
+Kimi K3         $15       $0.0306    $15        490.2     799.1    43.6    -      yes
+```
+
+`-now -paid -privacy` (3 first lines):
+
+```sh
+#name                 cost_task  burn_req  spent_mo    reqs_5h  reqs_wk  reqs_mo  usable  limit  p_tok_s
+DeepSeek V4.1 Flash   $0.00046   $0.00035  $18.19375   4970     12426    23118    4970    5h     215.6
+MiMo V2.5             $0.0004    $0.0004   $0.15188    4310     10776    20050    4310    5h     89.0
+MiMo-V2.6-Flash       $0.0004    $0.0004   $0.11189    4310     10776    20050    4310    5h     59.5
+```
+
+`-usage` (all three windows):
+
+```sh
+#window  status  used_pct  remaining_pct  resets_at                resets_in
+5h       ok      14        86             2026-10-27T21:43:22+01:00  3h 8m 0s
+week     ok      14        86             2026-11-02T01:00:00+01:00  126h 25m 0s
+month    ok      20        80             2026-11-07T14:56:38+01:00  260h 21m 0s
+```
 
 ### Sample probe detail
 
