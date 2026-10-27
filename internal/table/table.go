@@ -176,7 +176,7 @@ func WriteTSV(w io.Writer, rows []Row) error {
 		}
 	}
 	tw := tabwriter.NewWriter(w, 0, 2, 2, ' ', 0)
-	if _, err := fmt.Fprintln(tw, "name\tprice_out_1M\tcost_task\tallowance_usd\treqs_month\ttok_s\tttft_s\tprobe_tok_s\tprobe_ttft_s\taa_intelligence\taa_coding\taa_math\tlivecodebench\tterminalbench\tifbench\taa_lcr\tswebench_verified\tpareto\tsource"); err != nil {
+	if _, err := fmt.Fprintln(tw, "#name\tprice_out_1M\tcost_task\tallowance_usd\treqs_month\ttok_s\tttft_s\tprobe_tok_s\tprobe_ttft_s\taa_intelligence\taa_coding\taa_math\tlivecodebench\tterminalbench\tifbench\taa_lcr\tswebench_verified\tpareto\tsource"); err != nil {
 		return err
 	}
 	for _, r := range rows {
