@@ -1,7 +1,6 @@
 package usage
 
 import (
-	"math"
 	"os"
 	"strings"
 	"testing"
@@ -50,27 +49,6 @@ func TestHumanizeDuration(t *testing.T) {
 	}
 }
 
-func TestRemainingBudgets(t *testing.T) {
-	ws := []Window{
-		{Name: "5h", Percent: 1},
-		{Name: "week", Percent: 8},
-		{Name: "month", Percent: 17},
-	}
-	b := RemainingBudgets(ws, 10)
-	cases := []struct {
-		name      string
-		got, want float64
-	}{{"five", b.Five, 1.98}, {"week", b.Week, 4.6}, {"month", b.Month, 8.3}}
-	for _, c := range cases {
-		if diff := math.Abs(c.got - c.want); diff > 1e-9 {
-			t.Errorf("%s = %v, want %v", c.name, c.got, c.want)
-		}
-	}
-	if b.ModelMonth != nil {
-		t.Error("ModelMonth must be nil (unknown) without a spent file")
-	}
-}
-
 func TestRequests(t *testing.T) {
 	b := Budgets{Five: 1.98, Week: 4.6, Month: 8.3}
 	five, week, month, usable, binding := Requests(b, 0.02)
@@ -80,12 +58,18 @@ func TestRequests(t *testing.T) {
 	if usable != 99 || binding != "5h" {
 		t.Errorf("usable=%d binding=%s, want 99 5h", usable, binding)
 	}
-	// per-model bucket binds the month
-	mm := 0.5
-	b2 := Budgets{Five: 1.98, Week: 4.6, Month: 8.3, ModelMonth: &mm}
+	// the remaining monthly allowance can bind instead of the 5h cap
+	b2 := Budgets{Five: 1.98, Week: 4.6, Month: 0.5}
 	_, _, _, usable, binding = Requests(b2, 0.02)
-	if usable != 25 || binding != "allowance" {
-		t.Errorf("usable=%d binding=%s, want 25 allowance", usable, binding)
+	if usable != 25 || binding != "month" {
+		t.Errorf("usable=%d binding=%s, want 25 month", usable, binding)
+	}
+	// over-spent models afford zero, never a negative count
+	b3 := Budgets{Five: 1.98, Week: 4.6, Month: -3}
+	five, week, month, usable, binding = Requests(b3, 0.02)
+	if five != 99 || week != 230 || month != 0 || usable != 0 || binding != "month" {
+		t.Errorf("negative budget = %d %d %d %d %s, want 99 230 0 0 month",
+			five, week, month, usable, binding)
 	}
 	// zero burn is refused
 	if _, _, _, _, binding = Requests(b, 0); binding != "-" {

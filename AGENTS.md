@@ -29,7 +29,7 @@ internal/aa/           Artificial Analysis data API client
 internal/bench/        external feeds (SWE-bench Verified)
 internal/consoleapi/   console usage API (per-model period spend)
 internal/usage/        allowance windows, budgets/requests math
-internal/probe/        live speed probe (SSE streaming, burn ratios)
+internal/probe/        live speed probe (SSE streaming, allowance-burn reporting)
 internal/normalize/    name matching + alias table (models.dev ↔ AA slugs)
 internal/cost/         per-request cost model
 internal/table/        join, Pareto, TSV/vertical/JSON rendering
@@ -61,18 +61,27 @@ internal/cache/        24h disk cache (~/.cache/opencodable/)
   measured variant.
 - **AA ttft_s artifact**: includes reasoning time (Haiku ~247 s). Reported,
   not a bug.
-- **Allowance burn ≠ list cost**: `opencode.allowance` in probe responses can
-  exceed `list_cost` (Kimi K3.1 Pro 4×, MiniMax M3.1 Flash 3×). `-now` uses
-  the measured ratio; unprobed models assume 1×.
+- **Go limits are per model, not a shared pot**: docs define each model's
+  5h/weekly/monthly windows as 20%/50%/100% of *that model's* monthly limit.
+  `-now` builds `Budgets` from `goplan.Allowance`; there is no `-pot` flag.
+- **Allowance burn ≠ list cost**: a probe's `opencode.allowance` can exceed
+  `list_cost` (Kimi K3.1 Pro 4×, MiniMax M3.1 Flash 3×), but that ratio is a
+  property of the probe's token mix and must **not** be multiplied into the
+  official profile's `cost_task`. `-now` instead uses the console's actual
+  token counts to derive the measured burn when a model has ≥50 requests.
 - **Probe reliability**: thinking models stream `reasoning_content` first and
   can exhaust small token budgets before emitting content (escalate budget);
   very fast models finish in < 1 s windows (retry with the long prompt;
-  `probe.MinWindow` guards the tok/s math). Probe failures are cheap — retry
-  live instead of serving a stale error from cache.
-- **Usage endpoint** (`/inference/go/v1/usage`) meters one *shared* pot,
-  assumed = plan price (`-pot`); per-model spend comes from
-  `console.opencode.ai/api/usage/models` (paginated, `totalCostMicroCents`
-  ÷ 1e8 = USD).
+  `probe.MinWindow` guards the tok/s math). Short windows above
+  `probe.HighRateTokS`, or rates above `probe.MaxPlausibleTokS`, are marked
+  `Suspect` and excluded from ranking.
+  Probe failures are cheap — retry live instead of serving a stale error.
+- **Usage endpoint** (`/inference/go/v1/usage`) reports one aggregate set of
+  percentages, not per-model spend. Per-model spend comes from
+  `console.opencode.ai/api/usage/models`; filter to `provider ==
+  "opencode-go"` (the API also returns pay-as-you-go `opencode` rows) and
+  price the token counts at Go rates. `totalCostMicroCents ÷ 1e8` is the
+  console's list cost, not the allowance cost.
 - **goplan snapshot**: allowances, profiles and privacy flags are hardcoded
   from the public docs; new OpenCode models need new entries (unknown models
   fall back to a generic profile; `contributor` in the ID implies

@@ -65,6 +65,14 @@ var table = map[string]entry{
 // GenericProfile is used when a model has no official estimate.
 var GenericProfile = Profile{2000, 100000, 500}
 
+// Known reports whether the model has an entry in the plan snapshot.
+// Unknown models are not the same as free models: their allowance is
+// unknown, not zero.
+func Known(id string) bool {
+	_, ok := table[id]
+	return ok
+}
+
 // Allowance returns the monthly usage budget for the plan ("go"|"go-plus").
 // unlimited=true when the model has no per-model cap.
 func Allowance(id, plan string) (usd float64, unlimited bool) {

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sort"
 	"time"
 
 	"opencodable/internal/cache"
@@ -51,6 +52,14 @@ type Context struct {
 	Output  int64 `json:"output"`
 }
 
+// Free reports whether every price is zero. Such models have no per-model
+// spend cap in the plan, even when the hardcoded snapshot lacks an entry
+// (free variants come and go faster than the snapshot).
+func (m Model) Free() bool {
+	return m.Cost.Input == 0 && m.Cost.Output == 0 &&
+		m.Cost.CacheRead == 0 && m.Cost.CacheWrite == 0
+}
+
 type catalog map[string]struct {
 	Models map[string]Model `json:"models"`
 }
@@ -81,5 +90,8 @@ func Fetch(provider string, refresh, offline bool) ([]Model, error) {
 		m.ID = id
 		out = append(out, m)
 	}
+	// The catalog is a map: sort by ID so identical runs produce identical
+	// output (including -probe progress and tie-broken tables).
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
 	return out, nil
 }

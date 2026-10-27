@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"sort"
 	"strconv"
 	"strings"
@@ -53,8 +54,10 @@ func f(p *float64) float64 {
 	return *p
 }
 
-// Build joins everything and computes the Pareto flags. Measured probe
-// results, when present, take precedence over reported AA speed.
+// Build joins everything. Call MarkPareto after the caller has applied its
+// row filters, so the flags describe the set the user actually sees.
+// Measured probe results, when present, take precedence over reported AA
+// speed.
 func Build(models []modelsdev.Model, aas []aa.Model, probes map[string]probe.Result, swe map[string]float64, plan string, peak bool) []Row {
 	slugs := map[string]bool{}
 	speeds := map[string]float64{}
@@ -72,6 +75,11 @@ func Build(models []modelsdev.Model, aas []aa.Model, probes map[string]probe.Res
 		r := Row{Name: m.Name, ID: m.ID, PriceOut1M: m.Cost.Output}
 		r.CostTask = cost.PerRequest(m, peak)
 		allow, unlim := goplan.Allowance(m.ID, plan)
+		if !goplan.Known(m.ID) && m.Free() {
+			// Free variants may be missing from the plan snapshot; zero
+			// prices still mean no per-model spend cap.
+			allow, unlim = 0, true
+		}
 		r.AllowanceUSD, r.Unlimited = allow, unlim
 		if !unlim && r.CostTask > 0 {
 			r.ReqsMonth = allow / r.CostTask
@@ -101,14 +109,13 @@ func Build(models []modelsdev.Model, aas []aa.Model, probes map[string]probe.Res
 	}
 	for i := range rows {
 		if p, ok := probes[rows[i].ID]; ok && p.Error == "" {
-			// Distrust throughput from too-short measurement windows.
-			if p.WindowSeconds >= probe.MinWindow {
+			// Distrust throughput from too-short or implausible measurements.
+			if p.Trusted() {
 				rows[i].ProbeTokS = p.TokPerSec
 			}
 			rows[i].ProbeTTFT = p.TTFTSeconds
 		}
 	}
-	markPareto(rows)
 	return rows
 }
 
@@ -125,6 +132,11 @@ func speed(r Row) float64 {
 	}
 	return r.TokPerSec
 }
+
+// MarkPareto flags rows not dominated on (cost, speed, quality). It must be
+// called after -paid/-privacy filtering: a hidden model should not dominate
+// a visible one.
+func MarkPareto(rows []Row) { markPareto(rows) }
 
 // markPareto flags rows not dominated on (cost, speed, quality).
 func markPareto(rows []Row) {
@@ -153,19 +165,38 @@ func markPareto(rows []Row) {
 	}
 }
 
-// Sort orders rows in place. key: name|price|speed|quality|reqs.
+// Sort orders rows in place. key: name|price|speed|quality|reqs. The model
+// ID is the final tie-breaker so identical inputs always produce identical
+// output (models.dev is a map, so its natural order is random).
 func Sort(rows []Row, key string) {
 	less := map[string]func(a, b Row) bool{
 		"name":    func(a, b Row) bool { return a.Name < b.Name },
 		"price":   func(a, b Row) bool { return a.CostTask < b.CostTask },
-		"speed":   func(a, b Row) bool { return speed(b) < speed(a) },
-		"quality": func(a, b Row) bool { return qual(b) < qual(a) },
-		"reqs":    func(a, b Row) bool { return b.ReqsMonth < a.ReqsMonth },
+		"speed":   func(a, b Row) bool { return speed(a) > speed(b) },
+		"quality": func(a, b Row) bool { return qual(a) > qual(b) },
+		"reqs":    func(a, b Row) bool { return reqsRank(a) > reqsRank(b) },
 	}[key]
 	if less == nil {
 		less = func(a, b Row) bool { return a.Name < b.Name }
 	}
-	sort.SliceStable(rows, func(i, j int) bool { return less(rows[i], rows[j]) })
+	sort.SliceStable(rows, func(i, j int) bool {
+		if less(rows[i], rows[j]) {
+			return true
+		}
+		if less(rows[j], rows[i]) {
+			return false
+		}
+		return rows[i].ID < rows[j].ID
+	})
+}
+
+// reqsRank makes unlimited models sort first on -sort reqs; ReqsMonth is 0
+// for them, which would otherwise look like the worst value.
+func reqsRank(r Row) float64 {
+	if r.Unlimited {
+		return math.Inf(1)
+	}
+	return r.ReqsMonth
 }
 
 // WriteTSV renders the table. On a terminal the columns are padded for
@@ -299,8 +330,8 @@ var legend = []string{
 	"# reqs_mo     allowance / cost_task = approx. requests per month",
 	"# tok_s       Artificial Analysis median output tok/s (reported, other hosts)",
 	"# ttft_s      AA median seconds to first token, thinking included (same)",
-	"# p_tok_s     MEASURED on your subscription via -probe (tok/s over the generation window)",
-	"# p_ttft_s    MEASURED seconds to first generated token via -probe",
+	"# p_tok_s     MEASURED on your subscription via -probe (trusted windows only; suspect/too-short dropped)",
+	"# p_ttft_s    MEASURED seconds to first content token via -probe (thinking time included in the wait)",
 	"# aa_int      Artificial Analysis Intelligence Index (composite)",
 	"# aa_code     Artificial Analysis Coding Index",
 	"# aa_math     Artificial Analysis Math Index",

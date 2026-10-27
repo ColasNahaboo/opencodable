@@ -81,43 +81,29 @@ func parse(r io.Reader) ([]Window, error) {
 	}, nil
 }
 
-// Budgets is the remaining allowance dollars per window. ModelMonth nil =
-// per-model bucket unknown; otherwise it constrains the month window.
+// Budgets is the remaining allowance dollars per window. Go limits are
+// per model: a model's 5h and weekly caps are 20% and 50% of its own
+// monthly limit, and Month is what remains of that monthly limit.
 type Budgets struct {
-	Five       float64 // 5h rolling window
-	Week       float64
-	Month      float64
-	ModelMonth *float64 // per-model bucket remaining, nil = unknown
-}
-
-// RemainingBudgets converts usage windows into remaining allowance dollars,
-// given the plan pot (the monthly dollar-equivalent the percentages meter)
-// and the documented window caps (5h = 20%, weekly = 50%, monthly = 100%).
-func RemainingBudgets(ws []Window, pot float64) Budgets {
-	caps := map[string]float64{"5h": 0.2, "week": 0.5, "month": 1.0}
-	b := Budgets{}
-	for _, w := range ws {
-		rem := pot * caps[w.Name] * (1 - w.Percent/100)
-		switch w.Name {
-		case "5h":
-			b.Five = rem
-		case "week":
-			b.Week = rem
-		case "month":
-			b.Month = rem
-		}
-	}
-	return b
+	Five  float64 // 5h rolling window cap
+	Week  float64 // weekly cap
+	Month float64 // remaining monthly allowance
 }
 
 // Requests returns how many requests of the given allowance burn each window
-// can still afford, the usable (binding) count, and which window binds. The
-// per-model bucket, when known, constrains the month window.
+// can still afford, the usable (binding) count, and which window binds.
+// Negative budgets are clamped to zero: an over-spent model affords nothing.
 func Requests(b Budgets, burnPerReq float64) (five, week, month, usable int, binding string) {
 	if burnPerReq <= 0 {
 		return 0, 0, 0, 0, "-"
 	}
-	floor := func(v float64) int { return int(v/burnPerReq + 1e-9) }
+	clamp := func(v float64) float64 {
+		if v < 0 {
+			return 0
+		}
+		return v
+	}
+	floor := func(v float64) int { return int(clamp(v)/burnPerReq + 1e-9) }
 	five = floor(b.Five)
 	week = floor(b.Week)
 	month = floor(b.Month)
@@ -127,11 +113,6 @@ func Requests(b Budgets, burnPerReq float64) (five, week, month, usable int, bin
 	}
 	if month < usable {
 		usable, binding = month, "month"
-	}
-	if b.ModelMonth != nil {
-		if mm := floor(*b.ModelMonth); mm < usable {
-			usable, binding = mm, "allowance"
-		}
 	}
 	return
 }

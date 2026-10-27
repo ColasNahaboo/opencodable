@@ -100,40 +100,47 @@ opencodable -spent pasted.tsv -now   # offline fallback: subtract spend from a p
 opencodable -vertical                # one model per 'field: value' block (screen readers)
 opencodable -json                    # machine-readable output for every view
 opencodable -refresh                 # refetch everything, ignore the 24h cache
-opencodable -offline                 # cache only, no network
+opencodable -offline                 # cache only for catalog/benchmarks/probes
 ```
 
 All flags: `-provider` (models.dev provider, default `opencode-go`), `-plan`,
 `-sort` (`name|price|speed|quality|reqs`), `-pareto`, `-paid`, `-privacy`,
-`-peak`, `-probe`, `-probe-model`, `-usage`, `-now`, `-spent`, `-pot`,
+`-peak`, `-probe`, `-probe-model`, `-usage`, `-now`, `-spent`,
 `-vertical`, `-json`, `-refresh`, `-offline`.
 
-`-usage` reads the live allowance endpoint and prints, per window (5h rolling
-= 20% of the plan's monthly limit, weekly = 50%, monthly = 100%), the percent
-used, the percent remaining, and when the window resets — in the same
-tty-padded / piped-TABs style as the model table.
+`-usage` reads the live allowance endpoint and prints, per window (5h = 20%,
+weekly = 50%, monthly = 100% of each model's monthly limit), the percent used,
+the percent remaining, and when the window resets — in the same tty-padded /
+piped-TABs style as the model table. The endpoint reports one aggregate set of
+windows; per-model caps are in `-now`.
 
 ### Choosing a model right now: `-now`
 
-The usage endpoint meters **one shared pot** (assumed to be the plan price:
-$10 for Go, $40 for Go Plus; override with `-pot`), divided by the documented
-window caps. `-now` converts the remaining dollars into *requests per model*:
+Go usage limits are **per model**: each model has its own monthly dollar
+limit, and its 5h and weekly caps are 20% and 50% of that limit. There is no
+shared pot and no `-pot` flag. `-now` turns those caps into requests:
 
-- `burn_req` — allowance dollars one request of this model burns. The probe
-  measures each model's burn **ratio** against list price (e.g. Kimi K3.1 Pro
-  burns 4× its list cost, MiniMax M3.1 Flash 3× — the endpoint's
-  `opencode.allowance` makes this visible); unprobed models assume ratio 1.
-- `reqs_5h` / `reqs_wk` / `reqs_mo` — requests affordable with the
-  remaining dollars of each window.
-- `usable` / `limit` — the minimum and which window binds.
+- `cost_task` — official allowance cost per request (OpenCode token profile).
+- `burn_req` — allowance dollars one request actually burns: measured from
+  your console token counts when the model has at least 50 requests this
+  period, otherwise the official `cost_task`. Real coding-agent requests are
+  often larger than the official profile (DeepSeek V4.1 Flash measured about
+  5× in our sample), so this can differ substantially.
+- `spent_mo` — allowance dollars spent this period, computed from console
+  token counts at Go prices, not from the console's list-cost total.
+  Subtracted from the model's monthly limit.
+- `reqs_5h` / `reqs_wk` — requests in the model's 5h / weekly cap. These are
+  fresh-window upper bounds: the API does not expose per-model window spend.
+- `reqs_mo` — requests left in the monthly limit after `spent_mo`.
+- `usable` / `limit` — the minimum and which constraint binds: `5h`, `week`,
+  `month`, `unlimited`, or `unknown`.
 
-The console's per-model spend page is **fetchable directly**: the same Go key
-authorizes `console.opencode.ai/api/usage/models`, so `-now` subtracts your
-real period spend automatically (the `spent_mo` column shows it). A pasted
-console table still works as an offline fallback via `-spent file.tsv` — its
-`model` and last `$cost` columns are parsed and override the live fetch;
-whichever per-model bucket is tighter then competes for the `limit`
-verdict (`allowance`).
+The console API is **filtered to `opencode-go` rows**; pay-as-you-go rows are
+ignored. The same Go key authorizes `console.opencode.ai/api/usage/models`, so
+spend is fetched automatically. A pasted console table via `-spent file.tsv`
+is the offline fallback. Free models (zero prices) show `limit=unlimited` with
+empty counts, even when the snapshot lacks their entry; paid models missing
+from the plan snapshot show `limit=unknown` rather than a fake zero.
 
 ### Output adapts to stdout
 
@@ -144,7 +151,7 @@ verdict (`allowance`).
   strings, no padding. The `#name…` header row keeps its `#` prefix, so it can
   never be confused with data or with the `# ` legend lines (terminal mode):
 ```sh
-opencodable | grep -v '^#' | awk -F'\t' 'NR>1 {print $1, $6}'
+opencodable | grep -v '^#' | awk -F'\t' '{print $1, $6}'
 ```
 
 `-vertical` renders one model per block of `field: value` lines with blank
@@ -178,25 +185,25 @@ Main view (`opencodable -pareto -paid -privacy`, columns excerpt — 3 first lin
 #name           cost_tok  cost_task  allowance  reqs_mo   p_tok_s  aa_int  swe_b  pareto
 Kimi K3.1 Pro   $10       $0.0204    $15        735.3     78.7     55.1    -      yes
 Gemini 4 Argon  $10       $0.019     $30        1578.9    85.8     52.6    -      yes
-Kimi K3         $15       $0.0306    $15        490.2     799.1    43.6    -      yes
+Grok 4.7        $6        $0.01775   $15        845.1     172.3    46.4    -      yes
 ```
 
 `-now -paid -privacy` (3 first lines):
 
 ```sh
 #name                 cost_task  burn_req  spent_mo    reqs_5h  reqs_wk  reqs_mo  usable  limit  p_tok_s
-DeepSeek V4.1 Flash   $0.00046   $0.00035  $18.19375   4970     12426    23118    4970    5h     215.6
-MiMo V2.5             $0.0004    $0.0004   $0.15188    4310     10776    20050    4310    5h     89.0
-MiMo-V2.6-Flash       $0.0004    $0.0004   $0.11189    4310     10776    20050    4310    5h     59.5
+MiMo-V2.6-Flash       $0.0004    $0.0006   $0.11189    19841    49602    99020    19841   5h     59.5
+MiMo V2.5             $0.0004    $0.00096  $0.15188    12562    31406    62653    12562   5h     89.0
+LongCat-2.0           $0.00105   $0.00105  $0.00077    11435    28587    57174    11435   5h     76.9
 ```
 
 `-usage` (all three windows):
 
 ```sh
 #window  status  used_pct  remaining_pct  resets_at                resets_in
-5h       ok      14        86             2026-10-27T21:43:22+01:00  3h 8m 0s
-week     ok      14        86             2026-11-02T01:00:00+01:00  126h 25m 0s
-month    ok      20        80             2026-11-07T14:56:38+01:00  260h 21m 0s
+5h       ok      19        81             2026-10-27T21:43:22+01:00  53m 0s
+week     ok      16        84             2026-11-02T01:00:00+01:00  124h 9m 0s
+month    ok      21        79             2026-11-07T14:56:38+01:00  258h 6m 0s
 ```
 
 ### Sample probe detail
@@ -217,8 +224,9 @@ $ opencodable -probe-model kimi-k3.1-pro
 ## Columns
 
 `-json` keys are exactly the column titles below (minus the `#` on `name`),
-plus two JSON-only extras: `id` (models.dev model ID) and `unlimited`
-(boolean, free models). See [TITLES.md](TITLES.md) for the full contract.
+plus JSON-only extras: `id` (models.dev model ID) and `unlimited` (boolean,
+free models). `-now` also carries `known` and `spent_known` so its zero counts
+can be interpreted. See [TITLES.md](TITLES.md) for the full contract.
 
 | Column | Meaning |
 |---|---|
@@ -232,7 +240,7 @@ plus two JSON-only extras: `id` (models.dev model ID) and `unlimited`
 | `aa_int`, `aa_code`, `aa_math` | Artificial Analysis composite indexes |
 | `code_b`, `term_b`, `if_b`, `aa_lcr` | per-benchmark pass rates % via AA: LiveCodeBench, Terminal-Bench, IFBench, Long-Context Reasoning |
 | `swe_b` | SWE-bench Verified % resolved, best recorded agent run |
-| `pareto` | `yes` = not dominated on (cost, speed, quality) |
+| `pareto` | `yes` = not dominated on (cost, speed, quality) after `-paid`/`-privacy` filtering |
 | `src` | `aa:<effort>` when speed came from that AA reasoning-effort variant |
 
 Missing data prints as `-` (terminal) or empty (piped) — never a wrong score.
@@ -245,7 +253,7 @@ Missing data prints as `-` (terminal) or empty (piped) — never a wrong score.
 | [OpenCode Go docs](https://opencode.ai/v2/docs/console/go/) | allowances, token profiles, peak prices, privacy | none |
 | [Artificial Analysis](https://artificialanalysis.ai) | benchmark indexes, reported speed | free key |
 | [SWE-bench Verified](https://www.swebench.com/) leaderboard JSON | agentic repo-fixing % resolved | none |
-| [Console usage API](https://console.opencode.ai/api/usage) (`/usage/models`) | per-model spend for the current period | same Go key |
+| [Console usage API](https://console.opencode.ai/api/usage) (`/usage/models`) | per-model tokens and spend for the current period; Go allowance spend recomputed from tokens | same Go key |
 | Your subscription endpoint (probe) | real tok/s, TTFT, allowance burn | `OPENCODE_API_KEY` |
 
 Dropped with cause: LiveBench (data files not machine-accessible), Aider
@@ -277,23 +285,33 @@ expect the specific numbers to drift; the patterns below are stable):
 
 - **Standard library only.** No Go dependencies, no frameworks — a future Rust
   rewrite is a mechanical translation.
-- **Caching.** All fetches are cached 24h in `~/.cache/opencodable/`;
-  `-refresh` forces refetch, `-offline` forbids network. Probe failures are
-  retried on the next run rather than served stale for 24h.
+- **Caching.** Catalog, benchmark and probe fetches are cached 24h in
+  `~/.cache/opencodable/`; `-refresh` forces refetch, `-offline` forbids
+  network for those. `-usage` is live and still needs network; `-now -offline`
+  uses `-spent` when given and otherwise assumes zero spend. Probe failures
+  are retried on the next run rather than served stale for 24h.
 - **Probe robustness.** Thinking models stream `reasoning_content` first and
   can exhaust a small token budget before answering, so the probe escalates the
   budget on failure. Ultra-fast models finish inside a window too short to
   divide by, so the probe retries with a long-output prompt and only trusts
-  tok/s from windows ≥ 1 s.
+  tok/s from windows ≥ 1 s. A short window (< 2 s) above 500 tok/s, or any rate
+  above 1000 tok/s, is flagged suspect and kept out of ranking/`-now`; the raw
+  probe JSON still shows it for inspection.
+- **Allowance math.** Limits are per model: 5h = 20%, week = 50%, month = 100%
+  of that model's monthly dollar limit. `-now` uses actual console token counts
+  at Go prices when a model has enough traffic, otherwise the official profile.
+  The usage endpoint's percentages are aggregate and are not used to derive
+  per-model counts.
 - **Known artifact.** AA's `ttft_s` for reasoning models includes thinking time
   (e.g. Claude Haiku 5.5 ~247 s median) — treat it as time to first *answer* token.
-- **Prices are the comparison basis.** Your subscription bills allowances, not
-  retail; that is why `reqs_mo` matters more than `cost_tok` for
-  choosing a daily driver.
+- **Allowances are the comparison basis.** Your subscription bills per-model
+  allowances, not retail; that is why `reqs_mo` matters more than `cost_tok`
+  for choosing a daily driver, and why Pareto flags are computed after the
+  `-paid`/`-privacy` filters.
 
 ## Roadmap
 
-- `-privacy` awareness in Pareto scoring (currently a pre-filter)
+- Per-model 5h/weekly spend (the API exposes only aggregate window percentages)
 - Peak/off-peak *scheduling advice* (when DeepSeek is cheapest)
 - Optional LMArena Elo column
 - Multi-provider comparison (`-provider any`)
@@ -318,5 +336,8 @@ This repository is developed by me, a human hobbyist in my personal time in clos
 
 ## History
 
+- v0.0.2 2026-10-27 Per-model `-now` limits (no shared pot), allowance spend
+  from console token counts, Pareto after filters, deterministic ordering,
+  probe sanity checks. TITLES.md still changes until v1.0.0.
 - v0.0.1 2026-10-27 Data gathering, no effort (yet?) on UI or synthetic advice.
   Still in alpha test to gather feedback. TITLES.md may change until v1.0.0.

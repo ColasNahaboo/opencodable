@@ -90,6 +90,24 @@ func TestRunRejectsNoContent(t *testing.T) {
 	}
 }
 
+func TestRunFlagsImplausibleBurst(t *testing.T) {
+	srv := sseServer(t, []string{
+		"W10", chunk("Hello"), "W10", chunk(" world"), usageChunk(600, 0),
+	})
+	t.Cleanup(srv.Close)
+	old := endpoint
+	endpoint = srv.URL
+	defer func() { endpoint = old }()
+
+	res, err := Run("m", "k", 1024)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if !res.Suspect {
+		t.Errorf("tok/s = %v in a %v s window must be flagged suspect", res.TokPerSec, res.WindowSeconds)
+	}
+}
+
 func TestRunRejectsHTTPError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"model unavailable"}`, http.StatusBadRequest)

@@ -39,7 +39,9 @@ type Model struct {
 }
 
 // Fetch loads all AA LLM rows, using a 24h disk cache. The key comes from
-// AA_API_KEY or the first existing .artificialanalysis.key file (cwd upward).
+// AA_API_KEY or .artificialanalysis.key in the working directory. The key is
+// only needed for a network fetch: -offline can use an existing cache without
+// one.
 func Fetch(refresh, offline bool) ([]Model, error) {
 	key := os.Getenv("AA_API_KEY")
 	if key == "" {
@@ -47,10 +49,10 @@ func Fetch(refresh, offline bool) ([]Model, error) {
 			key = strings.TrimSpace(string(b))
 		}
 	}
-	if key == "" {
-		return nil, fmt.Errorf("no Artificial Analysis key: set AA_API_KEY or create .artificialanalysis.key")
-	}
 	b, err := cache.Load("aa-models.json", 24*time.Hour, refresh, offline, func() ([]byte, error) {
+		if key == "" {
+			return nil, fmt.Errorf("no Artificial Analysis key: set AA_API_KEY or create .artificialanalysis.key")
+		}
 		req, err := http.NewRequest(http.MethodGet, modelsURL, nil)
 		if err != nil {
 			return nil, err

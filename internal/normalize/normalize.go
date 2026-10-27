@@ -13,7 +13,7 @@ var aliases = map[string]string{
 	"beam-free":                  "reflection-beam",
 	"gemini-4-argon-contributor": "gemini-4-argon",
 	"longcat-2.5-preview-free":   "longcat-2-0",
-	"minimax-m3.1-flash-free":    "minimax-m3.1-flash",
+	"minimax-m3.1-flash-free":    "minimax-m3-1-flash",
 	"step-5-preview-free":        "step-5",
 	"deepseek-v4.1-flash":        "deepseek-v4-1-flash-1017", // dated snapshot = measured one
 }

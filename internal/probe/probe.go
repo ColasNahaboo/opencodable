@@ -25,9 +25,34 @@ const Prompt = "Write a FizzBuzz function in Python, then briefly explain the mo
 // is so fast that the default answer finishes inside an untrustworthy window.
 const LongPrompt = "Explain in detail (at least 600 words) how a binary search tree works: insertion, search, deletion, balancing, then give a full Python implementation with comments."
 
-// MinWindow is the smallest generation window (seconds) we trust for tok/s.
-// Below it, bursts (all tokens in one chunk) produce absurd numbers.
-const MinWindow = 1.0
+// Probe sanity thresholds.
+const (
+	// MinWindow is the absolute minimum generation window (seconds) we
+	// trust for tok/s. Below it, bursts (all tokens in one chunk) produce
+	// absurd numbers.
+	MinWindow = 1.0
+	// HighRateTokS in a window shorter than HighRateWindow is a burst
+	// artifact: the 1.07s / 799 tok/s Kimi K3 measurement is the example.
+	// A high rate sustained over a longer window is accepted.
+	HighRateTokS   = 500.0
+	HighRateWindow = 2.0
+	// MaxPlausibleTokS rejects absurd rates even in long windows.
+	MaxPlausibleTokS = 1000.0
+)
+
+// Normalize recomputes Suspect from the measurement. It also fixes old cache
+// entries written before the current thresholds existed.
+func (r *Result) Normalize() {
+	r.Suspect = r.TokPerSec > MaxPlausibleTokS ||
+		(r.WindowSeconds < HighRateWindow && r.TokPerSec > HighRateTokS)
+}
+
+// Trusted reports whether a measurement is safe to use for ranking.
+func (r Result) Trusted() bool {
+	return r.Error == "" && r.WindowSeconds >= MinWindow && !r.Suspect &&
+		r.TokPerSec <= MaxPlausibleTokS &&
+		!(r.WindowSeconds < HighRateWindow && r.TokPerSec > HighRateTokS)
+}
 
 // Result is one measured request.
 type Result struct {
@@ -42,6 +67,7 @@ type Result struct {
 	CachedTok     int64   `json:"cached_tokens"`
 	Allowance     float64 `json:"allowance_burned"`
 	ListCost      float64 `json:"list_cost"`
+	Suspect       bool    `json:"suspect,omitempty"`
 	Error         string  `json:"error,omitempty"`
 }
 
@@ -143,23 +169,23 @@ func runPrompt(modelID, key, prompt string, maxTokens int64) (Result, error) {
 			continue
 		}
 		now := time.Now()
-		if firstGen.IsZero() {
-			for _, c := range ch.Choices {
-				if c.Delta.Content != "" || c.Delta.ReasoningContent != "" {
+		hasDelta := false
+		for _, c := range ch.Choices {
+			if c.Delta.Content != "" || c.Delta.ReasoningContent != "" {
+				hasDelta = true
+				if firstGen.IsZero() {
 					firstGen = now
-					break
 				}
-			}
-		}
-		if firstContent.IsZero() {
-			for _, c := range ch.Choices {
-				if c.Delta.Content != "" {
+				if firstContent.IsZero() && c.Delta.Content != "" {
 					firstContent = now
-					break
 				}
 			}
 		}
-		last = now
+		// Only token-bearing chunks end the generation window. A trailing
+		// usage/keepalive chunk must not inflate the window and depress tok/s.
+		if hasDelta {
+			last = now
+		}
 		if ch.Usage != nil {
 			u := ch.Usage
 			res.PromptTok = u.PromptTokens
@@ -189,6 +215,10 @@ func runPrompt(modelID, key, prompt string, maxTokens int64) (Result, error) {
 	res.TTFTSeconds = firstContent.Sub(start).Seconds()
 	res.E2ESeconds = last.Sub(start).Seconds()
 	res.WindowSeconds = last.Sub(genStart).Seconds()
+	if res.WindowSeconds <= 0 {
+		return res, fmt.Errorf("zero-length generation window")
+	}
 	res.TokPerSec = float64(res.OutputTok) / res.WindowSeconds
+	res.Normalize()
 	return res, nil
 }

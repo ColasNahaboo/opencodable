@@ -2,6 +2,7 @@ package table
 
 import (
 	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -199,4 +200,55 @@ func TestQualFallsBackToCoding(t *testing.T) {
 	if qual(r2) != 55 {
 		t.Errorf("qual prefer intel = %v", qual(r2))
 	}
+}
+
+func TestSortDeterministicTies(t *testing.T) {
+	rows := []Row{
+		{ID: "c", Name: "same", AAIntel: 10},
+		{ID: "a", Name: "same", AAIntel: 10},
+		{ID: "b", Name: "same", AAIntel: 10},
+	}
+	Sort(rows, "quality")
+	got := []string{rows[0].ID, rows[1].ID, rows[2].ID}
+	want := []string{"a", "b", "c"}
+	if !slices.Equal(got, want) {
+		t.Errorf("tie order = %v, want %v", got, want)
+	}
+}
+
+func TestSortReqsUnlimitedFirst(t *testing.T) {
+	rows := []Row{
+		{ID: "paid", ReqsMonth: 10},
+		{ID: "free", Unlimited: true, ReqsMonth: 0},
+	}
+	Sort(rows, "reqs")
+	if rows[0].ID != "free" {
+		t.Errorf("unlimited model must sort first on reqs, got %s", rows[0].ID)
+	}
+}
+
+func TestMarkParetoAfterFilter(t *testing.T) {
+	rows := []Row{
+		{ID: "deepseek-v4.1-flash", Name: "DeepSeek", CostTask: 0.00046, ProbeTokS: 215.6, AAIntel: 45.1},
+		{ID: "muse-spark-1.3-contributor", Name: "Muse", CostTask: 0.00026, ProbeTokS: 233.8, AAIntel: 48.1},
+		{ID: "kimi-k3.1-pro", Name: "Kimi", CostTask: 0.0204, ProbeTokS: 78.7, AAIntel: 55.1},
+	}
+	MarkPareto(rows)
+	if paretoOf(rows, "deepseek-v4.1-flash") {
+		t.Fatal("DeepSeek should be dominated while the contributor model is visible")
+	}
+	rows = slices.DeleteFunc(rows, func(r Row) bool { return r.ID == "muse-spark-1.3-contributor" })
+	MarkPareto(rows)
+	if !paretoOf(rows, "deepseek-v4.1-flash") {
+		t.Error("DeepSeek should be Pareto after -privacy removes the contributor model")
+	}
+}
+
+func paretoOf(rows []Row, id string) bool {
+	for _, r := range rows {
+		if r.ID == id {
+			return r.Pareto
+		}
+	}
+	return false
 }

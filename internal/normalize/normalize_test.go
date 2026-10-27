@@ -19,6 +19,7 @@ func TestMatch(t *testing.T) {
 	slugs := map[string]bool{
 		"glm-5-3": true, "step-5": true, "mimo-v2-5-0424": true,
 		"muse-spark-1-3": true, "qwen3-8-max": true, "longcat-2-0": true,
+		"minimax-m3-1-flash": true,
 	}
 	cases := map[string]string{ // models.dev ID → expected AA slug
 		"glm-5.3":                    "glm-5-3", // dashed direct hit
@@ -27,6 +28,7 @@ func TestMatch(t *testing.T) {
 		"muse-spark-1.3-contributor": "muse-spark-1-3",
 		"qwen3.8-max":                "qwen3-8-max",
 		"longcat-2.5-preview-free":   "longcat-2-0",
+		"minimax-m3.1-flash-free":    "minimax-m3-1-flash",
 	}
 	for id, want := range cases {
 		if got := Match(id, slugs); got != want {
