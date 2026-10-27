@@ -19,10 +19,9 @@ Hy3             $0.58     $0.00279   $60        21506.9   615.8    25.3    -    
 
 `opencodable` is a single Go binary (standard library only, zero dependencies)
 that joins four data sources — your subscription's catalog, OpenCode's own plan
-data, Artificial Analysis benchmarks, and live measurements of *your* endpoints —
-into one tab-separated table, one line per model. It ranks models by price,
-speed and quality, flags the non-dominated ones (Pareto), and tells you how
-many requests per month each model actually buys you under your plan.
+data, Artificial Analysis benchmarks, and live measurements of *your* endpoints.
+
+It outputs a simple text table on the terminal, but is designed to be scripted either by its JSON output or unix tab-separated lines if its output is piped into a program. Basically it gathers data so that you can present it as you like.
 
 ## The problem
 
@@ -287,3 +286,14 @@ benchmark feeds). Any output change must respect [TITLES.md](TITLES.md).
 ## License
 
 [MIT](LICENSE) © Colas Nahaboo
+
+## AI Co-Design Disclosure
+
+![Co-Designed with AI](https://img.shields.io/badge/Co--Designed%20with-AI-blueviolet?style=flat-square&logo=openai)
+
+This repository is developed by me, a human hobbyist in my personal time in close collaboration with various AI programming assistants. System architecture, logic design, and final reviews are handled by me, while code scaffolding, repetitive tasks, and standard styling are co-piloted by AI. AI contributions are commited under their model name, and can be quite verbose for tracability.
+
+## History
+
+- v0.0.1 2026-10-27 Data gathering, no effort (yet?) on UI or synthetic advice.
+  Still in alpha test to gather feedback. TITLES.md may change until v1.0.0.
