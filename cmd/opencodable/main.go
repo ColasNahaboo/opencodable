@@ -27,7 +27,16 @@ import (
 	"opencodable/internal/usage"
 )
 
+// version is displayed at the bottom of the -h help text.
+var version = "v0.0.1"
+
 func main() {
+	flag.Usage = func() {
+		out := flag.CommandLine.Output()
+		fmt.Fprintf(out, "Usage of %s:\n", os.Args[0])
+		flag.PrintDefaults()
+		fmt.Fprintf(out, "\nopencodable %s — output spec: TITLES.md\n", version)
+	}
 	var (
 		provider = flag.String("provider", "opencode-go", "models.dev provider to rank")
 		plan     = flag.String("plan", "go", "subscription plan: go|go-plus (allowances)")
