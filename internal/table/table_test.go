@@ -121,6 +121,32 @@ func TestWriteTSVMachineMode(t *testing.T) {
 	}
 }
 
+func TestWriteVertical(t *testing.T) {
+	rows := []Row{
+		{Name: "m1", PriceOut1M: 10, Pareto: true, variant: "high"},
+		{Name: "m2", AACoding: 70},
+	}
+	var b strings.Builder
+	if err := WriteVertical(&b, rows, false); err != nil {
+		t.Fatal(err)
+	}
+	out := b.String()
+	// every record starts with "name: ", fields are key: value, empties skipped
+	if !strings.Contains(out, "name: m1\ncost_tok: $10\npareto: yes\nsrc: aa:high") {
+		t.Errorf("m1 block wrong:\n%s", out)
+	}
+	if strings.Contains(out, "cost_task: ") {
+		t.Error("empty fields must be skipped in vertical mode")
+	}
+	records := strings.Split(strings.TrimRight(out, "\n"), "\n\n")
+	if len(records) != 2 {
+		t.Errorf("want 2 records separated by a blank line, got %d:\n%s", len(records), out)
+	}
+	if !strings.HasPrefix(records[1], "name: m2\n") {
+		t.Errorf("second record wrong: %q", records[1])
+	}
+}
+
 func TestWriteTSVTTYMode(t *testing.T) {
 	rows := []Row{{Name: "m1", PriceOut1M: 10}}
 	var b strings.Builder

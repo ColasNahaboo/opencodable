@@ -44,6 +44,7 @@ func main() {
 		now      = flag.Bool("now", false, "per model: requests still affordable in each remaining window")
 		spent    = flag.String("spent", "", "path to a pasted console 'usage by model' TSV; subtracts real spend from monthly allowances")
 		pot      = flag.Float64("pot", 0, "plan allowance pot in dollars (default: 10 for go, 40 for go-plus)")
+		vertical = flag.Bool("vertical", false, "one model per block of 'field: value' lines (screen-reader friendly); applies to the table and -now")
 		jsonOut  = flag.Bool("json", false, "JSON output instead of TSV")
 	)
 	flag.Parse()
@@ -80,7 +81,7 @@ func main() {
 				os.Exit(1)
 			}
 		}
-		if err := runNow(*plan, p, spentByModel, *spent != "", *paid, *privacy, *peak, isTTY(os.Stdout)); err != nil {
+		if err := runNow(*plan, p, spentByModel, *spent != "", *paid, *privacy, *peak, *vertical, isTTY(os.Stdout)); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
@@ -143,8 +144,18 @@ func main() {
 		fmt.Fprintln(os.Stderr, "no models matched; check -provider, -plan and cache state")
 		os.Exit(1)
 	}
+	if *vertical && *jsonOut {
+		fmt.Fprintln(os.Stderr, "warning: -vertical is ignored with -json")
+	}
 	if *jsonOut {
 		if err := table.WriteJSON(os.Stdout, rows); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
+	if *vertical {
+		if err := table.WriteVertical(os.Stdout, rows, isTTY(os.Stdout)); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
@@ -294,7 +305,7 @@ type nowRow struct {
 // requests fit in each remaining usage window. The usage endpoint meters one
 // shared pot (assumed = plan price, override with -pot); measured probe burn
 // ratios make the per-request allowance cost model-specific.
-func runNow(planName string, pot float64, spentFile map[string]float64, spentGiven, paid, privacy, peak, tty bool) error {
+func runNow(planName string, pot float64, spentFile map[string]float64, spentGiven, paid, privacy, peak, vertical, tty bool) error {
 	models, err := modelsdev.Fetch("opencode-go", false, false)
 	if err != nil {
 		return err
@@ -383,6 +394,21 @@ func runNow(planName string, pot float64, spentFile map[string]float64, spentGiv
 		}
 	}
 	head := []string{"#name", "cost_task", "burn_req", "spent_mo", "reqs_5h", "reqs_week", "reqs_month", "usable", "limited_by", "p_tok_s"}
+	if vertical {
+		out := os.Stdout
+		for i, r := range rows {
+			if i > 0 {
+				fmt.Fprintln(out)
+			}
+			for j, v := range cells(r) {
+				if v == "" {
+					continue
+				}
+				fmt.Fprintf(out, "%s: %s\n", strings.TrimPrefix(head[j], "#"), v)
+			}
+		}
+		return nil
+	}
 	if !tty {
 		fmt.Fprintln(os.Stdout, strings.Join(head, "\t"))
 		for _, r := range rows {

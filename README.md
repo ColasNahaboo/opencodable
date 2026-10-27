@@ -108,8 +108,8 @@ opencodable -offline                 # cache only, no network
 
 All flags: `-provider` (models.dev provider, default `opencode-go`), `-plan`,
 `-sort` (`name|price|speed|quality|reqs`), `-pareto`, `-paid`, `-privacy`,
-`-peak`, `-probe`, `-probe-model`, `-usage`, `-now`, `-spent`, `-pot`, `-json`,
-`-refresh`, `-offline`.
+`-peak`, `-probe`, `-probe-model`, `-usage`, `-now`, `-spent`, `-pot`,
+`-vertical`, `-json`, `-refresh`, `-offline`.
 
 `-usage` reads the live allowance endpoint and prints, per window (5h rolling
 = 20% of the plan's monthly limit, weekly = 50%, monthly = 100%), the percent
@@ -149,6 +149,23 @@ verdict (`allowance`).
 
 ```sh
 opencodable | grep -v '^#' | awk -F'\t' 'NR>1 {print $1, $6}'
+```
+
+`-vertical` renders one model per block of `field: value` lines with blank
+lines between records and empty fields skipped — much easier to read with a
+screen reader than a wide table, and applies to both the model table and
+`-now`:
+
+```sh
+$ opencodable -pareto -paid -vertical
+name: Kimi K3.1 Pro
+cost_tok: $10
+cost_task: $0.0204
+allowance: $15
+reqs_mo: 735.3
+p_tok_s: 78.7
+aa_int: 55.1
+pareto: yes
 ```
 
 The `-json` flag bypasses TSV entirely and dumps the rows as JSON.

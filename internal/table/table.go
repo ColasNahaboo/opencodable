@@ -206,6 +206,36 @@ func WriteTSV(w io.Writer, rows []Row, tty bool) error {
 	return nil
 }
 
+// WriteVertical renders one model per block as "field: value" lines, blank
+// line between records, empty fields skipped. Easier for screen readers and
+// greppers than a wide table.
+func WriteVertical(w io.Writer, rows []Row, tty bool) error {
+	if tty {
+		for _, l := range legend {
+			if _, err := fmt.Fprintln(w, l); err != nil {
+				return err
+			}
+		}
+	}
+	head := headerCells()
+	for i, r := range rows {
+		if i > 0 {
+			if _, err := fmt.Fprintln(w); err != nil {
+				return err
+			}
+		}
+		for j, v := range rowCells(r, "") {
+			if v == "" {
+				continue
+			}
+			if _, err := fmt.Fprintf(w, "%s: %s\n", strings.TrimPrefix(head[j], "#"), v); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 func headerCells() []string {
 	return []string{
 		"#name", "cost_tok", "cost_task", "allowance", "reqs_mo",
