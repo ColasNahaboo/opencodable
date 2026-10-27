@@ -1,6 +1,7 @@
 package table
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -76,7 +77,7 @@ func TestNumOr(t *testing.T) {
 
 func TestWriteTSVMachineMode(t *testing.T) {
 	rows := []Row{
-		{Name: "m1", PriceOut1M: 10, CostTask: 0.02, TokPerSec: 123.45, Pareto: true, variant: "high"},
+		{Name: "m1", PriceOut1M: 10, CostTask: 0.02, TokPerSec: 123.45, Pareto: true, Src: "aa:high"},
 		{Name: "m2"},
 	}
 	var b strings.Builder
@@ -123,7 +124,7 @@ func TestWriteTSVMachineMode(t *testing.T) {
 
 func TestWriteVertical(t *testing.T) {
 	rows := []Row{
-		{Name: "m1", PriceOut1M: 10, Pareto: true, variant: "high"},
+		{Name: "m1", PriceOut1M: 10, Pareto: true, Src: "aa:high"},
 		{Name: "m2", AACoding: 70},
 	}
 	var b strings.Builder
@@ -144,6 +145,31 @@ func TestWriteVertical(t *testing.T) {
 	}
 	if !strings.HasPrefix(records[1], "name: m2\n") {
 		t.Errorf("second record wrong: %q", records[1])
+	}
+}
+
+func TestJSONKeysMatchTitles(t *testing.T) {
+	rows := []Row{{Name: "m1", PriceOut1M: 10, Pareto: true, Src: "aa:high"}}
+	b, err := json.Marshal(rows)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var recs []map[string]any
+	if err := json.Unmarshal(b, &recs); err != nil {
+		t.Fatal(err)
+	}
+	if len(recs) != 1 {
+		t.Fatalf("want 1 record, got %d", len(recs))
+	}
+	// every TSV column title (sans #) must exist as a JSON key
+	for _, title := range headerCells() {
+		key := strings.TrimPrefix(title, "#")
+		if _, ok := recs[0][key]; !ok {
+			t.Errorf("JSON missing key %q for column %q", key, title)
+		}
+	}
+	if recs[0]["src"] != "aa:high" {
+		t.Errorf("src = %v, want aa:high", recs[0]["src"])
 	}
 }
 

@@ -88,3 +88,18 @@ OpenCode.
 - Pre-release: no guarantee, titles may change (see rule 3).
 - After first tagged release: rules 1–2 apply; bump the major version on any
   rename, removal, or reorder of the columns above.
+
+## JSON output (`-json`, all views)
+
+`-json` works for every view and emits an array of objects whose keys are
+**the column titles above, without the `#` prefix** — same names, so one
+spec covers both formats. Numbers stay numbers, `pareto` stays boolean, and
+`resets_at`/`resets_in` keep their meanings. Two JSON-only extras exist in
+the main table view:
+
+- `id` — the models.dev model ID (e.g. `kimi-k3.1-pro`)
+- `unlimited` — boolean, true for free models (their `allowance` reads 0)
+
+Empty/missing values: absent numeric fields mean zero (the table's `-` and
+the piped empty string both encode "no data" as 0 in JSON); `src` is omitted
+when empty.

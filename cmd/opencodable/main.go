@@ -58,7 +58,7 @@ func main() {
 	}
 
 	if *showUse {
-		if err := runUsage(isTTY(os.Stdout)); err != nil {
+		if err := runUsage(*jsonOut, isTTY(os.Stdout)); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
@@ -81,7 +81,7 @@ func main() {
 				os.Exit(1)
 			}
 		}
-		if err := runNow(*plan, p, spentByModel, *spent != "", *paid, *privacy, *peak, *vertical, isTTY(os.Stdout)); err != nil {
+		if err := runNow(*plan, p, spentByModel, *spent != "", *paid, *privacy, *peak, *vertical, *jsonOut, isTTY(os.Stdout)); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
@@ -242,9 +242,9 @@ func mustJSON(v any) []byte {
 	return b
 }
 
-// runUsage prints the remaining Go allowance windows, tty-padded or piped as
-// strict TABs, in the same style as the model table.
-func runUsage(tty bool) error {
+// runUsage prints the remaining Go allowance windows, as JSON, tty-padded
+// or piped as strict TABs — same style rules as the model table.
+func runUsage(jsonOut, tty bool) error {
 	key, err := probe.Key()
 	if err != nil {
 		return err
@@ -254,6 +254,26 @@ func runUsage(tty bool) error {
 		return err
 	}
 	now := time.Now()
+	if jsonOut {
+		type jsonWindow struct {
+			Window       string  `json:"window"`
+			Status       string  `json:"status"`
+			UsedPct      float64 `json:"used_pct"`
+			RemainingPct float64 `json:"remaining_pct"`
+			ResetsAt     string  `json:"resets_at"`
+			ResetsIn     string  `json:"resets_in"`
+		}
+		out := make([]jsonWindow, 0, len(ws))
+		for _, w := range ws {
+			out = append(out, jsonWindow{
+				Window: w.Name, Status: w.Status,
+				UsedPct: w.Percent, RemainingPct: w.Remaining(),
+				ResetsAt: w.ResetsAt.Local().Format(time.RFC3339),
+				ResetsIn: resetIn(now, w.ResetsAt),
+			})
+		}
+		return json.NewEncoder(os.Stdout).Encode(out)
+	}
 	if !tty {
 		fmt.Fprintln(os.Stdout, strings.Join(
 			[]string{"#window", "status", "used_pct", "remaining_pct", "resets_at", "resets_in"}, "\t"))
@@ -333,7 +353,7 @@ var nowLegend = []string{
 // requests fit in each remaining usage window. The usage endpoint meters one
 // shared pot (assumed = plan price, override with -pot); measured probe burn
 // ratios make the per-request allowance cost model-specific.
-func runNow(planName string, pot float64, spentFile map[string]float64, spentGiven, paid, privacy, peak, vertical, tty bool) error {
+func runNow(planName string, pot float64, spentFile map[string]float64, spentGiven, paid, privacy, peak, vertical, jsonOut, tty bool) error {
 	models, err := modelsdev.Fetch("opencode-go", false, false)
 	if err != nil {
 		return err
@@ -422,6 +442,29 @@ func runNow(planName string, pot float64, spentFile map[string]float64, spentGiv
 		}
 	}
 	head := []string{"#name", "cost_task", "burn_req", "spent_mo", "reqs_5h", "reqs_wk", "reqs_mo", "usable", "limit", "p_tok_s"}
+	if jsonOut {
+		type jsonNow struct {
+			Name      string  `json:"name"`
+			CostTask  float64 `json:"cost_task"`
+			BurnReq   float64 `json:"burn_req"`
+			SpentMo   float64 `json:"spent_mo"`
+			Reqs5h    int     `json:"reqs_5h"`
+			ReqsWk    int     `json:"reqs_wk"`
+			ReqsMo    int     `json:"reqs_mo"`
+			Usable    int     `json:"usable"`
+			Limit     string  `json:"limit"`
+			ProbeTokS float64 `json:"p_tok_s"`
+		}
+		out := make([]jsonNow, 0, len(rows))
+		for _, r := range rows {
+			out = append(out, jsonNow{
+				Name: r.name, CostTask: r.costTask, BurnReq: r.burn, SpentMo: r.spentMo,
+				Reqs5h: r.five, ReqsWk: r.week, ReqsMo: r.month,
+				Usable: r.usable, Limit: r.binding, ProbeTokS: r.probeTokS,
+			})
+		}
+		return json.NewEncoder(os.Stdout).Encode(out)
+	}
 	if vertical {
 		if tty {
 			for _, l := range nowLegend {

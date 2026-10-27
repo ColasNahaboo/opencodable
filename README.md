@@ -190,8 +190,9 @@ $ opencodable -probe-model kimi-k3.1-pro
 
 ## Columns
 
-Short titles keep the piped output narrow; JSON keys (`-json`) are the long
-names (e.g. `probe_tok_s`, `aa_intelligence`, `swebench_verified`).
+`-json` keys are exactly the column titles below (minus the `#` on `name`),
+plus two JSON-only extras: `id` (models.dev model ID) and `unlimited`
+(boolean, free models). See [TITLES.md](TITLES.md) for the full contract.
 
 | Column | Meaning |
 |---|---|

@@ -20,29 +20,30 @@ import (
 )
 
 // Row is one output line: one subscription model with everything joined.
+// JSON keys match the TSV column titles (see TITLES.md), plus the `id` and
+// `unlimited` extras.
 type Row struct {
 	Name          string  `json:"name"`
 	ID            string  `json:"id"`
-	PriceOut1M    float64 `json:"price_out_1M"`
+	PriceOut1M    float64 `json:"cost_tok"`
 	CostTask      float64 `json:"cost_task"`
-	AllowanceUSD  float64 `json:"allowance_usd"`
+	AllowanceUSD  float64 `json:"allowance"`
 	Unlimited     bool    `json:"unlimited"`
-	ReqsMonth     float64 `json:"reqs_month"`
+	ReqsMonth     float64 `json:"reqs_mo"`
 	TokPerSec     float64 `json:"tok_s"`
 	TTFTSeconds   float64 `json:"ttft_s"`
-	ProbeTokS     float64 `json:"probe_tok_s"`
-	ProbeTTFT     float64 `json:"probe_ttft_s"`
-	AAIntel       float64 `json:"aa_intelligence"`
-	AACoding      float64 `json:"aa_coding"`
+	ProbeTokS     float64 `json:"p_tok_s"`
+	ProbeTTFT     float64 `json:"p_ttft_s"`
+	AAIntel       float64 `json:"aa_int"`
+	AACoding      float64 `json:"aa_code"`
 	AAMath        float64 `json:"aa_math"`
-	LiveCodeBench float64 `json:"livecodebench"`
-	TerminalBench float64 `json:"terminalbench"`
-	IFBench       float64 `json:"ifbench"`
+	LiveCodeBench float64 `json:"code_b"`
+	TerminalBench float64 `json:"term_b"`
+	IFBench       float64 `json:"if_b"`
 	LCR           float64 `json:"aa_lcr"`
-	SWEBench      float64 `json:"swebench_verified"`
+	SWEBench      float64 `json:"swe_b"`
 	Pareto        bool    `json:"pareto"`
-	// set when the speed came from an AA effort variant
-	variant string
+	Src           string  `json:"src,omitempty"`
 }
 
 func f(p *float64) float64 {
@@ -93,7 +94,7 @@ func Build(models []modelsdev.Model, aas []aa.Model, probes map[string]probe.Res
 			r.SWEBench = swe[normalize.Key(a.Slug)]
 			if suf, t := normalize.VariantWithSpeed(slug, speeds); suf != "" {
 				r.TokPerSec = t
-				r.variant = suf[1:]
+				r.Src = "aa:" + suf[1:]
 			}
 		}
 		rows = append(rows, r)
@@ -249,10 +250,6 @@ func headerCells() []string {
 // rowCells returns the field values of one row; missing becomes "-" on a
 // terminal and the empty string when piped.
 func rowCells(r Row, missing string) []string {
-	src := ""
-	if r.variant != "" {
-		src = "aa:" + r.variant
-	}
 	pareto := ""
 	if r.Pareto {
 		pareto = "yes"
@@ -266,7 +263,7 @@ func rowCells(r Row, missing string) []string {
 		numOr(r.AAIntel, false, missing), numOr(r.AACoding, false, missing), numOr(r.AAMath, false, missing),
 		numOr(r.LiveCodeBench, false, missing), numOr(r.TerminalBench, false, missing),
 		numOr(r.IFBench, false, missing), numOr(r.LCR, false, missing), numOr(r.SWEBench, false, missing),
-		pareto, src,
+		pareto, r.Src,
 	}
 }
 
