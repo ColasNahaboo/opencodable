@@ -269,7 +269,7 @@ func runUsage(tty bool) error {
 		return nil
 	}
 	fmt.Fprintln(os.Stdout, "# Go subscription allowance (percent of plan limit)")
-	fmt.Fprintf(os.Stdout, "%-8s  %-8s  %5s  %5s  %-25s  %s\n", "window", "status", "used", "left", "resets at", "resets in")
+	fmt.Fprintf(os.Stdout, "%-8s  %-8s  %5s  %5s  %-25s  %s\n", "window", "status", "used", "left", "resets_at", "resets_in")
 	for _, w := range ws {
 		fmt.Fprintf(os.Stdout, "%-8s  %-8s  %4.0f%%  %4.0f%%  %-25s  %s\n",
 			w.Name, w.Status, w.Percent, w.Remaining(),
