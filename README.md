@@ -5,7 +5,7 @@
 **Find the best compromise of price, speed and quality among the models of your
 OpenCode subscription — right now, in your terminal.**
 
-[MIT licensed](LICENSE) · single Go binary · zero dependencies · Go 1.26+
+[MIT licensed](LICENSE) · [releases](https://github.com/ColasNahaboo/opencodable/releases) · single Go binary · zero dependencies · Go 1.26+
 
 ---
 
