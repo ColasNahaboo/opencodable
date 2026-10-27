@@ -136,6 +136,21 @@ func Requests(b Budgets, burnPerReq float64) (five, week, month, usable int, bin
 	return
 }
 
+// HumanizeDuration formats a Go duration with spaces between components:
+// "4h23m0s" → "4h 23m 0s".
+func HumanizeDuration(d time.Duration) string {
+	s := d.String()
+	var b strings.Builder
+	for i, r := range s {
+		b.WriteRune(r)
+		if (r == 'h' || r == 'm' || r == 's') &&
+			i+1 < len(s) && s[i+1] >= '0' && s[i+1] <= '9' {
+			b.WriteByte(' ')
+		}
+	}
+	return b.String()
+}
+
 // ParseSpentFile reads a console "usage by model" paste (tab or 2+-space
 // separated lines: model id, counts..., last field a $cost, "<$0.01" allowed)
 // and returns spent allowance dollars per model ID.

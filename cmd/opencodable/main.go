@@ -284,7 +284,7 @@ func resetIn(from, at time.Time) string {
 	if d <= 0 {
 		return "now"
 	}
-	return d.Round(time.Minute).String()
+	return usage.HumanizeDuration(d.Round(time.Minute))
 }
 
 // nowRow is one line of the -now table: what this model still affords.

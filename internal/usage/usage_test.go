@@ -5,6 +5,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestParse(t *testing.T) {
@@ -32,6 +33,20 @@ func TestParse(t *testing.T) {
 func TestParseGarbage(t *testing.T) {
 	if _, err := parse(strings.NewReader("nope")); err == nil {
 		t.Error("want error on garbage")
+	}
+}
+
+func TestHumanizeDuration(t *testing.T) {
+	cases := map[time.Duration]string{
+		4*time.Hour + 23*time.Minute:                   "4h 23m 0s",
+		128*time.Hour + 11*time.Minute + 5*time.Second: "128h 11m 5s",
+		45 * time.Second:                               "45s",
+		2*time.Minute + 30*time.Second:                 "2m 30s",
+	}
+	for d, want := range cases {
+		if got := HumanizeDuration(d); got != want {
+			t.Errorf("HumanizeDuration(%v) = %q, want %q", d, got, want)
+		}
 	}
 }
 
