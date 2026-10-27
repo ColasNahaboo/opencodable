@@ -167,17 +167,13 @@ func Sort(rows []Row, key string) {
 	sort.SliceStable(rows, func(i, j int) bool { return less(rows[i], rows[j]) })
 }
 
-// WriteTSV renders the table. A legend block of #-prefixed lines explains
-// every column. On a terminal the columns are padded for readability and
-// missing values show as "-"; when stdout is piped, every row (header
-// included) is strict single-TAB separated values with empty fields for
-// missing data, for easy machine parsing.
+// WriteTSV renders the table. On a terminal the columns are padded for
+// readability, missing values show as "-" and a #-prefixed legend block
+// explains each column. When stdout is piped, the legend is omitted and
+// every row — header included — is strict single-TAB separated values with
+// empty fields for missing data, for easy machine parsing. The "#name"
+// header stays prefixed so it can never be confused with the "# " legend.
 func WriteTSV(w io.Writer, rows []Row, tty bool) error {
-	for _, l := range legend {
-		if _, err := fmt.Fprintln(w, l); err != nil {
-			return err
-		}
-	}
 	missing := ""
 	if tty {
 		missing = "-"
@@ -188,6 +184,12 @@ func WriteTSV(w io.Writer, rows []Row, tty bool) error {
 		lines = append(lines, strings.Join(rowCells(r, missing), "\t"))
 	}
 	if tty {
+		// Legend prose is for humans only; keep piped output lean.
+		for _, l := range legend {
+			if _, err := fmt.Fprintln(w, l); err != nil {
+				return err
+			}
+		}
 		tw := tabwriter.NewWriter(w, 0, 2, 2, ' ', 0)
 		for _, l := range lines {
 			if _, err := fmt.Fprintln(tw, l); err != nil {
@@ -206,11 +208,11 @@ func WriteTSV(w io.Writer, rows []Row, tty bool) error {
 
 func headerCells() []string {
 	return []string{
-		"#name", "price_out_1M", "cost_task", "allowance_usd", "reqs_month",
-		"tok_s", "ttft_s", "probe_tok_s", "probe_ttft_s",
-		"aa_intelligence", "aa_coding", "aa_math",
-		"livecodebench", "terminalbench", "ifbench", "aa_lcr",
-		"swebench_verified", "pareto", "source",
+		"#name", "cost_tok", "cost_task", "allowance", "reqs_mo",
+		"tok_s", "ttft_s", "p_tok_s", "p_ttft_s",
+		"aa_int", "aa_code", "aa_math",
+		"code_b", "term_b", "if_b", "aa_lcr",
+		"swe_b", "pareto", "src",
 	}
 }
 
@@ -262,26 +264,26 @@ func allowanceOr(r Row, missing string) string {
 
 // legend documents each column, one #-prefixed line per column.
 var legend = []string{
-	"# opencodable — OpenCode Go models ranked by price / speed / quality",
-	"# name             model display name (models.dev catalog)",
-	"# price_out_1M     retail USD per 1M output tokens",
-	"# cost_task        estimated USD per coding-agent request (OpenCode official token profile, base tier)",
-	"# allowance_usd    monthly usage budget of this model in the plan (unlimited = free models)",
-	"# reqs_month       allowance_usd / cost_task = approx. requests per month",
-	"# tok_s            Artificial Analysis median output tok/s (reported, other hosts)",
-	"# ttft_s           AA median seconds to first token, thinking included (same)",
-	"# probe_tok_s      MEASURED on your subscription via -probe (tok/s over the generation window)",
-	"# probe_ttft_s     MEASURED seconds to first generated token via -probe",
-	"# aa_intelligence  Artificial Analysis Intelligence Index (composite)",
-	"# aa_coding        Artificial Analysis Coding Index",
-	"# aa_math          Artificial Analysis Math Index",
-	"# livecodebench    LiveCodeBench pass rate % (via AA)",
-	"# terminalbench    Terminal-Bench pass rate % (via AA)",
-	"# ifbench          IFBench instruction-following pass rate % (via AA)",
-	"# aa_lcr           AA Long-Context Reasoning pass rate %",
-	"# swebench_verified SWE-bench Verified % resolved, best recorded agent run (swebench.com)",
-	"# pareto           yes = no other model is cheaper-or-equal, faster-or-equal AND better-or-equal",
-	"# source           aa:<effort> = speed from that AA reasoning-effort variant",
+	"# opencodable — OpenCode Go models ranked by cost / speed / quality",
+	"# name        model display name (models.dev catalog)",
+	"# cost_tok    retail USD per 1M output tokens",
+	"# cost_task   estimated USD per coding-agent request (OpenCode official token profile, base tier)",
+	"# allowance   monthly usage budget of this model in the plan (unlimited = free models)",
+	"# reqs_mo     allowance / cost_task = approx. requests per month",
+	"# tok_s       Artificial Analysis median output tok/s (reported, other hosts)",
+	"# ttft_s      AA median seconds to first token, thinking included (same)",
+	"# p_tok_s     MEASURED on your subscription via -probe (tok/s over the generation window)",
+	"# p_ttft_s    MEASURED seconds to first generated token via -probe",
+	"# aa_int      Artificial Analysis Intelligence Index (composite)",
+	"# aa_code     Artificial Analysis Coding Index",
+	"# aa_math     Artificial Analysis Math Index",
+	"# code_b      LiveCodeBench pass rate % (via AA)",
+	"# term_b      Terminal-Bench pass rate % (via AA)",
+	"# if_b        IFBench instruction-following pass rate % (via AA)",
+	"# aa_lcr      AA Long-Context Reasoning pass rate %",
+	"# swe_b       SWE-bench Verified % resolved, best recorded agent run (swebench.com)",
+	"# pareto      yes = no other model is cheaper-or-equal, faster-or-equal AND better-or-equal",
+	"# src         aa:<effort> = speed from that AA reasoning-effort variant",
 }
 
 // WriteJSON dumps the rows machine-readably.

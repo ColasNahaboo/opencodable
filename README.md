@@ -6,11 +6,11 @@ OpenCode subscription — right now, in your terminal.**
 [MIT licensed](LICENSE) · single Go binary · zero dependencies · Go 1.26+
 
 ```
-name             price_out_1M  cost_task  allowance_usd  reqs_month  probe_tok_s  aa_intelligence  swebench_verified  pareto
-Kimi K3.1 Pro    $10           $0.0204    $15            735.3       78.7         55.1             -                  yes
-Gemini 4 Argon   $10           $0.019     $30            1578.9      85.8         52.6             -                  yes
-Kimi K3          $15           $0.0306    $15            490.2       799.1        43.6             -                  yes
-Hy3              $0.58         $0.00279   $60            21506.9     615.8        25.3             -                  yes
+name            cost_tok  cost_task  allowance  reqs_mo   p_tok_s  aa_int  swe_b  pareto
+Kimi K3.1 Pro   $10       $0.0204    $15        735.3     78.7     55.1    -      yes
+Gemini 4 Argon  $10       $0.019     $30        1578.9    85.8     52.6    -      yes
+Kimi K3         $15       $0.0306    $15        490.2     799.1    43.6    -      yes
+Hy3             $0.58     $0.00279   $60        21506.9   615.8    25.3    -      yes
 ```
 
 ---
@@ -109,19 +109,18 @@ All flags: `-provider` (models.dev provider, default `opencode-go`), `-plan`,
 
 ### Output adapts to stdout
 
-- **Interactive terminal**: columns are padded into a visually aligned table,
-  missing values show as `-`.
-- **Piped or redirected**: strict machine format — every row is values
-  separated by exactly one TAB character, missing fields are empty strings,
-  no padding. The legend block and the `#name…` header row keep their `#`
-  prefix, so parsing is simply "skip lines starting with `#`":
+- **Interactive terminal**: a `#`-prefixed legend block explains each column,
+  columns are padded into a visually aligned table, missing values show as `-`.
+- **Piped or redirected**: no legend; strict machine format — every row is
+  values separated by exactly one TAB character, missing fields are empty
+  strings, no padding. The `#name…` header row keeps its `#` prefix, so it can
+  never be confused with data or with the `# ` legend lines (terminal mode):
 
 ```sh
 opencodable | grep -v '^#' | awk -F'\t' 'NR>1 {print $1, $6}'
 ```
 
-Every TSV output begins with a `#` legend block explaining each column; the
-column header row is commented too, so `grep -v '^#'` strips everything but data.
+The `-json` flag bypasses TSV entirely and dumps the rows as JSON.
 
 ### Sample probe detail
 
@@ -140,22 +139,25 @@ $ opencodable -probe-model kimi-k3.1-pro
 
 ## Columns
 
+Short titles keep the piped output narrow; JSON keys (`-json`) are the long
+names (e.g. `probe_tok_s`, `aa_intelligence`, `swebench_verified`).
+
 | Column | Meaning |
 |---|---|
-| `name` | model display name (models.dev) |
-| `price_out_1M` | retail USD per 1M output tokens |
+| `#name` | model display name (models.dev) |
+| `cost_tok` | retail USD per 1M output tokens |
 | `cost_task` | estimated USD per coding-agent request (OpenCode's official token profile, base tier) |
-| `allowance_usd` | monthly usage budget of this model in your plan; `unlimited` for free models |
-| `reqs_month` | allowance ÷ cost_task ≈ requests per month |
+| `allowance` | monthly usage budget of this model in your plan; `unlimited` for free models |
+| `reqs_mo` | allowance ÷ cost_task ≈ requests per month |
 | `tok_s`, `ttft_s` | Artificial Analysis reported output speed / time to first token |
-| `probe_tok_s`, `probe_ttft_s` | **measured on your subscription** via `-probe` |
-| `aa_intelligence`, `aa_coding`, `aa_math` | Artificial Analysis composite indexes |
-| `livecodebench`, `terminalbench`, `ifbench`, `aa_lcr` | per-benchmark pass rates % (via AA) |
-| `swebench_verified` | SWE-bench Verified % resolved, best recorded agent run |
+| `p_tok_s`, `p_ttft_s` | **measured on your subscription** via `-probe` |
+| `aa_int`, `aa_code`, `aa_math` | Artificial Analysis composite indexes |
+| `code_b`, `term_b`, `if_b`, `aa_lcr` | per-benchmark pass rates % via AA: LiveCodeBench, Terminal-Bench, IFBench, Long-Context Reasoning |
+| `swe_b` | SWE-bench Verified % resolved, best recorded agent run |
 | `pareto` | `yes` = not dominated on (cost, speed, quality) |
-| `source` | `aa:<effort>` when speed came from that AA reasoning-effort variant |
+| `src` | `aa:<effort>` when speed came from that AA reasoning-effort variant |
 
-Missing data prints as `-` — never a wrong score.
+Missing data prints as `-` (terminal) or empty (piped) — never a wrong score.
 
 ## Data sources
 
@@ -177,14 +179,14 @@ expect the specific numbers to drift; the patterns below are stable):
 
 - **Allowance ≠ value.** High-quality flagship models often carry the thinnest
   monthly allowances (e.g. $15), while mid-tier models buy orders of magnitude
-  more requests — `reqs_month` flips the usual leaderboard ordering.
+  more requests — `reqs_mo` flips the usual leaderboard ordering.
 - **Your routes can beat public numbers.** Subscription endpoints frequently
   measure *faster* than aggregator averages (reserved capacity), but routing
   varies hour to hour and per model — sometimes 2-3×. Site-reported speeds are
   a starting point; `-probe` is the ground truth for your setup.
 - **Thinking costs latency.** Heavy-reasoning models can take tens of seconds
   before their first content token even while streaming fast afterwards.
-  Judge responsiveness by `probe_ttft_s`, throughput by `probe_tok_s`.
+  Judge responsiveness by `p_ttft_s`, throughput by `p_tok_s`.
 - **Privacy has a price.** Contributor models are an order of magnitude
   cheaper per request in exchange for training on your prompts; `-privacy`
   filters them out when that matters.
@@ -207,7 +209,7 @@ expect the specific numbers to drift; the patterns below are stable):
 - **Known artifact.** AA's `ttft_s` for reasoning models includes thinking time
   (e.g. Claude Haiku 5.5 ~247 s median) — treat it as time to first *answer* token.
 - **Prices are the comparison basis.** Your subscription bills allowances, not
-  retail; that is why `reqs_month` matters more than `price_out_1M` for
+  retail; that is why `reqs_mo` matters more than `cost_tok` for
   choosing a daily driver.
 
 ## Roadmap
