@@ -5,7 +5,6 @@ package main
 
 import (
 	"encoding/json"
-	"errors"
 	"flag"
 	"fmt"
 	"net/http"
@@ -29,7 +28,7 @@ import (
 )
 
 // version is displayed at the bottom of the -h help text.
-var version = "v0.1.1"
+var version = "v0.1.2"
 
 func main() {
 	// The probe uses its own longer client; all catalog/benchmark/usage
@@ -243,9 +242,8 @@ const (
 // cachedProbe reads a stored measurement without any network or probing.
 func cachedProbe(modelID string) (probe.Result, bool) {
 	var r probe.Result
-	b, err := cache.Load("probe-"+modelID+".json", time.Hour, false, true,
-		func() ([]byte, error) { return nil, errors.New("never fetch in cachedProbe") })
-	if err != nil || json.Unmarshal(b, &r) != nil || r.ModelID == "" {
+	b, ok := cache.Peek("probe-" + modelID + ".json")
+	if !ok || json.Unmarshal(b, &r) != nil || r.ModelID == "" {
 		return probe.Result{}, false
 	}
 	r.Normalize() // old cache entries predate the current thresholds
@@ -340,17 +338,25 @@ func runUsage(jsonOut, tty bool) error {
 		}
 		return json.NewEncoder(os.Stdout).Encode(out)
 	}
+	useCells := func(w usage.Window, tty bool) []string {
+		if tty {
+			return []string{w.Name, w.Status,
+				strconv.FormatFloat(w.Percent, 'f', 0, 64) + "%",
+				strconv.FormatFloat(w.Remaining(), 'f', 0, 64) + "%",
+				w.ResetsAt.Local().Format("2006-01-02 15:04"),
+				resetIn(now, w.ResetsAt)}
+		}
+		return []string{w.Name, w.Status,
+			strconv.FormatFloat(w.Percent, 'f', 0, 64),
+			strconv.FormatFloat(w.Remaining(), 'f', 0, 64),
+			w.ResetsAt.Local().Format(time.RFC3339),
+			resetIn(now, w.ResetsAt)}
+	}
+	head := []string{"#window", "status", "used_pct", "remaining_pct", "resets_at", "resets_in"}
 	if !tty {
-		fmt.Fprintln(os.Stdout, strings.Join(
-			[]string{"#window", "status", "used_pct", "remaining_pct", "resets_at", "resets_in"}, "\t"))
+		fmt.Fprintln(os.Stdout, strings.Join(head, "\t"))
 		for _, w := range ws {
-			fmt.Fprintln(os.Stdout, strings.Join([]string{
-				w.Name, w.Status,
-				strconv.FormatFloat(w.Percent, 'f', 0, 64),
-				strconv.FormatFloat(w.Remaining(), 'f', 0, 64),
-				w.ResetsAt.Local().Format(time.RFC3339),
-				resetIn(now, w.ResetsAt),
-			}, "\t"))
+			fmt.Fprintln(os.Stdout, strings.Join(useCells(w, false), "\t"))
 		}
 		return nil
 	}
@@ -358,13 +364,12 @@ func runUsage(jsonOut, tty bool) error {
 	for _, l := range useLegend {
 		fmt.Fprintln(os.Stdout, l)
 	}
-	fmt.Fprintf(os.Stdout, "%-8s  %-8s  %5s  %5s  %-25s  %s\n", "window", "status", "used", "left", "resets_at", "resets_in")
+	tw := tabwriter.NewWriter(os.Stdout, 0, 2, 2, ' ', 0)
+	fmt.Fprintln(tw, strings.Join(head, "\t"))
 	for _, w := range ws {
-		fmt.Fprintf(os.Stdout, "%-8s  %-8s  %4.0f%%  %4.0f%%  %-25s  %s\n",
-			w.Name, w.Status, w.Percent, w.Remaining(),
-			w.ResetsAt.Local().Format("2006-01-02 15:04"), resetIn(now, w.ResetsAt))
+		fmt.Fprintln(tw, strings.Join(useCells(w, true), "\t"))
 	}
-	return nil
+	return tw.Flush()
 }
 
 // useLegend documents the -usage columns, tty only.
@@ -548,7 +553,7 @@ func runNow(planName string, spentFile map[string]float64, spentGiven, paid, pri
 	spend := map[string]spendInfo{}
 	spendKnown := false
 	src := "unavailable: assuming $0 spent"
-	fallback := 0
+	listCostRows := 0
 	switch {
 	case spentGiven:
 		spendKnown = true
@@ -576,13 +581,12 @@ func runNow(planName string, spentFile map[string]float64, spentGiven, paid, pri
 				continue // pay-as-you-go rows are not Go allowance spend
 			}
 			usd := s.CostUSD
-			if m, ok := byID[s.Model]; ok {
-				tokens := s.InputTokens + s.OutputTokens + s.CacheReadTokens + s.CacheWriteTokens()
-				if tokens > 0 {
-					usd = cost.FromTokens(m, s.InputTokens, s.CacheReadTokens, s.OutputTokens, s.CacheWriteTokens(), peak)
-				} else {
-					fallback++
-				}
+			m, known := byID[s.Model]
+			tokens := s.InputTokens + s.OutputTokens + s.CacheReadTokens + s.CacheWriteTokens()
+			if known && tokens > 0 {
+				usd = cost.FromTokens(m, s.InputTokens, s.CacheReadTokens, s.OutputTokens, s.CacheWriteTokens(), peak)
+			} else {
+				listCostRows++ // console list cost, not necessarily allowance cost
 			}
 			prev := spend[s.Model]
 			prev.usd += usd
@@ -594,8 +598,8 @@ func runNow(planName string, spentFile map[string]float64, spentGiven, paid, pri
 
 	fmt.Fprintf(os.Stderr, "# per-model spend: %s\n", src)
 	fmt.Fprintln(os.Stderr, "# per-model Go limits: 5h=20%, week=50%, month=100% of each model's monthly limit; reqs_5h/reqs_wk are fresh-window caps")
-	if fallback > 0 {
-		fmt.Fprintf(os.Stderr, "# warning: %d console rows had no token counts; used their reported cost as allowance spend\n", fallback)
+	if listCostRows > 0 {
+		fmt.Fprintf(os.Stderr, "# warning: %d console rows priced at their reported list cost (no catalog entry or no token counts); allowance cost may differ\n", listCostRows)
 	}
 
 	var fiveFactor, weekFactor float64
@@ -627,14 +631,14 @@ func runNow(planName string, spentFile map[string]float64, spentGiven, paid, pri
 	cells := func(r nowRow) []string {
 		switch {
 		case r.unlimited:
-			return []string{r.name, "", "", "", "", "", "", "", "unlimited", numSpeed(r.probeTokS)}
+			return []string{r.name, "", "", "", "", "", "", "", "unlimited", table.Num(r.probeTokS, false)}
 		case !r.known:
-			return []string{r.name, numMoney(r.costTask), numMoney(r.burn), moneyKnown(r.spentMo, r.spentOK), "", "", "", "", "unknown", numSpeed(r.probeTokS)}
+			return []string{r.name, table.Num(r.costTask, true), table.Num(r.burn, true), moneyKnown(r.spentMo, r.spentOK), "", "", "", "", "unknown", table.Num(r.probeTokS, false)}
 		default:
 			return []string{
-				r.name, numMoney(r.costTask), numMoney(r.burn), moneyKnown(r.spentMo, r.spentOK),
+				r.name, table.Num(r.costTask, true), table.Num(r.burn, true), moneyKnown(r.spentMo, r.spentOK),
 				strconv.Itoa(r.five), strconv.Itoa(r.week), strconv.Itoa(r.month),
-				strconv.Itoa(r.usable), r.binding, numSpeed(r.probeTokS),
+				strconv.Itoa(r.usable), r.binding, table.Num(r.probeTokS, false),
 			}
 		}
 	}
@@ -713,15 +717,6 @@ func cachedProbeSpeeds(models []modelsdev.Model) map[string]float64 {
 	return out
 }
 
-func numMoney(v float64) string {
-	if v == 0 {
-		return ""
-	}
-	s := strconv.FormatFloat(v, 'f', 5, 64)
-	s = strings.TrimRight(s, "0")
-	return "$" + strings.TrimSuffix(s, ".")
-}
-
 func moneyKnown(v float64, ok bool) string {
 	if !ok {
 		return ""
@@ -729,14 +724,7 @@ func moneyKnown(v float64, ok bool) string {
 	if v == 0 {
 		return "$0"
 	}
-	return numMoney(v)
-}
-
-func numSpeed(v float64) string {
-	if v == 0 {
-		return ""
-	}
-	return strconv.FormatFloat(v, 'f', 1, 64)
+	return table.Num(v, true)
 }
 
 func runOneProbe(modelID string, refresh, offline bool) error {

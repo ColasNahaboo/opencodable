@@ -61,6 +61,24 @@ func TestLoadFetchesThenCachesAndAge(t *testing.T) {
 	}
 }
 
+func TestPeek(t *testing.T) {
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	if _, ok := Peek("nope.json"); ok {
+		t.Error("Peek on missing key = true")
+	}
+	payload := []byte(`{"v":2}`)
+	if err := Store("peeked.json", payload); err != nil {
+		t.Fatal(err)
+	}
+	got, ok := Peek("peeked.json")
+	if !ok || string(got) != string(payload) {
+		t.Errorf("Peek = %s, %v; want %s", got, ok, payload)
+	}
+	if _, ok := Peek("../../etc/passwd"); ok {
+		t.Error("Peek must stay inside the cache directory")
+	}
+}
+
 func TestLoadStaleFallsBackOnFetchError(t *testing.T) {
 	t.Setenv("XDG_CACHE_HOME", t.TempDir())
 	if err := Store("stale.json", []byte(`{"old":true}`)); err != nil {

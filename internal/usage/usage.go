@@ -94,17 +94,8 @@ type WindowFactors struct {
 // fractions, defaulting to 1 (full window) when a window is absent.
 func RemainingFactors(ws []Window) WindowFactors {
 	f := WindowFactors{Five: 1, Week: 1}
-	clamp := func(v float64) float64 {
-		if v < 0 {
-			return 0
-		}
-		if v > 1 {
-			return 1
-		}
-		return v
-	}
 	for _, w := range ws {
-		rem := clamp(1 - w.Percent/100)
+		rem := clamp01(1 - w.Percent/100)
 		switch w.Name {
 		case "5h":
 			f.Five = rem
@@ -113,6 +104,10 @@ func RemainingFactors(ws []Window) WindowFactors {
 		}
 	}
 	return f
+}
+
+func clamp01(v float64) float64 {
+	return min(max(v, 0), 1)
 }
 
 // Budgets is the remaining allowance dollars per window. Go limits are

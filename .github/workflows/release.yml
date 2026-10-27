@@ -1,0 +1,24 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.x"
+          cache: false
+      - name: build archives
+        run: scripts/build-release.sh "${GITHUB_REF_NAME}" dist
+      - name: create release
+        run: gh release create "${GITHUB_REF_NAME}" dist/* --generate-notes
+        env:
+          GH_TOKEN: ${{ github.token }}

@@ -64,11 +64,11 @@ func (r *Result) Normalize() {
 		(r.WindowSeconds < HighRateWindow && r.TokPerSec > HighRateTokS)
 }
 
-// Trusted reports whether a measurement is safe to use for ranking.
+// Trusted reports whether a measurement is safe to use for ranking. Every
+// code path (fresh run, cache loaders) normalizes first, so Suspect is the
+// single source of truth for the plausibility thresholds.
 func (r Result) Trusted() bool {
-	return r.Error == "" && r.WindowSeconds >= MinWindow && !r.Suspect &&
-		r.TokPerSec <= MaxPlausibleTokS &&
-		!(r.WindowSeconds < HighRateWindow && r.TokPerSec > HighRateTokS)
+	return r.Error == "" && r.WindowSeconds >= MinWindow && !r.Suspect
 }
 
 // Result is one measured request.

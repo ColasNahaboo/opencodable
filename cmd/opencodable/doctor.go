@@ -3,7 +3,9 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
+	"strings"
 	"text/tabwriter"
 	"time"
 
@@ -27,6 +29,7 @@ type doctorRow struct {
 	CtxK     float64  `json:"ctx_k"`
 	OutK     float64  `json:"out_k"`
 	Probe    string   `json:"probe"` // - | ok <age> | suspect | untrusted | error
+	ProbeOK  bool     `json:"probe_ok"`
 	Warnings []string `json:"warnings,omitempty"`
 }
 
@@ -91,6 +94,7 @@ func buildDoctorRows(models []modelsdev.Model, aas []aa.Model, swe map[string]fl
 				r.Warnings = append(r.Warnings, "untrusted probe")
 			default:
 				r.Probe = "ok " + age
+				r.ProbeOK = true
 			}
 		}
 		rows = append(rows, r)
@@ -193,7 +197,7 @@ func runDoctor(refresh, offline, jsonOut bool) error {
 		if r.AA != "" && r.SWE == 0 {
 			report.MissingSWE++
 		}
-		if len(r.Probe) > 3 && r.Probe[:3] == "ok " {
+		if r.ProbeOK {
 			report.TrustedProbes++
 		}
 	}
@@ -210,47 +214,86 @@ func runDoctor(refresh, offline, jsonOut bool) error {
 		return enc.Encode(report)
 	}
 
-	fmt.Fprintf(os.Stdout, "opencodable doctor %s — plan snapshot %s (%d entries)\n",
+	fmt.Fprintf(os.Stderr, "opencodable doctor %s — plan snapshot %s (%d entries)\n",
 		report.Version, report.PlanSnapshot, report.PlanEntries)
-	fmt.Fprintf(os.Stdout, "caches: models.dev %s | AA %s | SWE-bench %s | trusted probes %d\n",
+	fmt.Fprintf(os.Stderr, "caches: models.dev %s | AA %s | SWE-bench %s | trusted probes %d\n",
 		report.Caches["models.dev"], report.Caches["aa"], report.Caches["swe-bench"], report.TrustedProbes)
-	fmt.Fprintf(os.Stdout, "keys: AA %s | OpenCode Go %s\n",
+	fmt.Fprintf(os.Stderr, "keys: AA %s | OpenCode Go %s\n",
 		yesNo(report.Keys["artificial_analysis"]), yesNo(report.Keys["opencode_go"]))
-	fmt.Fprintf(os.Stdout, "coverage: %d models | plan missing %d | free not in plan %d | AA missing %d | SWE missing %d\n",
+	fmt.Fprintf(os.Stderr, "coverage: %d models | plan missing %d | free not in plan %d | AA missing %d | SWE missing %d\n",
 		report.Models, report.MissingPlan, report.FreeNotInPlan, report.MissingAA, report.MissingSWE)
 	if report.AAError != "" {
-		fmt.Fprintf(os.Stdout, "warning: AA: %s\n", report.AAError)
+		fmt.Fprintf(os.Stderr, "warning: AA: %s\n", report.AAError)
 	}
 	if report.SWEError != "" {
-		fmt.Fprintf(os.Stdout, "warning: SWE-bench: %s\n", report.SWEError)
+		fmt.Fprintf(os.Stderr, "warning: SWE-bench: %s\n", report.SWEError)
 	}
-	fmt.Fprintln(os.Stdout)
 
-	tw := tabwriter.NewWriter(os.Stdout, 0, 2, 2, ' ', 0)
-	fmt.Fprintln(tw, "id\tplan\taa\tswe_b\tprivacy\tprobe\twarnings")
+	return writeDoctor(os.Stdout, rows, isTTY(os.Stdout))
+}
+
+// doctorLegend explains the columns; every line starts with "# " so parsers
+// can skip it. -doctor is experimental and not (yet) a TITLES.md contract
+// view, but it follows the same output conventions.
+var doctorLegend = []string{
+	"# opencodable doctor — coverage audit of plan snapshot / AA / SWE-bench / probes",
+	"# id        models.dev model ID",
+	"# plan      yes = in plan snapshot | free = zero prices, no snapshot entry | missing = no entry, paid",
+	"# aa        Artificial Analysis slug (- = no match)",
+	"# swe_b     SWE-bench Verified % (- = none found)",
+	"# privacy   safe | trains | unknown",
+	"# probe     - | ok <age> | suspect | untrusted | error",
+	"# warnings  ;-separated issues (- = none)",
+}
+
+// writeDoctor renders the audit table: legend lines ("# "-prefixed) then a
+// "#id"-prefixed header. tty pads columns and shows "-" for missing values;
+// piped output is strict single-TAB rows with empty fields.
+func writeDoctor(w io.Writer, rows []doctorRow, tty bool) error {
+	for _, l := range doctorLegend {
+		if _, err := fmt.Fprintln(w, l); err != nil {
+			return err
+		}
+	}
+	missing := ""
+	if tty {
+		missing = "-"
+	}
+	out := io.Writer(w)
+	var tw *tabwriter.Writer
+	if tty {
+		tw = tabwriter.NewWriter(w, 0, 2, 2, ' ', 0)
+		out = tw
+	}
+	if _, err := fmt.Fprintln(out, "#id\tplan\taa\tswe_b\tprivacy\tprobe\twarnings"); err != nil {
+		return err
+	}
 	for _, r := range rows {
-		swe := "-"
+		swe := missing
 		if r.SWE > 0 {
 			swe = fmt.Sprintf("%.1f", r.SWE)
 		}
-		aaSlug := r.AA
-		if aaSlug == "" {
-			aaSlug = "-"
-		}
-		warn := "-"
+		warn := missing
 		if len(r.Warnings) > 0 {
-			warn = ""
-			for i, w := range r.Warnings {
-				if i > 0 {
-					warn += "; "
-				}
-				warn += w
-			}
+			warn = strings.Join(r.Warnings, "; ")
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
-			r.ID, r.Plan, aaSlug, swe, r.Privacy, r.Probe, warn)
+		if _, err := fmt.Fprintf(out, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+			r.ID, r.Plan, orMissing(r.AA, missing), swe,
+			orMissing(r.Privacy, missing), orMissing(r.Probe, missing), warn); err != nil {
+			return err
+		}
 	}
-	return tw.Flush()
+	if tw != nil {
+		return tw.Flush()
+	}
+	return nil
+}
+
+func orMissing(v, missing string) string {
+	if v == "" {
+		return missing
+	}
+	return v
 }
 
 func yesNo(v bool) string {

@@ -316,6 +316,11 @@ func numOr(v float64, money bool, missing string) string {
 	return strconv.FormatFloat(v, 'f', 1, 64)
 }
 
+// Num formats one numeric cell: money renders $-prefixed with trailing zeros
+// trimmed, plain numbers one decimal; zero becomes the missing marker. The
+// -now view shares it so all views format identically.
+func Num(v float64, money bool) string { return numOr(v, money, "") }
+
 func allowanceOr(r Row, missing string) string {
 	if r.Unlimited {
 		return "unlimited"

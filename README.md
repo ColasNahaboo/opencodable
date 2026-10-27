@@ -154,7 +154,9 @@ shared pot and no `-pot` flag. `-now` turns those caps into requests:
 The console API is **filtered to `opencode-go` rows**; pay-as-you-go rows are
 ignored. The same Go key authorizes `console.opencode.ai/api/usage/models`, so
 spend is fetched automatically. A pasted console table via `-spent file.tsv`
-is the offline fallback. Free models (zero prices) show `limit=unlimited` with
+is the offline fallback; it carries no request counts, so with `-spent` the
+measured burn never kicks in and `burn_req` stays at the official `cost_task`.
+Free models (zero prices) show `limit=unlimited` with
 empty counts, even when the snapshot lacks their entry; paid models missing
 from the plan snapshot show `limit=unknown` rather than a fake zero.
 
@@ -163,8 +165,10 @@ from the plan snapshot show `limit=unknown` rather than a fake zero.
 `-doctor` joins the same sources and prints one row per model: plan status
 (`yes` / `free` / `missing`), AA slug, SWE-bench score, privacy verdict,
 cached probe status, and warnings. It also prints the plan snapshot date,
-cache ages, key presence, and coverage counts. It never runs a probe; `-json`
-returns the same report as an object.
+cache ages, key presence, and coverage counts (on stderr). It never runs a
+probe; `-json` returns the same report as an object. `-doctor` is
+experimental: its columns are not yet part of the TITLES.md contract, but it
+follows the same conventions — `# `-prefixed legend lines and a `#id…` header.
 
 ### Output adapts to stdout
 
@@ -366,6 +370,10 @@ This repository is developed by me, a human hobbyist in my personal time in clos
 
 ## History
 
+- v0.1.2 2026-10-27 `-doctor` follows the output conventions (`# ` legend,
+  `#id…` header, strict TABs when piped; still experimental, not in
+  TITLES.md), tag-triggered GitHub releases, single-source probe trust
+  thresholds, `cache.Peek`, shared number formatting, clearer spend warnings.
 - v0.1.1 2026-10-27 `-vertical` no longer prints the prose legend (the field
   names are the legend), better for screen readers. TITLES.md still changes
   until v1.0.0.

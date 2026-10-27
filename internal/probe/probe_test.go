@@ -118,6 +118,31 @@ func TestRunFlagsImplausibleBurst(t *testing.T) {
 	}
 }
 
+func TestTrustedFollowsNormalize(t *testing.T) {
+	cases := []struct {
+		name    string
+		r       Result
+		trusted bool
+	}{
+		{"ok", Result{TokPerSec: 120, WindowSeconds: 5}, true},
+		{"error", Result{Error: "boom", TokPerSec: 120, WindowSeconds: 5}, false},
+		{"short window", Result{TokPerSec: 100, WindowSeconds: 0.5}, false},
+		{"burst", Result{TokPerSec: 799, WindowSeconds: 1.07}, false},
+		{"absurd", Result{TokPerSec: 5000, WindowSeconds: 30}, false},
+		{"fast sustained", Result{TokPerSec: 700, WindowSeconds: 8}, true},
+	}
+	for _, c := range cases {
+		r := c.r
+		r.Normalize()
+		if got := r.Trusted(); got != c.trusted {
+			t.Errorf("%s: Trusted = %v, want %v (Suspect %v)", c.name, got, c.trusted, r.Suspect)
+		}
+		if r.Suspect && r.Trusted() {
+			t.Errorf("%s: suspect result reported trusted", c.name)
+		}
+	}
+}
+
 func TestRunRejectsHTTPError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"model unavailable"}`, http.StatusBadRequest)

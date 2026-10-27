@@ -46,16 +46,20 @@ internal/cache/        24h disk cache (~/.cache/opencodable/)
   `TestJSONKeysMatchTitles`).
 - **Output modes.** tty = padded table + `#` legend, missing = `-`; piped =
   strict single-TAB, missing = empty string, no legend. Never print legends
-  or assumptions into piped stdout — put notes on stderr.
+  or assumptions into piped stdout — put notes on stderr. Exception:
+  `-doctor` is experimental and not yet a TITLES.md contract view; it prints
+  its `# `-prefixed legend on stdout in both modes and its header row starts
+  with `#`.
 - All column titles contain no spaces (underscores only).
 - Keep functions small and focused; idiomatic Go 1.26; no refactors outside
   the scope of a change.
 
 ## Data-source gotchas (learned the hard way)
 
-- **AA slug matching**: models.dev IDs need key-normalization plus the alias
-  table in `internal/normalize` (`mimo-v2.5` → `mimo-v2-5-0424`,
-  `step-5-preview` → `step-5`, …). When a model shows `-` scores, suspect a
+- **AA slug matching**: `normalize.Match` resolves a models.dev ID by exact
+  slug, then the alias table in `internal/normalize` (`mimo-v2.5` →
+  `mimo-v2-5-0424`, `step-5-preview` → `step-5`, …), then dots-as-dashes
+  (`qwen3.8-max` → `qwen3-8-max`). When a model shows `-` scores, suspect a
   missing alias first. AA has reasoning-effort variants (`-low/-high/…`); the
   base slug may exist with tok/s = 0 — `VariantWithSpeed` picks the fastest
   measured variant.

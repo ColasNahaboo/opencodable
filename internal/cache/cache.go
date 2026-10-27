@@ -139,3 +139,17 @@ func Age(key string) (time.Duration, bool) {
 	}
 	return time.Since(ent.FetchedAt), true
 }
+
+// Peek returns the cached payload for key regardless of age, without ever
+// fetching. Used to read stored measurements like probe results.
+func Peek(key string) ([]byte, bool) {
+	d, err := dir()
+	if err != nil {
+		return nil, false
+	}
+	ent, ok := readEntry(filepath.Join(d, safeKey(key)))
+	if !ok {
+		return nil, false
+	}
+	return ent.Payload, true
+}
