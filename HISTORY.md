@@ -1,5 +1,12 @@
 # History
 
+- v0.1.7 2026-10-28 legends are opt-in: every view prints only its header row
+  by default, and `-l` adds the `# `-prefixed column legend (terminal, piped,
+  `-vertical`, `-now`, `-usage`, `-doctor`).
+- v0.1.6 2026-10-28 `-config FILE` reads settings and option defaults from
+  another file (the path must exist; an empty file drops every default), and
+  boolean options can be overridden per run with `-name=false`, e.g.
+  `-paid=false` against `paid=yes` in the file.
 - v0.1.5 2026-10-28 LiveBench 2.0 columns (`lb_agent`, `lb_code`) from the
   pinned 2026-10-25 release, fetched as static CSV (no key) and cached as
   JSON; AA remains the only price/speed source.

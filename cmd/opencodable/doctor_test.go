@@ -73,14 +73,15 @@ func TestDoctorRenderPipedAndTTY(t *testing.T) {
 		Probe: "ok 2h", ProbeOK: true,
 	}}
 	var piped strings.Builder
-	if err := writeDoctor(&piped, rows, false); err != nil {
+	if err := writeDoctor(&piped, rows, false, false); err != nil {
 		t.Fatal(err)
 	}
 	lines := strings.Split(strings.TrimRight(piped.String(), "\n"), "\n")
 	header := ""
 	for _, l := range lines {
 		switch {
-		case strings.HasPrefix(l, "# "): // legend prose: no TAB constraints
+		case strings.HasPrefix(l, "# "): // legend prose is opt-in
+			t.Errorf("legend must be opt-in (-l): %q", l)
 		case strings.HasPrefix(l, "#id"):
 			if header == "" {
 				header = l
@@ -98,7 +99,7 @@ func TestDoctorRenderPipedAndTTY(t *testing.T) {
 		t.Errorf("piped header = %q", header)
 	}
 	var tty strings.Builder
-	if err := writeDoctor(&tty, rows, true); err != nil {
+	if err := writeDoctor(&tty, rows, true, false); err != nil {
 		t.Fatal(err)
 	}
 	out := tty.String()
@@ -115,6 +116,13 @@ func TestDoctorRenderPipedAndTTY(t *testing.T) {
 		if strings.HasPrefix(l, "glm-5.3") && !strings.Contains(l, "  ") {
 			t.Errorf("tty mode must pad columns: %q", l)
 		}
+	}
+	var with strings.Builder
+	if err := writeDoctor(&with, rows, false, true); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(with.String(), "# id        models.dev model ID") {
+		t.Error("-l must print the doctor legend")
 	}
 }
 

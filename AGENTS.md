@@ -46,12 +46,11 @@ internal/config/       opencodable.conf (key=value: API keys + option
   at the end only; renames/removals/reorders bump the major version. JSON
   keys must equal the TSV column titles (enforced by
   `TestJSONKeysMatchTitles`).
-- **Output modes.** tty = padded table + `#` legend, missing = `-`; piped =
-  strict single-TAB, missing = empty string, no legend. Never print legends
-  or assumptions into piped stdout — put notes on stderr. Exception:
-  `-doctor` is experimental and not yet a TITLES.md contract view; it prints
-  its `# `-prefixed legend on stdout in both modes and its header row starts
-  with `#`.
+- **Output modes.** tty = padded table, missing = `-`; piped = strict
+  single-TAB, missing = empty string. Legends (`# `-prefixed) are opt-in with
+  `-l` in every view and every mode; never print notes or assumptions into
+  stdout — put them on stderr. Exception: `-doctor`'s header row starts with
+  `#`, and its legend prints only with `-l`.
 - All column titles contain no spaces (underscores only).
 - **Version history lives in [HISTORY.md](HISTORY.md)**, not README.md: on
   every version bump, prepend the new entry there (as before) and update the
@@ -114,7 +113,8 @@ internal/config/       opencodable.conf (key=value: API keys + option
   true/on/1/yes | false/off/0/no). **When adding a flag**, add its name to
   the `config.AddOptions` call and to `applyConfig`'s str/boolean maps in
   `cmd/opencodable/main.go`, or `-doctor` will flag it as unknown and the
-  file default is ignored.
+  file default is ignored. The one exception is `-config`, which selects the
+  file itself and therefore cannot come from it.
 - **Doctor**: `-doctor` audits plan/AA/SWE/probe coverage without running a
   probe; keep `buildDoctorRows` pure and tested.
 

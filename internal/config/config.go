@@ -28,6 +28,41 @@ var envKeys = map[string]bool{
 // AddOptions so new flags are accepted automatically.
 var optionNames = map[string]bool{}
 
+// file is the config file in use; empty means the per-user default.
+var file string
+
+// SetPath reads settings from p instead of the per-user opencodable.conf.
+// An empty path restores the default. An explicit path must exist, so a typo
+// is reported rather than silently yielding an empty configuration.
+func SetPath(p string) error {
+	if p == "" {
+		file = ""
+		return nil
+	}
+	fi, err := os.Stat(p)
+	if err != nil {
+		return err // already names the path
+	}
+	if fi.IsDir() {
+		return fmt.Errorf("%q is a directory", p)
+	}
+	file = p
+	return nil
+}
+
+// path returns the config file location, or "" when no config directory is
+// available.
+func path() string {
+	if file != "" {
+		return file
+	}
+	dir, err := os.UserConfigDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(dir, "opencodable", "opencodable.conf")
+}
+
 // AddOptions marks flag names as understood config keys (lowercase).
 func AddOptions(names ...string) {
 	for _, n := range names {
@@ -37,11 +72,11 @@ func AddOptions(names ...string) {
 
 func read() map[string]string {
 	vals := map[string]string{}
-	dir, err := os.UserConfigDir()
-	if err != nil {
+	p := path()
+	if p == "" {
 		return vals
 	}
-	b, err := os.ReadFile(filepath.Join(dir, "opencodable", "opencodable.conf"))
+	b, err := os.ReadFile(p)
 	if err != nil {
 		return vals
 	}

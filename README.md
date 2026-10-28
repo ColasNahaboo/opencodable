@@ -102,9 +102,9 @@ comments) in the per-user config directory:
 Two kinds of keys, told apart by case:
 
 - **Uppercase = API keys**, mirroring the environment variables above.
-- **Lowercase = command-line options**, as defaults: every flag name works
-  here (`plan`, `paid`, `privacy`, `sort`, `vertical`, `json`, …), and the
-  command line always wins over the file. Booleans accept
+- **Lowercase = command-line options**, as defaults: every flag name except
+  `config` works here (`plan`, `paid`, `privacy`, `sort`, `vertical`, `json`,
+  …), and the command line always wins over the file. Booleans accept
   `true/on/1/yes` and `false/off/0/no`.
 
 ```ini
@@ -116,6 +116,16 @@ plan=go-plus        # default tier
 paid=yes            # always hide free models
 privacy=on          # always exclude training/unknown models
 probe-max-allowance=1
+```
+
+For a single run, `-config FILE` reads settings and option defaults from
+`FILE` instead of the per-user file (the path must exist; point it at an empty
+file to drop every default). A boolean default can be turned off without
+touching the file with `-name=false`:
+
+```sh
+opencodable -paid=false        # paid=yes in the file, off for this run
+opencodable -config ./ci.conf  # another file, e.g. keys only
 ```
 
 `-doctor` prints where each key was found (`env`, `config`, `dotfile`,
@@ -141,16 +151,31 @@ opencodable -now -window-estimate    # also scale 5h/week caps by account-wide u
 opencodable -spent pasted.tsv -now   # offline fallback: subtract spend from a pasted console table
 opencodable -vertical                # one model per 'field: value' block (screen readers)
 opencodable -json                    # machine-readable output for every view
+opencodable -l                       # add the legend block explaining each column
 opencodable -doctor                  # audit plan/AA/SWE/probe coverage
 opencodable -refresh                 # refetch everything, ignore the 24h cache
 opencodable -offline                 # cache only for catalog/benchmarks/probes
+opencodable -paid=false              # turn off a paid=yes from opencodable.conf
+opencodable -config ./ci.conf        # alternative config file (empty = no defaults)
 ```
 
 ### Options
 
-Every flag is optional; the bare command needs none of them. Each one can
-also be set as a default in `opencodable.conf` under its lowercase name (see
-[Configuration](#configuration)); the command line always wins.
+Every flag is optional; the bare command needs none of them. Each one except
+`-config` can also be set as a default in `opencodable.conf` under its
+lowercase name (see [Configuration](#configuration)); the command line always
+wins.
+
+**Configuration override**
+
+- `-config <file>` — read settings and option defaults from `<file>` instead
+  of the per-user `opencodable.conf`. The file must exist; an empty one drops
+  every default. Useful for CI, throwaway experiments, or a second set of API
+  keys.
+- `-name=false` — override a boolean whose config-file default is true, e.g.
+  `opencodable -paid=false`. Write it with `=`: boolean flags do not consume
+  a separate word, so `-paid false` would leave `false` as a positional
+  argument.
 
 **What to rank**
 
@@ -219,9 +244,11 @@ also be set as a default in `opencodable.conf` under its lowercase name (see
 - `-json` — machine-readable output for every view, keys equal to the column
   titles (see [TITLES.md](TITLES.md)). Example:
   `opencodable -json | jq '.[] | select(.pareto)'`.
-- Output also adapts automatically: on a terminal you get a padded table with
-  a `#` legend; piped or redirected, strict TAB-separated values with no
-  legend — see [Output adapts to stdout](#output-adapts-to-stdout).
+- `-l` — print the `#`-prefixed legend block that explains each column.
+  Off by default in every view; works in terminal, piped and `-vertical` modes.
+- Output also adapts automatically: on a terminal you get a padded table;
+  piped or redirected, strict TAB-separated values. Neither prints a legend
+  unless `-l` is given — see [Output adapts to stdout](#output-adapts-to-stdout).
 
 **Data freshness**
 
@@ -280,16 +307,18 @@ cached probe status, and warnings. It also prints the plan snapshot date,
 cache ages, key presence, and coverage counts (on stderr). It never runs a
 probe; `-json` returns the same report as an object. `-doctor` is
 experimental: its columns are not yet part of the TITLES.md contract, but it
-follows the same conventions — `# `-prefixed legend lines and a `#id…` header.
+follows the same conventions — a `#id…` header and, with `-l`, `# `-prefixed
+legend lines.
 
 ### Output adapts to stdout
 
-- **Interactive terminal**: a `#`-prefixed legend block explains each column,
-  columns are padded into a visually aligned table, missing values show as `-`.
-- **Piped or redirected**: no legend; strict machine format — every row is
-  values separated by exactly one TAB character, missing fields are empty
-  strings, no padding. The `#name…` header row keeps its `#` prefix, so it can
-  never be confused with data or with the `# ` legend lines (terminal mode):
+- **Interactive terminal**: columns are padded into a visually aligned table,
+  missing values show as `-`. Add `-l` for a `#`-prefixed legend block that
+  explains each column.
+- **Piped or redirected**: strict machine format — every row is values
+  separated by exactly one TAB character, missing fields are empty strings,
+  no padding. The `#name…` header row keeps its `#` prefix, so it can never be
+  confused with data. Add `-l` to prepend the `# ` legend lines:
 ```sh
 opencodable | grep -v '^#' | awk -F'\t' '{print $1, $6}'
 ```
@@ -297,7 +326,8 @@ opencodable | grep -v '^#' | awk -F'\t' '{print $1, $6}'
 `-vertical` renders one model per block of `field: value` lines with blank
 lines between records and empty fields skipped — much easier to read with a
 screen reader than a wide table, and applies to both the model table and
-`-now`. No prose legend block is printed: the field names are the legend.
+`-now`. The field names are the legend, so no prose block is printed unless
+`-l` is given.
 
 ```sh
 $ opencodable -pareto -paid -vertical
@@ -483,5 +513,5 @@ This repository is developed by me, a human hobbyist in my personal time in clos
 
 ## History
 
-Version v0.1.5 2026-10-28.
+Version v0.1.7 2026-10-28.
 See [HISTORY.md](HISTORY.md).

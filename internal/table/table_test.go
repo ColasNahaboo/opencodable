@@ -84,7 +84,7 @@ func TestWriteTSVMachineMode(t *testing.T) {
 		{Name: "m2"},
 	}
 	var b strings.Builder
-	if err := WriteTSV(&b, rows, false); err != nil {
+	if err := WriteTSV(&b, rows, false, false); err != nil {
 		t.Fatal(err)
 	}
 	lines := strings.Split(strings.TrimRight(b.String(), "\n"), "\n")
@@ -93,7 +93,8 @@ func TestWriteTSVMachineMode(t *testing.T) {
 	var row1, row2 []string
 	for _, l := range lines {
 		switch {
-		case strings.HasPrefix(l, "# "): // legend prose: no TAB constraints
+		case strings.HasPrefix(l, "# "):
+			t.Errorf("legend must be opt-in (-l): %q", l)
 		case l == headJoin:
 			// header
 		default: // data row
@@ -132,7 +133,7 @@ func TestWriteVertical(t *testing.T) {
 		{Name: "m2", AACoding: 70},
 	}
 	var b strings.Builder
-	if err := WriteVertical(&b, rows); err != nil {
+	if err := WriteVertical(&b, rows, false); err != nil {
 		t.Fatal(err)
 	}
 	out := b.String()
@@ -180,8 +181,11 @@ func TestJSONKeysMatchTitles(t *testing.T) {
 func TestWriteTSVTTYMode(t *testing.T) {
 	rows := []Row{{Name: "m1", PriceOut1M: 10}}
 	var b strings.Builder
-	if err := WriteTSV(&b, rows, true); err != nil {
+	if err := WriteTSV(&b, rows, true, false); err != nil {
 		t.Fatal(err)
+	}
+	if strings.Contains(b.String(), "# ") {
+		t.Error("legend must be opt-in (-l)")
 	}
 	if !strings.Contains(b.String(), "-") {
 		t.Error("tty mode must print - for missing values")
@@ -191,6 +195,26 @@ func TestWriteTSVTTYMode(t *testing.T) {
 		if strings.HasPrefix(l, "m1") && !strings.Contains(l, "  ") {
 			t.Errorf("tty mode must pad columns: %q", l)
 		}
+	}
+}
+
+func TestLegendOptIn(t *testing.T) {
+	rows := []Row{{Name: "m1", PriceOut1M: 10}}
+	for _, tty := range []bool{false, true} {
+		var b strings.Builder
+		if err := WriteTSV(&b, rows, tty, true); err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(b.String(), "# name        model display name") {
+			t.Errorf("tty=%v: -l must print the legend", tty)
+		}
+	}
+	var v strings.Builder
+	if err := WriteVertical(&v, rows, true); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(v.String(), "# name        model display name") {
+		t.Error("vertical -l must print the legend")
 	}
 }
 

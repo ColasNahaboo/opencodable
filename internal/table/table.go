@@ -214,12 +214,12 @@ func reqsRank(r Row) float64 {
 }
 
 // WriteTSV renders the table. On a terminal the columns are padded for
-// readability, missing values show as "-" and a #-prefixed legend block
-// explains each column. When stdout is piped, the legend is omitted and
-// every row — header included — is strict single-TAB separated values with
-// empty fields for missing data, for easy machine parsing. The "#name"
-// header stays prefixed so it can never be confused with the "# " legend.
-func WriteTSV(w io.Writer, rows []Row, tty bool) error {
+// readability and missing values show as "-". The #-prefixed legend block is
+// printed only when withLegend is set (-l). When stdout is piped, every row —
+// header included — is strict single-TAB separated values with empty fields
+// for missing data. The "#name" header stays prefixed so it can never be
+// confused with the "# " legend.
+func WriteTSV(w io.Writer, rows []Row, tty, withLegend bool) error {
 	missing := ""
 	if tty {
 		missing = "-"
@@ -229,13 +229,15 @@ func WriteTSV(w io.Writer, rows []Row, tty bool) error {
 	for _, r := range rows {
 		lines = append(lines, strings.Join(rowCells(r, missing), "\t"))
 	}
-	if tty {
-		// Legend prose is for humans only; keep piped output lean.
+	if withLegend {
+		// Legend prose is opt-in; the header already names every column.
 		for _, l := range legend {
 			if _, err := fmt.Fprintln(w, l); err != nil {
 				return err
 			}
 		}
+	}
+	if tty {
 		tw := tabwriter.NewWriter(w, 0, 2, 2, ' ', 0)
 		for _, l := range lines {
 			if _, err := fmt.Fprintln(tw, l); err != nil {
@@ -254,8 +256,15 @@ func WriteTSV(w io.Writer, rows []Row, tty bool) error {
 
 // WriteVertical renders one model per block as "field: value" lines, blank
 // line between records, empty fields skipped. The field names are the legend,
-// so no prose block is printed; this is much less noisy for screen readers.
-func WriteVertical(w io.Writer, rows []Row) error {
+// so the prose block is only printed when withLegend is set (-l).
+func WriteVertical(w io.Writer, rows []Row, withLegend bool) error {
+	if withLegend {
+		for _, l := range legend {
+			if _, err := fmt.Fprintln(w, l); err != nil {
+				return err
+			}
+		}
+	}
 	head := headerCells()
 	for i, r := range rows {
 		if i > 0 {

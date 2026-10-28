@@ -29,30 +29,32 @@ import (
 )
 
 // version is displayed at the bottom of the -h help text.
-var version = "v0.1.5"
+var version = "v0.1.7"
 
 // Parsed options; package-level so applyConfig can override them from
 // opencodable.conf. Registered in main.
 var (
-	provider *string
-	plan     *string
-	sortKey  *string
-	pareto   *bool
-	paid     *bool
-	privacy  *bool
-	peak     *bool
-	refresh  *bool
-	offline  *bool
-	probeAll *bool
-	probeOne *string
-	probeMax *float64
-	showUse  *bool
-	now      *bool
-	winEst   *bool
-	doctor   *bool
-	spent    *string
-	vertical *bool
-	jsonOut  *bool
+	configPath *string
+	provider   *string
+	plan       *string
+	sortKey    *string
+	pareto     *bool
+	paid       *bool
+	privacy    *bool
+	peak       *bool
+	refresh    *bool
+	offline    *bool
+	probeAll   *bool
+	probeOne   *string
+	probeMax   *float64
+	showUse    *bool
+	now        *bool
+	winEst     *bool
+	doctor     *bool
+	spent      *string
+	vertical   *bool
+	jsonOut    *bool
+	showLegend *bool
 )
 
 func main() {
@@ -65,8 +67,10 @@ func main() {
 		out := flag.CommandLine.Output()
 		fmt.Fprintf(out, "Usage of %s:\n", os.Args[0])
 		flag.PrintDefaults()
+		fmt.Fprintln(out, "\nBoolean options also accept -name=false (for example -paid=false) to override a value from opencodable.conf.")
 		fmt.Fprintf(out, "\nopencodable %s — https://github.com/ColasNahaboo/opencodable\n", version)
 	}
+	configPath = flag.String("config", "", "read settings and option defaults from this file instead of the per-user opencodable.conf")
 	provider = flag.String("provider", "opencode-go", "models.dev provider to rank")
 	plan = flag.String("plan", "go", "subscription plan: go|go-plus (allowances)")
 	sortKey = flag.String("sort", "quality", "sort: name|price|speed|quality|reqs")
@@ -86,11 +90,18 @@ func main() {
 	spent = flag.String("spent", "", "path to a pasted console 'usage by model' TSV; offline fallback for per-model spend")
 	vertical = flag.Bool("vertical", false, "one model per block of 'field: value' lines (screen-reader friendly); applies to the table and -now")
 	jsonOut = flag.Bool("json", false, "JSON output instead of TSV")
+	showLegend = flag.Bool("l", false, "print the legend block explaining each column")
 	config.AddOptions("provider", "plan", "sort", "pareto", "paid", "privacy",
 		"peak", "refresh", "offline", "probe", "probe-model", "probe-max-allowance",
-		"usage", "now", "window-estimate", "doctor", "spent", "vertical", "json")
+		"usage", "now", "window-estimate", "doctor", "spent", "vertical", "json", "l")
 	flag.Parse()
-	if err := applyConfig(); err != nil {
+	// The config path itself cannot come from the config file: it is needed
+	// to read it. Hence it is not registered with config.AddOptions.
+	if err := config.SetPath(*configPath); err != nil {
+		fmt.Fprintln(os.Stderr, "-config:", err)
+		os.Exit(2)
+	}
+	if err := applyConfig(flag.CommandLine); err != nil {
 		fmt.Fprintln(os.Stderr, "opencodable.conf:", err)
 		os.Exit(2)
 	}
@@ -113,7 +124,7 @@ func main() {
 			fmt.Fprintln(os.Stderr, "-usage reads the live allowance endpoint; remove -offline")
 			os.Exit(2)
 		}
-		if err := runUsage(*jsonOut, isTTY(os.Stdout)); err != nil {
+		if err := runUsage(*jsonOut, *showLegend, isTTY(os.Stdout)); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
@@ -133,7 +144,7 @@ func main() {
 				os.Exit(1)
 			}
 		}
-		if err := runNow(*plan, spentByModel, *spent != "", *paid, *privacy, *peak, *winEst, *vertical, *jsonOut, *refresh, *offline, isTTY(os.Stdout)); err != nil {
+		if err := runNow(*plan, spentByModel, *spent != "", *paid, *privacy, *peak, *winEst, *vertical, *jsonOut, *showLegend, *refresh, *offline, isTTY(os.Stdout)); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
@@ -145,7 +156,7 @@ func main() {
 			fmt.Fprintln(os.Stderr, "-doctor only supports -provider opencode-go")
 			os.Exit(2)
 		}
-		if err := runDoctor(*refresh, *offline, *jsonOut); err != nil {
+		if err := runDoctor(*refresh, *offline, *jsonOut, *showLegend); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
@@ -245,13 +256,13 @@ func main() {
 		return
 	}
 	if *vertical {
-		if err := table.WriteVertical(os.Stdout, rows); err != nil {
+		if err := table.WriteVertical(os.Stdout, rows, *showLegend); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
 		return
 	}
-	if err := table.WriteTSV(os.Stdout, rows, isTTY(os.Stdout)); err != nil {
+	if err := table.WriteTSV(os.Stdout, rows, isTTY(os.Stdout), *showLegend); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
@@ -260,10 +271,11 @@ func main() {
 // applyConfig fills options set in opencodable.conf (lowercase keys) for
 // every flag the command line did not set: command line beats config file,
 // config file beats the flag default. Booleans accept true/on/1/yes and
-// false/off/0/no.
-func applyConfig() error {
+// false/off/0/no. fs is the parsed command line, so -paid=false counts as
+// set and overrides paid=yes in the file.
+func applyConfig(fs *flag.FlagSet) error {
 	set := map[string]bool{}
-	flag.Visit(func(f *flag.Flag) { set[f.Name] = true })
+	fs.Visit(func(f *flag.Flag) { set[f.Name] = true })
 	str := map[string]*string{
 		"provider": provider, "plan": plan, "sort": sortKey,
 		"probe-model": probeOne, "spent": spent,
@@ -272,7 +284,7 @@ func applyConfig() error {
 		"pareto": pareto, "paid": paid, "privacy": privacy, "peak": peak,
 		"refresh": refresh, "offline": offline, "probe": probeAll, "usage": showUse,
 		"now": now, "window-estimate": winEst, "doctor": doctor,
-		"vertical": vertical, "json": jsonOut,
+		"vertical": vertical, "json": jsonOut, "l": showLegend,
 	}
 	for name, p := range str {
 		if v, ok := config.Option(name); ok && !set[name] {
@@ -386,7 +398,7 @@ func mustJSON(v any) []byte {
 
 // runUsage prints the remaining Go allowance windows, as JSON, tty-padded
 // or piped as strict TABs — same style rules as the model table.
-func runUsage(jsonOut, tty bool) error {
+func runUsage(jsonOut, withLegend, tty bool) error {
 	key, err := probe.Key()
 	if err != nil {
 		return err
@@ -431,16 +443,17 @@ func runUsage(jsonOut, tty bool) error {
 			resetIn(now, w.ResetsAt)}
 	}
 	head := []string{"#window", "status", "used_pct", "remaining_pct", "resets_at", "resets_in"}
+	if withLegend {
+		for _, l := range useLegend {
+			fmt.Fprintln(os.Stdout, l)
+		}
+	}
 	if !tty {
 		fmt.Fprintln(os.Stdout, strings.Join(head, "\t"))
 		for _, w := range ws {
 			fmt.Fprintln(os.Stdout, strings.Join(useCells(w, false), "\t"))
 		}
 		return nil
-	}
-	fmt.Fprintln(os.Stdout, "# opencodable -usage — remaining Go allowance per usage window")
-	for _, l := range useLegend {
-		fmt.Fprintln(os.Stdout, l)
 	}
 	tw := tabwriter.NewWriter(os.Stdout, 0, 2, 2, ' ', 0)
 	fmt.Fprintln(tw, strings.Join(head, "\t"))
@@ -450,7 +463,7 @@ func runUsage(jsonOut, tty bool) error {
 	return tw.Flush()
 }
 
-// useLegend documents the -usage columns, tty only.
+// useLegend documents the -usage columns; printed only with -l.
 var useLegend = []string{
 	"# window        usage window: 5h = 20%, week = 50%, month = 100% of each model's monthly limit",
 	"# status        ok | throttled | exhausted (as reported by the endpoint)",
@@ -501,7 +514,7 @@ type nowRow struct {
 	probeTokS float64
 }
 
-// nowLegend documents the -now columns, tty only.
+// nowLegend documents the -now columns; printed only with -l.
 var nowLegend = []string{
 	"# opencodable -now — requests affordable per model in each Go window",
 	"# name       model display name (models.dev catalog)",
@@ -616,7 +629,7 @@ func nowRank(r nowRow) int {
 // requests fit in its own Go 5h/weekly/monthly windows. There is no shared
 // pot: the docs define the windows as percentages of each model's monthly
 // limit. Per-model spend is measured from console token counts at Go prices.
-func runNow(planName string, spentFile map[string]float64, spentGiven, paid, privacy, peak, windowEstimate, vertical, jsonOut, refresh, offline, tty bool) error {
+func runNow(planName string, spentFile map[string]float64, spentGiven, paid, privacy, peak, windowEstimate, vertical, jsonOut, withLegend, refresh, offline, tty bool) error {
 	models, err := modelsdev.Fetch("opencode-go", refresh, offline)
 	if err != nil {
 		return err
@@ -751,6 +764,11 @@ func runNow(planName string, spentFile map[string]float64, spentGiven, paid, pri
 		}
 		return json.NewEncoder(os.Stdout).Encode(out)
 	}
+	if withLegend {
+		for _, l := range nowLegend {
+			fmt.Fprintln(os.Stdout, l)
+		}
+	}
 	if vertical {
 		out := os.Stdout
 		for i, r := range rows {
@@ -772,9 +790,6 @@ func runNow(planName string, spentFile map[string]float64, spentGiven, paid, pri
 			fmt.Fprintln(os.Stdout, strings.Join(cells(r), "\t"))
 		}
 		return nil
-	}
-	for _, l := range nowLegend {
-		fmt.Fprintln(os.Stdout, l)
 	}
 	tw := tabwriter.NewWriter(os.Stdout, 0, 2, 2, ' ', 0)
 	fmt.Fprintln(tw, strings.Join(head, "\t"))

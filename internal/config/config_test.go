@@ -82,6 +82,33 @@ func TestOption(t *testing.T) {
 	}
 }
 
+// TestSetPath covers -config: an explicit file replaces the per-user one for
+// both kinds of keys, and a missing path is an error rather than an empty
+// configuration.
+func TestSetPath(t *testing.T) {
+	writeConf(t, "plan=go-plus\n")
+	other := filepath.Join(t.TempDir(), "ci.conf")
+	if err := os.WriteFile(other, []byte("plan=go\nAA_API_KEY=ci-key\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = SetPath("") })
+	if err := SetPath(other); err != nil {
+		t.Fatal(err)
+	}
+	if v, ok := Option("plan"); !ok || v != "go" {
+		t.Errorf("Option(plan) = %q, %v; want go from %s", v, ok, other)
+	}
+	if v, ok := Value("AA_API_KEY"); !ok || v != "ci-key" {
+		t.Errorf("Value(AA_API_KEY) = %q, %v; want ci-key", v, ok)
+	}
+	if err := SetPath(filepath.Join(t.TempDir(), "missing.conf")); err == nil {
+		t.Error("SetPath(missing) must fail")
+	}
+	if err := SetPath(t.TempDir()); err == nil {
+		t.Error("SetPath(directory) must fail")
+	}
+}
+
 func TestParseBool(t *testing.T) {
 	for _, s := range []string{"true", "on", "1", "yes", "YES", "On"} {
 		if v, err := ParseBool(s); err != nil || !v {

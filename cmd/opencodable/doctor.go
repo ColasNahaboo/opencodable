@@ -146,7 +146,7 @@ func keySource(envName, dotfile string) string {
 
 // runDoctor audits plan/AA/SWE/probe coverage and prints where the joins are
 // missing. It never runs a probe; it only reads cached measurements.
-func runDoctor(refresh, offline, jsonOut bool) error {
+func runDoctor(refresh, offline, jsonOut, withLegend bool) error {
 	models, err := modelsdev.Fetch("opencode-go", refresh, offline)
 	if err != nil {
 		return err
@@ -237,12 +237,11 @@ func runDoctor(refresh, offline, jsonOut bool) error {
 		fmt.Fprintf(os.Stderr, "warning: SWE-bench: %s\n", report.SWEError)
 	}
 
-	return writeDoctor(os.Stdout, rows, isTTY(os.Stdout))
+	return writeDoctor(os.Stdout, rows, isTTY(os.Stdout), withLegend)
 }
 
 // doctorLegend explains the columns; every line starts with "# " so parsers
-// can skip it. -doctor is experimental and not (yet) a TITLES.md contract
-// view, but it follows the same output conventions.
+// can skip it. It is printed only when -l is given.
 var doctorLegend = []string{
 	"# opencodable doctor — coverage audit of plan snapshot / AA / SWE-bench / probes",
 	"# id        models.dev model ID",
@@ -254,13 +253,16 @@ var doctorLegend = []string{
 	"# warnings  ;-separated issues (- = none)",
 }
 
-// writeDoctor renders the audit table: legend lines ("# "-prefixed) then a
-// "#id"-prefixed header. tty pads columns and shows "-" for missing values;
-// piped output is strict single-TAB rows with empty fields.
-func writeDoctor(w io.Writer, rows []doctorRow, tty bool) error {
-	for _, l := range doctorLegend {
-		if _, err := fmt.Fprintln(w, l); err != nil {
-			return err
+// writeDoctor renders the audit table: an optional legend ("# "-prefixed,
+// only with -l) then a "#id"-prefixed header. tty pads columns and shows "-"
+// for missing values; piped output is strict single-TAB rows with empty
+// fields.
+func writeDoctor(w io.Writer, rows []doctorRow, tty, withLegend bool) error {
+	if withLegend {
+		for _, l := range doctorLegend {
+			if _, err := fmt.Fprintln(w, l); err != nil {
+				return err
+			}
 		}
 	}
 	missing := ""

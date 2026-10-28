@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/ColasNahaboo/opencodable/internal/config"
 )
 
 func writeConf(t *testing.T, body string) {
@@ -21,7 +23,7 @@ func writeConf(t *testing.T, body string) {
 
 // registerOptions binds the package option vars to fresh values on a clean
 // CommandLine-like state; tests never run main so names are free.
-func registerOptions(t *testing.T) {
+func registerOptions(t *testing.T) *flag.FlagSet {
 	t.Helper()
 	fs := flag.NewFlagSet("test", flag.ContinueOnError)
 	provider = fs.String("provider", "opencode-go", "")
@@ -43,12 +45,13 @@ func registerOptions(t *testing.T) {
 	spent = fs.String("spent", "", "")
 	vertical = fs.Bool("vertical", false, "")
 	jsonOut = fs.Bool("json", false, "")
+	return fs
 }
 
 func TestApplyConfig(t *testing.T) {
 	writeConf(t, "plan=go-plus\npaid=yes\nprobe-max-allowance=0.5\nsort=name\n")
-	registerOptions(t)
-	if err := applyConfig(); err != nil {
+	fs := registerOptions(t)
+	if err := applyConfig(fs); err != nil {
 		t.Fatal(err)
 	}
 	if *plan != "go-plus" || !*paid || *probeMax != 0.5 || *sortKey != "name" {
@@ -58,8 +61,46 @@ func TestApplyConfig(t *testing.T) {
 
 func TestApplyConfigInvalidBool(t *testing.T) {
 	writeConf(t, "paid=maybe\n")
-	registerOptions(t)
-	if err := applyConfig(); err == nil {
+	fs := registerOptions(t)
+	if err := applyConfig(fs); err == nil {
 		t.Error("invalid boolean must error")
+	}
+}
+
+// TestApplyConfigBoolOverride covers -paid=false: a boolean written as
+// paid=yes in the file must be turned off for one run by the command line.
+func TestApplyConfigBoolOverride(t *testing.T) {
+	writeConf(t, "paid=yes\nsort=name\n")
+	fs := registerOptions(t)
+	if err := fs.Parse([]string{"-paid=false"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := applyConfig(fs); err != nil {
+		t.Fatal(err)
+	}
+	if *paid {
+		t.Error("-paid=false must override paid=yes from the file")
+	}
+	if *sortKey != "name" {
+		t.Errorf("options not set on the command line still come from the file: sort=%q", *sortKey)
+	}
+}
+
+func TestApplyConfigPathOverride(t *testing.T) {
+	writeConf(t, "sort=name\n")
+	other := filepath.Join(t.TempDir(), "ci.conf")
+	if err := os.WriteFile(other, []byte("sort=price\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = config.SetPath("") })
+	if err := config.SetPath(other); err != nil {
+		t.Fatal(err)
+	}
+	fs := registerOptions(t)
+	if err := applyConfig(fs); err != nil {
+		t.Fatal(err)
+	}
+	if *sortKey != "price" {
+		t.Errorf("sort = %q, want price from the -config file", *sortKey)
 	}
 }
