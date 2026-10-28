@@ -52,6 +52,10 @@ internal/config/       opencodable.conf (key=value API keys) in UserConfigDir
   its `# `-prefixed legend on stdout in both modes and its header row starts
   with `#`.
 - All column titles contain no spaces (underscores only).
+- **Version history lives in [HISTORY.md](HISTORY.md)**, not README.md: on
+  every version bump, prepend the new entry there (as before) and update the
+  one-line `Version vX.Y.Z <date>` marker at the end of README.md's History
+  section to the current version and date.
 - Keep functions small and focused; idiomatic Go 1.26; no refactors outside
   the scope of a change.
 
