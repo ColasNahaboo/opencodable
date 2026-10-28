@@ -34,7 +34,8 @@ internal/normalize/    name matching + alias table (models.dev ↔ AA slugs)
 internal/cost/         per-request cost model
 internal/table/        join, Pareto, TSV/vertical/JSON rendering
 internal/cache/        24h disk cache (~/.cache/opencodable/)
-internal/config/       opencodable.conf (key=value API keys) in UserConfigDir
+internal/config/       opencodable.conf (key=value: API keys + option
+                       defaults) in UserConfigDir; case-coded, see gotchas
 ```
 
 ## Hard rules
