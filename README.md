@@ -91,8 +91,7 @@ Two optional keys, each resolved in order: **environment variable →
 | `OPENCODE_API_KEY` or `.opencode-go.key` | live speed probe (`-probe`) | only for probing |
 
 `opencodable.conf` is a simple `key=value` file (one setting per line, `#`
-comments; keys mirror the environment variables) in the per-user config
-directory:
+comments) in the per-user config directory:
 
 | OS | Path |
 |---|---|
@@ -100,10 +99,23 @@ directory:
 | macOS | `~/Library/Application Support/opencodable/opencodable.conf` |
 | Windows | `%AppData%\opencodable\opencodable.conf` |
 
+Two kinds of keys, told apart by case:
+
+- **Uppercase = API keys**, mirroring the environment variables above.
+- **Lowercase = command-line options**, as defaults: every flag name works
+  here (`plan`, `paid`, `privacy`, `sort`, `vertical`, `json`, …), and the
+  command line always wins over the file. Booleans accept
+  `true/on/1/yes` and `false/off/0/no`.
+
 ```ini
 # ~/.config/opencodable/opencodable.conf
 OPENCODE_API_KEY=your-key
 AA_API_KEY=your-key
+
+plan=go-plus        # default tier
+paid=yes            # always hide free models
+privacy=on          # always exclude training/unknown models
+probe-max-allowance=1
 ```
 
 `-doctor` prints where each key was found (`env`, `config`, `dotfile`,
@@ -136,7 +148,9 @@ opencodable -offline                 # cache only for catalog/benchmarks/probes
 
 ### Options
 
-Every flag is optional; the bare command needs none of them.
+Every flag is optional; the bare command needs none of them. Each one can
+also be set as a default in `opencodable.conf` under its lowercase name (see
+[Configuration](#configuration)); the command line always wins.
 
 **What to rank**
 
@@ -468,5 +482,5 @@ This repository is developed by me, a human hobbyist in my personal time in clos
 
 ## History
 
-Version v0.1.3 2026-10-27.
+Version v0.1.4 2026-10-28.
 See [HISTORY.md](HISTORY.md).

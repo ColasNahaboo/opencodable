@@ -64,9 +64,36 @@ func TestNoFile(t *testing.T) {
 }
 
 func TestUnknownKeys(t *testing.T) {
-	writeConf(t, "OPENCODE_API_KEY=a\nOPENCODE_KEY=typo\nAA_API_KEY=b\n")
+	AddOptions("plan", "paid")
+	writeConf(t, "OPENCODE_API_KEY=a\nOPENCODE_KEY=typo\nAA_API_KEY=b\nplan=go-plus\nbogus=1\n")
 	u := Unknown()
-	if len(u) != 1 || u[0] != "OPENCODE_KEY" {
-		t.Errorf("Unknown = %v, want [OPENCODE_KEY]", u)
+	if len(u) != 2 || u[0] != "OPENCODE_KEY" || u[1] != "bogus" {
+		t.Errorf("Unknown = %v, want [OPENCODE_KEY bogus]", u)
+	}
+}
+
+func TestOption(t *testing.T) {
+	writeConf(t, "plan=go-plus\npaid=yes\n")
+	if v, ok := Option("plan"); !ok || v != "go-plus" {
+		t.Errorf("Option(plan) = %q, %v", v, ok)
+	}
+	if _, ok := Option("sort"); ok {
+		t.Error("Option(sort) found without a config entry")
+	}
+}
+
+func TestParseBool(t *testing.T) {
+	for _, s := range []string{"true", "on", "1", "yes", "YES", "On"} {
+		if v, err := ParseBool(s); err != nil || !v {
+			t.Errorf("ParseBool(%q) = %v, %v; want true", s, v, err)
+		}
+	}
+	for _, s := range []string{"false", "off", "0", "no", "NO", "Off"} {
+		if v, err := ParseBool(s); err != nil || v {
+			t.Errorf("ParseBool(%q) = %v, %v; want false", s, v, err)
+		}
+	}
+	if _, err := ParseBool("maybe"); err == nil {
+		t.Error("ParseBool(maybe) must fail")
 	}
 }

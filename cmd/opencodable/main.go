@@ -18,6 +18,7 @@ import (
 	"github.com/ColasNahaboo/opencodable/internal/aa"
 	"github.com/ColasNahaboo/opencodable/internal/bench"
 	"github.com/ColasNahaboo/opencodable/internal/cache"
+	"github.com/ColasNahaboo/opencodable/internal/config"
 	"github.com/ColasNahaboo/opencodable/internal/consoleapi"
 	"github.com/ColasNahaboo/opencodable/internal/cost"
 	"github.com/ColasNahaboo/opencodable/internal/goplan"
@@ -28,7 +29,31 @@ import (
 )
 
 // version is displayed at the bottom of the -h help text.
-var version = "v0.1.3"
+var version = "v0.1.4"
+
+// Parsed options; package-level so applyConfig can override them from
+// opencodable.conf. Registered in main.
+var (
+	provider *string
+	plan     *string
+	sortKey  *string
+	pareto   *bool
+	paid     *bool
+	privacy  *bool
+	peak     *bool
+	refresh  *bool
+	offline  *bool
+	probeAll *bool
+	probeOne *string
+	probeMax *float64
+	showUse  *bool
+	now      *bool
+	winEst   *bool
+	doctor   *bool
+	spent    *string
+	vertical *bool
+	jsonOut  *bool
+)
 
 func main() {
 	// The probe uses its own longer client; all catalog/benchmark/usage
@@ -42,28 +67,33 @@ func main() {
 		flag.PrintDefaults()
 		fmt.Fprintf(out, "\nopencodable %s — https://github.com/ColasNahaboo/opencodable\n", version)
 	}
-	var (
-		provider = flag.String("provider", "opencode-go", "models.dev provider to rank")
-		plan     = flag.String("plan", "go", "subscription plan: go|go-plus (allowances)")
-		sortKey  = flag.String("sort", "quality", "sort: name|price|speed|quality|reqs")
-		pareto   = flag.Bool("pareto", false, "only Pareto-optimal rows")
-		paid     = flag.Bool("paid", false, "hide free models (cost_task = 0)")
-		privacy  = flag.Bool("privacy", false, "hide models that train on request data or have unknown privacy status")
-		peak     = flag.Bool("peak", false, "use peak-hours prices (DeepSeek)")
-		refresh  = flag.Bool("refresh", false, "bypass the 24h cache and refetch")
-		offline  = flag.Bool("offline", false, "cache only for catalog/benchmarks/probes; -usage still needs network")
-		probeAll = flag.Bool("probe", false, "measure live speed of every model (paid requests, cached 24h)")
-		probeOne = flag.String("probe-model", "", "measure live speed of one model ID and print the result")
-		probeMax = flag.Float64("probe-max-allowance", 0, "stop -probe after this many allowance dollars (0 = no limit)")
-		showUse  = flag.Bool("usage", false, "show remaining Go allowance for the 5h/week/month windows")
-		now      = flag.Bool("now", false, "per model: requests affordable in each Go window, using the model's own monthly limit")
-		winEst   = flag.Bool("window-estimate", false, "scale -now 5h/week caps by the account-wide usage percentages (estimate)")
-		doctor   = flag.Bool("doctor", false, "audit plan/AA/SWE/probe coverage and exit")
-		spent    = flag.String("spent", "", "path to a pasted console 'usage by model' TSV; offline fallback for per-model spend")
-		vertical = flag.Bool("vertical", false, "one model per block of 'field: value' lines (screen-reader friendly); applies to the table and -now")
-		jsonOut  = flag.Bool("json", false, "JSON output instead of TSV")
-	)
+	provider = flag.String("provider", "opencode-go", "models.dev provider to rank")
+	plan = flag.String("plan", "go", "subscription plan: go|go-plus (allowances)")
+	sortKey = flag.String("sort", "quality", "sort: name|price|speed|quality|reqs")
+	pareto = flag.Bool("pareto", false, "only Pareto-optimal rows")
+	paid = flag.Bool("paid", false, "hide free models (cost_task = 0)")
+	privacy = flag.Bool("privacy", false, "hide models that train on request data or have unknown privacy status")
+	peak = flag.Bool("peak", false, "use peak-hours prices (DeepSeek)")
+	refresh = flag.Bool("refresh", false, "bypass the 24h cache and refetch")
+	offline = flag.Bool("offline", false, "cache only for catalog/benchmarks/probes; -usage still needs network")
+	probeAll = flag.Bool("probe", false, "measure live speed of every model (paid requests, cached 24h)")
+	probeOne = flag.String("probe-model", "", "measure live speed of one model ID and print the result")
+	probeMax = flag.Float64("probe-max-allowance", 0, "stop -probe after this many allowance dollars (0 = no limit)")
+	showUse = flag.Bool("usage", false, "show remaining Go allowance for the 5h/week/month windows")
+	now = flag.Bool("now", false, "per model: requests affordable in each Go window, using the model's own monthly limit")
+	winEst = flag.Bool("window-estimate", false, "scale -now 5h/week caps by the account-wide usage percentages (estimate)")
+	doctor = flag.Bool("doctor", false, "audit plan/AA/SWE/probe coverage and exit")
+	spent = flag.String("spent", "", "path to a pasted console 'usage by model' TSV; offline fallback for per-model spend")
+	vertical = flag.Bool("vertical", false, "one model per block of 'field: value' lines (screen-reader friendly); applies to the table and -now")
+	jsonOut = flag.Bool("json", false, "JSON output instead of TSV")
+	config.AddOptions("provider", "plan", "sort", "pareto", "paid", "privacy",
+		"peak", "refresh", "offline", "probe", "probe-model", "probe-max-allowance",
+		"usage", "now", "window-estimate", "doctor", "spent", "vertical", "json")
 	flag.Parse()
+	if err := applyConfig(); err != nil {
+		fmt.Fprintln(os.Stderr, "opencodable.conf:", err)
+		os.Exit(2)
+	}
 
 	if *plan != "go" && *plan != "go-plus" {
 		fmt.Fprintf(os.Stderr, "invalid -plan %q: want go or go-plus\n", *plan)
@@ -220,6 +250,49 @@ func main() {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
+}
+
+// applyConfig fills options set in opencodable.conf (lowercase keys) for
+// every flag the command line did not set: command line beats config file,
+// config file beats the flag default. Booleans accept true/on/1/yes and
+// false/off/0/no.
+func applyConfig() error {
+	set := map[string]bool{}
+	flag.Visit(func(f *flag.Flag) { set[f.Name] = true })
+	str := map[string]*string{
+		"provider": provider, "plan": plan, "sort": sortKey,
+		"probe-model": probeOne, "spent": spent,
+	}
+	boolean := map[string]*bool{
+		"pareto": pareto, "paid": paid, "privacy": privacy, "peak": peak,
+		"refresh": refresh, "offline": offline, "probe": probeAll, "usage": showUse,
+		"now": now, "window-estimate": winEst, "doctor": doctor,
+		"vertical": vertical, "json": jsonOut,
+	}
+	for name, p := range str {
+		if v, ok := config.Option(name); ok && !set[name] {
+			*p = v
+		}
+	}
+	for name, p := range boolean {
+		v, ok := config.Option(name)
+		if !ok || set[name] {
+			continue
+		}
+		b, err := config.ParseBool(v)
+		if err != nil {
+			return fmt.Errorf("option %s: %w", name, err)
+		}
+		*p = b
+	}
+	if v, ok := config.Option("probe-max-allowance"); ok && !set["probe-max-allowance"] {
+		f, err := strconv.ParseFloat(v, 64)
+		if err != nil {
+			return fmt.Errorf("option probe-max-allowance: %w", err)
+		}
+		*probeMax = f
+	}
+	return nil
 }
 
 // isTTY reports whether f is an interactive terminal.

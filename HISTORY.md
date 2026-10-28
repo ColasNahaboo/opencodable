@@ -1,5 +1,8 @@
 # History
 
+- v0.1.4 2026-10-28 every command-line option can be set as a default in
+  `opencodable.conf` under its lowercase name (command line wins; booleans
+  true/on/1/yes | false/off/0/no).
 - v0.1.3 2026-10-27 API keys also read from `opencodable.conf`
   (`key=value`) in the per-user config directory; `-doctor` shows each key's
   source and warns on unknown config keys.

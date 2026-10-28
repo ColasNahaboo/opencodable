@@ -107,6 +107,13 @@ internal/config/       opencodable.conf (key=value API keys) in UserConfigDir
   `opencodable.conf` (`key=value`, in `os.UserConfigDir()/opencodable/`) →
   legacy cwd dot-file. `internal/config` owns the file; never print values,
   and `-doctor` reports only the source and unknown key names.
+- **Config keys are case-coded**: uppercase/mixed = environment-style
+  settings (API keys); all-lowercase = command-line option defaults
+  (command line beats file beats flag default; booleans are
+  true/on/1/yes | false/off/0/no). **When adding a flag**, add its name to
+  the `config.AddOptions` call and to `applyConfig`'s str/boolean maps in
+  `cmd/opencodable/main.go`, or `-doctor` will flag it as unknown and the
+  file default is ignored.
 - **Doctor**: `-doctor` audits plan/AA/SWE/probe coverage without running a
   probe; keep `buildDoctorRows` pure and tested.
 
