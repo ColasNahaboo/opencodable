@@ -29,7 +29,7 @@ import (
 )
 
 // version is displayed at the bottom of the -h help text.
-var version = "v0.1.4"
+var version = "v0.1.5"
 
 // Parsed options; package-level so applyConfig can override them from
 // opencodable.conf. Registered in main.
@@ -167,6 +167,11 @@ func main() {
 		fmt.Fprintln(os.Stderr, "warning: SWE-bench unavailable:", serr)
 		swe = nil
 	}
+	lb, lerr := bench.LiveBench(*refresh, *offline)
+	if lerr != nil {
+		fmt.Fprintln(os.Stderr, "warning: LiveBench unavailable:", lerr)
+		lb = nil
+	}
 
 	probes := map[string]probe.Result{}
 	for _, m := range models {
@@ -209,7 +214,7 @@ func main() {
 		}
 	}
 
-	rows := table.Build(models, aas, probes, swe, *plan, *peak)
+	rows := table.Build(models, aas, probes, swe, lb, *plan, *peak)
 	if *paid {
 		rows = slices.DeleteFunc(rows, func(r table.Row) bool { return r.CostTask == 0 })
 	}

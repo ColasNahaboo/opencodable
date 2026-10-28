@@ -1,5 +1,8 @@
 # History
 
+- v0.1.5 2026-10-28 LiveBench 2.0 columns (`lb_agent`, `lb_code`) from the
+  pinned 2026-10-25 release, fetched as static CSV (no key) and cached as
+  JSON; AA remains the only price/speed source.
 - v0.1.4 2026-10-28 every command-line option can be set as a default in
   `opencodable.conf` under its lowercase name (command line wins; booleans
   true/on/1/yes | false/off/0/no).

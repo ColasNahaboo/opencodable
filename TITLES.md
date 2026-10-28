@@ -19,7 +19,7 @@ columns, in order, with their meaning. Scripts can rely on it.
 
 ## View: main table (`opencodable`)
 
-Piped header: `#name	cost_tok	cost_task	allowance	reqs_mo	tok_s	ttft_s	p_tok_s	p_ttft_s	aa_int	aa_code	aa_math	code_b	term_b	if_b	aa_lcr	swe_b	pareto	src	privacy	ctx_k	out_k`
+Piped header: `#name	cost_tok	cost_task	allowance	reqs_mo	tok_s	ttft_s	p_tok_s	p_ttft_s	aa_int	aa_code	aa_math	code_b	term_b	if_b	aa_lcr	swe_b	pareto	src	privacy	ctx_k	out_k	lb_agent	lb_code`
 
 | # | Column | Meaning |
 |---|---|---|
@@ -45,6 +45,8 @@ Piped header: `#name	cost_tok	cost_task	allowance	reqs_mo	tok_s	ttft_s	p_tok_s	p
 | 20 | `privacy` | `safe` (no training on request data), `trains` (contributor), or `unknown` (no plan-snapshot verdict) |
 | 21 | `ctx_k` | context window in thousands of tokens (models.dev) |
 | 22 | `out_k` | maximum output tokens in thousands (models.dev) |
+| 23 | `lb_agent` | LiveBench 2.0 Long Agentic score, 0–100 (single run) |
+| 24 | `lb_code` | LiveBench 2.0 Coding score, 0–100 (single run) |
 
 On a terminal: same columns, padded for readability, missing values shown as
 `-`, preceded by a `#`-prefixed legend block. `-vertical` emits one model per

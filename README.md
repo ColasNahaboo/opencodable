@@ -385,6 +385,7 @@ free models). `-now` also carries `known`, `spent_known` and
 | `src` | `aa:<effort>` when speed came from that AA reasoning-effort variant |
 | `privacy` | `safe`, `trains`, or `unknown` (no plan-snapshot verdict) |
 | `ctx_k`, `out_k` | context window / maximum output in thousands of tokens (models.dev) |
+| `lb_agent`, `lb_code` | LiveBench 2.0 Long Agentic / Coding scores (0–100, single run) |
 
 Missing data prints as `-` (terminal) or empty (piped) — never a wrong score.
 
@@ -395,12 +396,12 @@ Missing data prints as `-` (terminal) or empty (piped) — never a wrong score.
 | [models.dev](https://models.dev) | prices, context limits, reasoning flags | none |
 | [OpenCode Go docs](https://opencode.ai/v2/docs/console/go/) | allowances, token profiles, peak prices, privacy | none |
 | [Artificial Analysis](https://artificialanalysis.ai) | benchmark indexes, reported speed | free key |
+| [LiveBench 2.0](https://livebench.ai) | long-horizon agentic and coding scores (pinned release) | none |
 | [SWE-bench Verified](https://www.swebench.com/) leaderboard JSON | agentic repo-fixing % resolved | none |
 | [Console usage API](https://console.opencode.ai/api/usage) (`/usage/models`) | per-model tokens and spend for the current period; Go allowance spend recomputed from tokens | same Go key |
 | Your subscription endpoint (probe) | real tok/s, TTFT, allowance burn | `OPENCODE_API_KEY` |
 
-Dropped with cause: LiveBench (data files not machine-accessible), Aider
-polyglot (public YAML files stale since 2025-10).
+Dropped with cause: Aider polyglot (public YAML files stale since 2025-10).
 
 ## What live probing tends to reveal
 
@@ -482,5 +483,5 @@ This repository is developed by me, a human hobbyist in my personal time in clos
 
 ## History
 
-Version v0.1.4 2026-10-28.
+Version v0.1.5 2026-10-28.
 See [HISTORY.md](HISTORY.md).

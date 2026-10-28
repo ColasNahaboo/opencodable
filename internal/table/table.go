@@ -13,6 +13,7 @@ import (
 	"text/tabwriter"
 
 	"github.com/ColasNahaboo/opencodable/internal/aa"
+	"github.com/ColasNahaboo/opencodable/internal/bench"
 	"github.com/ColasNahaboo/opencodable/internal/cost"
 	"github.com/ColasNahaboo/opencodable/internal/goplan"
 	"github.com/ColasNahaboo/opencodable/internal/modelsdev"
@@ -48,6 +49,8 @@ type Row struct {
 	Privacy       string  `json:"privacy"`
 	CtxK          float64 `json:"ctx_k"`
 	OutK          float64 `json:"out_k"`
+	LBAgentic     float64 `json:"lb_agent"`
+	LBCoding      float64 `json:"lb_code"`
 }
 
 func f(p *float64) float64 {
@@ -61,7 +64,7 @@ func f(p *float64) float64 {
 // row filters, so the flags describe the set the user actually sees.
 // Measured probe results, when present, take precedence over reported AA
 // speed.
-func Build(models []modelsdev.Model, aas []aa.Model, probes map[string]probe.Result, swe map[string]float64, plan string, peak bool) []Row {
+func Build(models []modelsdev.Model, aas []aa.Model, probes map[string]probe.Result, swe map[string]float64, lb bench.LB, plan string, peak bool) []Row {
 	slugs := map[string]bool{}
 	speeds := map[string]float64{}
 	bySlug := map[string]aa.Model{}
@@ -91,6 +94,9 @@ func Build(models []modelsdev.Model, aas []aa.Model, probes map[string]probe.Res
 		r.AllowanceUSD, r.Unlimited = allow, unlim
 		if !unlim && r.CostTask > 0 {
 			r.ReqsMonth = allow / r.CostTask
+		}
+		if s, ok := lb.Lookup(m.ID); ok {
+			r.LBAgentic, r.LBCoding = s.Agentic, s.Coding
 		}
 		if slug := normalize.Match(m.ID, slugs); slug != "" {
 			a := bySlug[slug]
@@ -276,6 +282,7 @@ func headerCells() []string {
 		"aa_int", "aa_code", "aa_math",
 		"code_b", "term_b", "if_b", "aa_lcr",
 		"swe_b", "pareto", "src", "privacy", "ctx_k", "out_k",
+		"lb_agent", "lb_code",
 	}
 }
 
@@ -301,6 +308,7 @@ func rowCells(r Row, missing string) []string {
 		numOr(r.IFBench, false, missing), numOr(r.LCR, false, missing), numOr(r.SWEBench, false, missing),
 		pareto, r.Src, privacy,
 		numOr(r.CtxK, false, missing), numOr(r.OutK, false, missing),
+		numOr(r.LBAgentic, false, missing), numOr(r.LBCoding, false, missing),
 	}
 }
 
@@ -356,6 +364,8 @@ var legend = []string{
 	"# privacy     safe = no training on request data; trains = contributor; unknown = no plan-snapshot verdict",
 	"# ctx_k       context window in thousands of tokens (models.dev)",
 	"# out_k       maximum output tokens in thousands (models.dev)",
+	"# lb_agent    LiveBench 2.0 Long Agentic score (single run, 0-100)",
+	"# lb_code     LiveBench 2.0 Coding score (single run, 0-100)",
 }
 
 // WriteJSON dumps the rows machine-readably.

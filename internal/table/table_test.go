@@ -268,7 +268,7 @@ func TestBuildContextAndPrivacyColumns(t *testing.T) {
 			Limit: modelsdev.Context{Context: 200_000},
 			Cost:  modelsdev.Cost{Input: 1, Output: 2},
 		},
-	}, nil, nil, nil, "go", false)
+	}, nil, nil, nil, nil, "go", false)
 	if len(rows) != 2 {
 		t.Fatalf("got %d rows", len(rows))
 	}
