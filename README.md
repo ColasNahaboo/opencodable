@@ -134,17 +134,97 @@ opencodable -refresh                 # refetch everything, ignore the 24h cache
 opencodable -offline                 # cache only for catalog/benchmarks/probes
 ```
 
-All flags: `-provider` (models.dev provider, default `opencode-go`), `-plan`,
-`-sort` (`name|price|speed|quality|reqs`), `-pareto`, `-paid`, `-privacy`,
-`-peak`, `-probe`, `-probe-model`, `-probe-max-allowance`, `-usage`, `-now`,
-`-window-estimate`, `-spent`, `-vertical`, `-json`, `-refresh`, `-offline`,
-`-doctor`.
+### Options
 
-`-usage` reads the live allowance endpoint and prints, per window (5h = 20%,
-weekly = 50%, monthly = 100% of each model's monthly limit), the percent used,
-the percent remaining, and when the window resets — in the same tty-padded /
-piped-TABs style as the model table. The endpoint reports one aggregate set of
-windows; per-model caps are in `-now`.
+Every flag is optional; the bare command needs none of them.
+
+**What to rank**
+
+- `-provider <name>` — which models.dev provider to rank. Default
+  `opencode-go` (your subscription); other values are for experimenting with
+  public catalogs, e.g. `opencodable -provider openrouter`. Only
+  `opencode-go` has allowance/plan data.
+- `-plan go|go-plus` — which subscription tier's per-model monthly limits to
+  use. Go Plus gives every paid model a larger limit, so `reqs_mo` and the
+  `-now` counts grow accordingly. Default `go`.
+- `-sort name|price|speed|quality|reqs` — column to rank rows by:
+  alphabetical, cheapest request first, fastest first, smartest first
+  (Artificial Analysis intelligence index), or most requests per month first.
+  Default `quality`. Example: `opencodable -sort price` to find the budget
+  option.
+- `-pareto` — keep only the models that are not dominated: no other model is
+  simultaneously cheaper, faster and better. What remains is the honest
+  "best compromise" shortlist. Combine with `-paid` to ignore free models.
+- `-paid` — hide the free models (those costing $0 per request). Useful when
+  you want to decide among the models that actually consume your allowance.
+- `-privacy` — hide every model that trains on your prompts, plus any whose
+  privacy status the plan snapshot does not confirm (fail-closed). Example:
+  `opencodable -pareto -paid -privacy` for the best privacy-safe paid pick.
+- `-peak` — price DeepSeek models at their peak-hours rates instead of the
+  off-peak ones, so cost columns reflect what you pay if you only code during
+  business hours.
+
+**Measuring live speed (costs a few cents)**
+
+- `-probe` — send one small paid request to every model through your
+  subscription and measure real tokens/s and time-to-first-token on your
+  account (the `p_tok_s` / `p_ttft_s` columns). Results are cached 24h, so a
+  daily run is cheap. Progress prints on stderr; the table gains the measured
+  columns.
+- `-probe-max-allowance <usd>` — with `-probe`, stop after burning this many
+  allowance dollars in total: `opencodable -probe -probe-max-allowance 0.5`
+  caps the whole run at 50¢.
+- `-probe-model <id>` — probe a single model and print its full JSON
+  measurement (window length, token counts, burn):
+  `opencodable -probe-model kimi-k3`. Use it to re-measure one suspicious
+  result; add `-refresh` to ignore the cache.
+
+**Your allowance**
+
+- `-usage` — asks OpenCode how much of your allowance is left and prints the
+  three windows (5h rolling, weekly, monthly): percent used, percent
+  remaining, reset time. Needs network and a key; it is one free API call.
+- `-now` — the "what can I use right now" table: per model, how many requests
+  still fit in each window given your real spend this period (fetched from
+  the console usage API automatically). See
+  [Choosing a model right now](#choosing-a-model-right-now--now) below.
+- `-window-estimate` — with `-now`, scale each model's 5h/weekly caps by the
+  account-wide remaining percentages from `-usage`, instead of assuming fresh
+  windows. An explicit approximation (the API has no per-model window
+  breakdown), clearly labelled on stderr.
+- `-spent <file>` — offline fallback for `-now`: subtract per-model spend
+  read from a pasted console "usage by model" table instead of calling the
+  API. Note: a pasted file carries no request counts, so measured `burn_req`
+  never kicks in and the official estimate is used.
+
+**Output shape**
+
+- `-vertical` — one model per block of `field: value` lines instead of a wide
+  table; much easier for screen readers and for `grep`. Applies to the main
+  table and `-now`.
+- `-json` — machine-readable output for every view, keys equal to the column
+  titles (see [TITLES.md](TITLES.md)). Example:
+  `opencodable -json | jq '.[] | select(.pareto)'`.
+- Output also adapts automatically: on a terminal you get a padded table with
+  a `#` legend; piped or redirected, strict TAB-separated values with no
+  legend — see [Output adapts to stdout](#output-adapts-to-stdout).
+
+**Data freshness**
+
+- `-refresh` — ignore the 24h cache and refetch catalog, benchmarks and
+  probe results now (prices and scores move; usually unnecessary since each
+  run reuses the cache).
+- `-offline` — never touch the network for catalog/benchmarks/probes; use
+  whatever the cache holds, however old. Handy on a plane or to re-render
+  cached data. `-usage` is inherently live and rejects `-offline`.
+
+**Diagnosis**
+
+- `-doctor` — coverage audit: which models lack a plan entry, an Artificial
+  Analysis match or a SWE-bench score, how fresh each cache is, where your
+  API keys were found, and warnings for unknown keys in `opencodable.conf`.
+  Runs no probes; safe to run anytime. Experimental: its columns are not yet
+  part of the TITLES.md contract.
 
 ### Choosing a model right now: `-now`
 
