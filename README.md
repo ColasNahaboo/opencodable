@@ -34,7 +34,7 @@ comes out as tab-separated lines or as JSON (see [Output for scripts](#output-fo
 go install github.com/ColasNahaboo/opencodable/cmd/opencodable@master
 ```
 
-The program lands in `$(go env GOPATH)/bin`, so make sure that folder is on your `PATH`.
+The program lands in `$(go env GOPATH)/bin`, so make sure that folder is on your `PATH`, or copy `opencodable` there in your PATH.
 Without Go, download the archive for your system from the
 [releases page](https://github.com/ColasNahaboo/opencodable/releases) and put the
 program somewhere on your `PATH`.
