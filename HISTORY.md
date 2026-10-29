@@ -1,5 +1,12 @@
 # History
 
+- v0.1.12 2026-10-29 Peak twins in every model view: models with peak-hours
+  pricing (DeepSeek) gain a `Name [peak]` row (ID suffixed `-peak`) with
+  `cost_task` and quotas/counts recomputed at peak rates. Twins share the
+  base's probes, scores, privacy, allowance and spend dollars; `-now` peak
+  `burn_req` prices the official profile (measured burn needs regime tags
+  the API lacks). Twins inherit `-paid`/`-privacy`, face value filters
+  themselves, and vanish under `-peak` (whole table already peak-priced).
 - v0.1.11 2026-10-29 `-nohead`: omit the header row in every view (data
   rows only; `-l` still prints, no-op in `-vertical`/`-json`).
 - v0.1.10 2026-10-29 Arena columns in the main view (and `-full`): `elo`

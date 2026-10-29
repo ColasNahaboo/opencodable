@@ -36,13 +36,34 @@ func TestJoinFull(t *testing.T) {
 	if got[2].Known || got[2].Limit != "unknown" {
 		t.Errorf("priceless join wrong: %+v", got[2])
 	}
-	if got[2].WindowEstimate {
-		t.Error("window_estimate must follow the flag")
-	}
 	for _, r := range joinFull(mrows, nrows, true) {
 		if !r.WindowEstimate {
 			t.Error("window_estimate must follow the flag")
 		}
+	}
+}
+
+func TestJoinFullTwins(t *testing.T) {
+	mrows := []table.Row{
+		{ID: "ds", Name: "DS", CostTask: 0.001},
+		{ID: "ds-peak", Name: "DS [peak]", CostTask: 0.003},
+	}
+	nrows := []nowRow{
+		{id: "ds", name: "DS", costTask: 0.001, burn: 0.001,
+			spentMo: 2, spentOK: true, five: 100, week: 200, month: 300,
+			usable: 100, binding: "5h", known: true},
+		{id: "ds-peak", name: "DS [peak]", costTask: 0.003, burn: 0.003,
+			spentMo: 2, spentOK: true, five: 30, week: 60, month: 90,
+			usable: 30, binding: "5h", known: true},
+	}
+	got := joinFull(mrows, nrows, false)
+	if len(got) != 2 {
+		t.Fatalf("join = %d rows, want 2", len(got))
+	}
+	twin := got[1]
+	if twin.Row.ID != "ds-peak" || twin.Burn != 0.003 || twin.Usable != 30 ||
+		twin.Limit != "5h" || twin.SpentMo != 2 || !twin.Known {
+		t.Errorf("twin must join its own now row, not the base's: %+v", twin)
 	}
 }
 

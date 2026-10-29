@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ColasNahaboo/opencodable/internal/cost"
 	"github.com/ColasNahaboo/opencodable/internal/modelsdev"
 )
 
@@ -305,5 +306,45 @@ func TestBuildContextAndPrivacyColumns(t *testing.T) {
 	}
 	if got := byID["space-bunny"]; got.Privacy != "unknown" {
 		t.Errorf("unknown privacy = %q, want unknown", got.Privacy)
+	}
+}
+
+func TestWithPeakTwins(t *testing.T) {
+	ds := modelsdev.Model{
+		ID: "deepseek-v4.1-flash", Name: "DeepSeek V4.1 Flash",
+		Cost: modelsdev.Cost{Input: 0.10, Output: 0.40, CacheRead: 0.002},
+	}
+	off, on := cost.PerRequest(ds, false), cost.PerRequest(ds, true)
+	if on <= off || off <= 0 {
+		t.Fatalf("fixture needs an off-peak/peak spread, got %v/%v", off, on)
+	}
+	plain := modelsdev.Model{ID: "plain", Name: "Plain", Cost: modelsdev.Cost{Input: 1, Output: 2}}
+	rows := []Row{
+		{ID: ds.ID, Name: ds.Name, CostTask: off, AllowanceUSD: 80, TokPerSec: 100, AAIntel: 50},
+		{ID: "plain", Name: "Plain", CostTask: 0.01},
+		{ID: "ghost", Name: "Ghost", CostTask: 0.01}, // not in models: left alone
+	}
+	got := WithPeakTwins(rows, []modelsdev.Model{ds, plain})
+	if len(got) != 4 {
+		t.Fatalf("got %d rows, want 4 (one twin)", len(got))
+	}
+	twin := got[1] // right after its base
+	if twin.ID != "deepseek-v4.1-flash-peak" || twin.Name != "DeepSeek V4.1 Flash [peak]" {
+		t.Errorf("twin identity = %q/%q", twin.ID, twin.Name)
+	}
+	if twin.CostTask != on {
+		t.Errorf("twin cost = %v, want peak %v", twin.CostTask, on)
+	}
+	if twin.RQuota != 80/on {
+		t.Errorf("twin quota = %v, want %v", twin.RQuota, 80/on)
+	}
+	if twin.TokPerSec != 100 || twin.AAIntel != 50 {
+		t.Errorf("twin must inherit speed and scores: %+v", twin)
+	}
+	if got[0].ID != ds.ID || got[2].ID != "plain" || got[3].ID != "ghost" {
+		t.Errorf("twin must sit right after its base: %v", got)
+	}
+	if got := WithPeakTwins(nil, nil); len(got) != 0 {
+		t.Errorf("empty in must stay empty: %v", got)
 	}
 }

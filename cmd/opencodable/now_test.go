@@ -24,8 +24,8 @@ func TestBuildNowRowsUsesPerModelLimits(t *testing.T) {
 		[]modelsdev.Model{kimi, deepseek},
 		map[string]spendInfo{}, true, "go", false, false, false, 0, 0, nil,
 	)
-	if len(rows) != 2 {
-		t.Fatalf("got %d rows, want 2", len(rows))
+	if len(rows) != 3 {
+		t.Fatalf("got %d rows, want 3 (kimi, deepseek, deepseek peak twin)", len(rows))
 	}
 	byID := map[string]nowRow{}
 	for _, r := range rows {
@@ -62,6 +62,9 @@ func TestBuildNowRowsUsesPerModelLimits(t *testing.T) {
 	if d.five != int(0.2*80/dt+1e-9) {
 		t.Errorf("DeepSeek 5h = %d, want %d", d.five, int(0.2*80/dt+1e-9))
 	}
+	if tw := byID["deepseek-v4.1-flash-peak"]; !tw.known || tw.burn != cost.PerRequest(deepseek, true) {
+		t.Errorf("peak twin must price the official peak profile: %+v", tw)
+	}
 }
 
 func TestBuildNowRowsWindowEstimate(t *testing.T) {
@@ -82,16 +85,29 @@ func TestBuildNowRowsUsesMeasuredBurn(t *testing.T) {
 		"deepseek-v4.1-flash": {usd: 0.50, reqs: 100, known: true},
 	}
 	rows := buildNowRows([]modelsdev.Model{deepseek}, spend, true, "go", false, false, false, 0, 0, nil)
-	if len(rows) != 1 {
-		t.Fatalf("got %d rows, want 1", len(rows))
+	if len(rows) != 2 {
+		t.Fatalf("got %d rows, want base + peak twin", len(rows))
 	}
-	r := rows[0]
+	byID := map[string]nowRow{}
+	for _, r := range rows {
+		byID[r.id] = r
+	}
+	r := byID["deepseek-v4.1-flash"]
 	if math.Abs(r.burn-0.005) > 1e-12 {
 		t.Errorf("measured burn = %v, want 0.005", r.burn)
 	}
 	wantUsable := int(0.2 * 80 / 0.005)
 	if r.usable != wantUsable {
 		t.Errorf("usable = %d, want 5h cap %d", r.usable, wantUsable)
+	}
+	// The twin shares the spend dollars but prices the official peak
+	// profile: measured burn needs regime-tagged tokens.
+	tw := byID["deepseek-v4.1-flash-peak"]
+	if tw.burn != cost.PerRequest(deepseek, true) {
+		t.Errorf("twin burn = %v, want official peak %v", tw.burn, cost.PerRequest(deepseek, true))
+	}
+	if tw.spentMo != 0.50 || !tw.spentOK {
+		t.Errorf("twin must share base spend: %+v", tw)
 	}
 }
 
@@ -181,5 +197,40 @@ func TestFilterNowRows(t *testing.T) {
 		if r.id == "unmeasured" {
 			t.Error("-missing drop kept an unmeasured model")
 		}
+	}
+}
+
+func TestBuildNowRowsPeakTwins(t *testing.T) {
+	ds := testModel("deepseek-v4.1-flash", "DeepSeek V4.1 Flash", 0.10, 0.40, 0.002)
+	off, on := cost.PerRequest(ds, false), cost.PerRequest(ds, true)
+	if on <= off {
+		t.Fatalf("fixture needs a peak premium, got %v/%v", off, on)
+	}
+	rows := buildNowRows([]modelsdev.Model{ds}, map[string]spendInfo{}, false, "go", false, false, false, 1, 1, nil)
+	if len(rows) != 2 {
+		t.Fatalf("got %d rows, want base + twin", len(rows))
+	}
+	base, twin := rows[0], rows[1]
+	if twin.id != "deepseek-v4.1-flash-peak" || twin.name != "DeepSeek V4.1 Flash [peak]" {
+		t.Errorf("twin identity = %q/%q", twin.id, twin.name)
+	}
+	if twin.costTask != on || twin.burn != on {
+		t.Errorf("twin must price the official peak profile: cost %v burn %v, want %v", twin.costTask, twin.burn, on)
+	}
+	if twin.spentMo != base.spentMo || twin.spentOK != base.spentOK {
+		t.Errorf("twin must share base spend dollars: %+v vs %+v", twin, base)
+	}
+	if !twin.known || twin.usable >= base.usable {
+		t.Errorf("twin must be known with fewer usable requests: %+v vs %+v", twin, base)
+	}
+	// Peak regime already: no twins.
+	if rows := buildNowRows([]modelsdev.Model{ds}, map[string]spendInfo{}, false, "go", true, false, false, 1, 1, nil); len(rows) != 1 {
+		t.Errorf("-peak must suppress twins, got %d rows", len(rows))
+	}
+	// Value filters judge the twin on its peak cost.
+	mc := (off + on) / 2
+	got := filterNowRows(rows, table.Filter{MaxCost: &mc})
+	if len(got) != 1 || got[0].id != ds.ID {
+		t.Errorf("-max-cost must keep base and drop twin: %v", got)
 	}
 }

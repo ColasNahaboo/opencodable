@@ -51,7 +51,8 @@ Piped header: `#name	cost_tok	cost_task	allowance	r_quota	tok_s	ttft_s	p_tok_s	p
 | 26 | `btr` | Arena Bradley–Terry rating on the Elo scale, text with style control, overall category (official mirror, fresh; missing = no match) |
 
 On a terminal: same columns, padded for readability, missing values shown as
-`-`. The `#`-prefixed legend block explaining each column is printed only
+`-`. Models with peak-hours pricing add a `Name [peak]` twin row (ID
+suffixed `-peak`) with `cost_task`/`r_quota` recomputed at peak rates. The `#`-prefixed legend block explaining each column is printed only
 with `-l` (in any output mode). `-vertical` emits one model per block of
 `field: value` lines (same keys, empty fields skipped, blank line between
 records); the field names are the legend, and the prose block again needs
@@ -99,7 +100,9 @@ Free models (zero
 prices) show `limit=unlimited` with empty counts, even when the snapshot lacks
 their entry; paid models missing from the plan snapshot show `limit=unknown`.
 Spend uses only `opencode-go` console rows and prices their token counts at Go
-rates; `-spent` is the offline fallback.
+rates; `-spent` is the offline fallback. Peak-priced models add a `[peak]`
+twin row sharing the base's spend dollars with `burn_req` at official peak
+rates (measured burn needs regime-tagged tokens).
 
 ## View: `-full` (static quality plus affordable requests)
 
@@ -127,7 +130,8 @@ scores like the main table, so every row filter applies — including
 when available, else AA). Rows without `-now` data (no price to turn dollars
 into requests) keep their static columns with blank affordability cells and
 `limit=unknown`. JSON extras: `id`, `unlimited` (as in main) plus `known`,
-`spent_known`, `window_estimate` (as in `-now`).
+`spent_known`, `window_estimate` (as in `-now`). `[peak]` twins join like
+any other row, carrying their own peak-priced affordability.
 
 ## Column selection (`-cols`, `-excols`; model views only)
 

@@ -31,6 +31,23 @@ func TestFilterExcluded(t *testing.T) {
 	}
 }
 
+// TestExcludePeakBrackets guards the [peak] twin convention: brackets are
+// literal in patterns (unlike path.Match), so '*[peak]' selects twins only
+// while a family name hides both regimes.
+func TestExcludePeakBrackets(t *testing.T) {
+	twins := Filter{Exclude: []string{"*[peak]"}}
+	if !twins.Excluded("deepseek-v4.1-flash-peak", "DeepSeek V4.1 Flash [peak]") {
+		t.Error("*[peak] must match the twin")
+	}
+	if twins.Excluded("deepseek-v4.1-flash", "DeepSeek V4.1 Flash") {
+		t.Error("*[peak] must not match the base row")
+	}
+	family := Filter{Exclude: []string{"deepseek"}}
+	if !family.Excluded("deepseek-v4.1-flash-peak", "DeepSeek V4.1 Flash [peak]") {
+		t.Error("family substring must hide the twin too")
+	}
+}
+
 func TestFilterCost(t *testing.T) {
 	f := Filter{MaxCost: ptr(0.01)}
 	for _, tc := range []struct {

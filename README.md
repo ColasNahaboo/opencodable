@@ -229,7 +229,23 @@ wins.
   `opencodable -pareto -paid -privacy` for the best privacy-safe paid pick.
 - `-peak` — price DeepSeek models at their peak-hours rates instead of the
   off-peak ones, so cost columns reflect what you pay if you only code during
-  business hours.
+  business hours. The whole table is peak-priced, so no `[peak]` twins are
+  added (see "Peak twins" below).
+
+**Peak twins**
+
+Models with peak-hours pricing (DeepSeek) appear twice: the off-peak base
+row plus a `[peak]` twin (e.g. `DeepSeek V4.1 Flash [peak]`, ID suffixed
+`-peak`). Same model, same speed/scores/privacy/allowance dollars — only
+the price regime differs, so `cost_task` and quotas/counts recompute at peak
+rates side-by-side with the base row: run now or wait for off-peak, at a
+glance. Twins inherit `-paid`/`-privacy` verdicts but face the value filters
+themselves (`-max-cost` can keep the base and drop the twin); Pareto never
+flags a twin while its base is visible. In `-now`/`-full` the twin shares
+the base's spend dollars but prices the official peak profile for `burn_req`
+— measured burn needs regime-tagged tokens the console API does not report.
+`-exclude deepseek` hides both regimes; `-exclude '*[peak]'` keeps only
+off-peak. With `-peak` the twins disappear (everything is already peak).
 
 **Filtering**
 
@@ -584,7 +600,6 @@ Ideas under consideration — no promises, no timeline.
 - True per-model 5h/weekly spend (the API exposes only aggregate percentages;
   `-window-estimate` is a uniform approximation; a local ledger of
   `opencode.allowance` burns from probes/sessions could approximate it)
-- Peak/off-peak *scheduling advice* (when DeepSeek is cheapest)
 - Multi-provider comparison (`-provider any`)
 - Recoding in Rust with same functionalities
 
@@ -607,5 +622,5 @@ This repository is developed by me, a human hobbyist in my personal time, acting
 
 ## History
 
-Version v0.1.11 2026-10-29.
+Version v0.1.12 2026-10-29.
 See [HISTORY.md](HISTORY.md).

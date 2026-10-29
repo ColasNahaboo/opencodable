@@ -155,6 +155,51 @@ func Speed(r Row) float64 {
 	return r.TokPerSec
 }
 
+// PeakTwinIDSuffix and PeakTwinNameSuffix mark the peak-regime twin rows:
+// same subscription identity, different price regime. Brackets (not
+// parentheses) because some display names already contain parentheses; the
+// -exclude glob treats brackets as literal.
+const (
+	PeakTwinIDSuffix   = "-peak"
+	PeakTwinNameSuffix = " [peak]"
+)
+
+// WithPeakTwins appends a "[peak]" twin right after each row whose model
+// costs strictly more at peak hours. Twins share everything but the price
+// regime — probes, scores, privacy and allowance dollars are identical — so
+// callers twin AFTER paid/privacy pruning (verdicts inherit) and BEFORE
+// value filters (peak cost must pass -max-cost itself), Pareto marking and
+// sort. Callers skip this when the table is already peak-priced via -peak,
+// else twins would duplicate base rows.
+func WithPeakTwins(rows []Row, models []modelsdev.Model) []Row {
+	byID := make(map[string]modelsdev.Model, len(models))
+	for _, m := range models {
+		byID[m.ID] = m
+	}
+	out := make([]Row, 0, len(rows)*2)
+	for _, r := range rows {
+		out = append(out, r)
+		m, ok := byID[r.ID]
+		if !ok {
+			continue
+		}
+		on := cost.PerRequest(m, true)
+		if on <= cost.PerRequest(m, false) {
+			continue // no peak premium (or no peak data at all)
+		}
+		t := r
+		t.ID += PeakTwinIDSuffix
+		t.Name += PeakTwinNameSuffix
+		t.CostTask = on
+		t.RQuota = 0
+		if !r.Unlimited && on > 0 {
+			t.RQuota = r.AllowanceUSD / on
+		}
+		out = append(out, t)
+	}
+	return out
+}
+
 // MarkPareto flags rows not dominated on (cost, speed, quality). It must be
 // called after every row filter: a hidden model should not dominate
 // a visible one.
@@ -435,7 +480,7 @@ func allowanceOr(r Row, missing string) string {
 // legend documents each column, one #-prefixed line per column.
 var legend = []string{
 	"# opencodable — OpenCode Go models ranked by cost / speed / quality",
-	"# name        model display name (models.dev catalog)",
+	"# name        model display name (models.dev catalog; [peak] = peak-hours twin of the same model)",
 	"# cost_tok    retail USD per 1M output tokens",
 	"# cost_task   estimated USD per coding-agent request (OpenCode official token profile, base tier)",
 	"# allowance   monthly usage budget of this model in the plan (unlimited = free models)",

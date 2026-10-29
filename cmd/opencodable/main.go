@@ -30,7 +30,7 @@ import (
 )
 
 // version is displayed at the bottom of the -h help text.
-var version = "v0.1.11"
+var version = "v0.1.12"
 
 // colList accumulates comma-separated -cols/-excols values. The flag may be
 // repeated and unions with the config-file default; output order always
@@ -115,7 +115,7 @@ func main() {
 	missing = flag.String("missing", "keep", "numeric filters: keep or drop models with no value for the metric (keep|drop)")
 	flag.Var(&colsFlag, "cols", "show only these columns (comma-separated titles, repeatable; name is always shown)")
 	flag.Var(&excolsFlag, "excols", "hide these columns (comma-separated titles, repeatable; name is always shown)")
-	peak = flag.Bool("peak", false, "use peak-hours prices (DeepSeek)")
+	peak = flag.Bool("peak", false, "use peak-hours prices (DeepSeek); the whole table is peak-priced, so no [peak] twins are added")
 	refresh = flag.Bool("refresh", false, "bypass the 24h cache and refetch")
 	offline = flag.Bool("offline", false, "cache only for catalog/benchmarks/probes; -usage still needs network")
 	probeAll = flag.Bool("probe", false, "measure live speed of every model (paid requests, cached 24h)")
@@ -248,9 +248,6 @@ func main() {
 	}
 
 	rows := table.Build(models, aas, probes, swe, lb, elo, btr, *plan, *peak)
-	rows = slices.DeleteFunc(rows, func(r table.Row) bool {
-		return flt.Excluded(r.ID, r.Name) || !flt.Keep(r)
-	})
 	if *paid {
 		rows = slices.DeleteFunc(rows, func(r table.Row) bool { return r.CostTask == 0 })
 	}
@@ -259,6 +256,16 @@ func main() {
 			return goplan.ExcludedByPrivacy(r.ID)
 		})
 	}
+	if !*peak {
+		// Peak twins inherit the paid/privacy verdicts above; their peak
+		// cost still faces the value filters below. Skipped under -peak:
+		// the whole table is already peak-priced, so twins would duplicate
+		// base rows.
+		rows = table.WithPeakTwins(rows, models)
+	}
+	rows = slices.DeleteFunc(rows, func(r table.Row) bool {
+		return flt.Excluded(r.ID, r.Name) || !flt.Keep(r)
+	})
 	// Pareto is relative to the set the user actually sees: a model hidden
 	// by any filter must not dominate a visible one.
 	table.MarkPareto(rows)
@@ -875,7 +882,7 @@ type nowRow struct {
 // nowLegend documents the -now columns; printed only with -l.
 var nowLegend = []string{
 	"# opencodable -now — requests affordable per model in each Go window",
-	"# name       model display name (models.dev catalog)",
+	"# name       model display name (models.dev catalog; [peak] = peak-hours twin of the same model)",
 	"# cost_task  official allowance cost per request (OpenCode token profile, base tier)",
 	"# burn_req   allowance dollars one request burns: measured from console tokens when the model has >=50 requests this period, else cost_task",
 	"# spent_mo   allowance dollars spent this period (console tokens at Go prices, or -spent); subtracted from the model's monthly limit",
@@ -956,6 +963,21 @@ func buildNowRows(models []modelsdev.Model, spend map[string]spendInfo, spendKno
 			five: five, week: week, month: month, usable: usable,
 			binding: binding, known: true, probeTokS: speeds[m.ID],
 		})
+		if !peak {
+			// Peak twin: same spend dollars, official peak burn. Measured
+			// burn needs regime-tagged tokens the console API does not
+			// report, so peak rows always price the official profile.
+			if peakCost := cost.PerRequest(m, true); peakCost > costTask {
+				tfive, tweek, tmonth, tusable, tbinding := usage.Requests(b, peakCost)
+				rows = append(rows, nowRow{
+					id: m.ID + table.PeakTwinIDSuffix, name: m.Name + table.PeakTwinNameSuffix,
+					costTask: peakCost, burn: peakCost,
+					spentMo: spent, spentOK: si.known,
+					five: tfive, week: tweek, month: tmonth, usable: tusable,
+					binding: tbinding, known: true, probeTokS: speeds[m.ID],
+				})
+			}
+		}
 	}
 	slices.SortStableFunc(rows, func(a, b nowRow) int {
 		if ra, rb := nowRank(a), nowRank(b); ra != rb {
@@ -1185,9 +1207,6 @@ func runFull(planName string, spentFile map[string]float64, spentGiven, paid, pr
 	}
 
 	mrows := table.Build(models, aas, probes, swe, lb, elo, btr, planName, peak)
-	mrows = slices.DeleteFunc(mrows, func(r table.Row) bool {
-		return flt.Excluded(r.ID, r.Name) || !flt.Keep(r)
-	})
 	if paid {
 		mrows = slices.DeleteFunc(mrows, func(r table.Row) bool { return r.CostTask == 0 })
 	}
@@ -1196,6 +1215,14 @@ func runFull(planName string, spentFile map[string]float64, spentGiven, paid, pr
 			return goplan.ExcludedByPrivacy(r.ID)
 		})
 	}
+	if !peak {
+		// Same order as the main flow: twins inherit paid/privacy, then
+		// face the value filters below.
+		mrows = table.WithPeakTwins(mrows, models)
+	}
+	mrows = slices.DeleteFunc(mrows, func(r table.Row) bool {
+		return flt.Excluded(r.ID, r.Name) || !flt.Keep(r)
+	})
 	// Pareto is relative to the set the user actually sees.
 	table.MarkPareto(mrows)
 
