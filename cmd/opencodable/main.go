@@ -30,7 +30,7 @@ import (
 )
 
 // version is displayed at the bottom of the -h help text.
-var version = "v0.1.17"
+var version = "v0.1.18"
 
 // colList accumulates comma-separated -cols/-excols values. The flag may be
 // repeated and unions with the config-file default; output order always
@@ -957,7 +957,7 @@ var nowLegend = []string{
 	"# opencodable -now — requests affordable per model in each Go window",
 	"# name       model display name (models.dev catalog; [peak] = peak-hours twin of the same model)",
 	"# cost_task  official allowance cost per request (OpenCode token profile, base tier)",
-	"# burn_req   allowance dollars one request burns: measured from console tokens when the model has >=50 requests this period, else cost_task",
+	"# burn_req   allowance dollars one request burns: measured from console tokens when the model has >=50 requests this period, else cost_task; [peak] twins scale that measured burn by the official peak/base price ratio",
 	"# spent_mo   allowance dollars spent this period (console tokens at Go prices, or -spent); subtracted from the model's monthly limit",
 	"# reqs_5h    requests in the model's 5h cap (20% of its monthly limit) after estimated window spend; -window-estimate method on stderr",
 	"# reqs_wk    requests in the model's weekly cap (50% of its monthly limit) after estimated window spend; -window-estimate method on stderr",
@@ -1010,10 +1010,12 @@ func buildNowRows(models []modelsdev.Model, spend map[string]spendInfo, spendKno
 
 		si := spend[m.ID]
 		si.known = si.known || spendKnown
+		measured := false
 		burn := costTask
 		if si.known && si.reqs >= minActualRequests && si.usd > 0 {
 			if avg := si.usd / float64(si.reqs); avg > 0 {
 				burn = avg
+				measured = true
 			}
 		}
 		spent := si.usd
@@ -1033,14 +1035,20 @@ func buildNowRows(models []modelsdev.Model, spend map[string]spendInfo, spendKno
 			binding: binding, known: true, probeTokS: speeds[m.ID],
 		})
 		if !peak {
-			// Peak twin: same spend dollars, official peak burn. Measured
-			// burn needs regime-tagged tokens the console API does not
-			// report, so peak rows always price the official profile.
+			// Peak twin: same spend dollars, peak burn. With a measured
+			// average, scale it by the official peak/base price ratio: the
+			// console reports no regime-tagged tokens, and the official
+			// profile alone can be cheaper than the measured off-peak
+			// average, which would make peak look cheaper per request.
 			if peakCost := cost.PerRequest(m, true); peakCost > costTask {
-				tfive, tweek, tmonth, tusable, tbinding := usage.Requests(b, peakCost)
+				peakBurn := peakCost
+				if measured && costTask > 0 {
+					peakBurn = burn * peakCost / costTask
+				}
+				tfive, tweek, tmonth, tusable, tbinding := usage.Requests(b, peakBurn)
 				rows = append(rows, nowRow{
 					id: m.ID + table.PeakTwinIDSuffix, name: m.Name + table.PeakTwinNameSuffix,
-					costTask: peakCost, burn: peakCost,
+					costTask: peakCost, burn: peakBurn,
 					spentMo: spent, spentOK: si.known,
 					five: tfive, week: tweek, month: tmonth, usable: tusable,
 					binding: tbinding, known: true, probeTokS: speeds[m.ID],

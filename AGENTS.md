@@ -181,7 +181,9 @@ internal/config/       opencodable.conf (key=value: API keys + option
   after paid/privacy pruning and before the value filters, Pareto and sort
   (`table.WithPeakTwins`; `buildNowRows` for `-now`). They share the base's
   probes, scores, privacy and spend, so look models up by the base ID (`m.ID`),
-  never the twin's. `-peak` disables twinning.
+  never the twin's. `-now` twins scale the base's measured `burn_req` by the
+  official peak/base price ratio; without a measured average they use the
+  official peak profile. `-peak` disables twinning.
 - **Row pipeline order is load-bearing**: `Build`, paid/privacy prune, peak
   twins (not under `-peak`), `Exclude`/`Include`/`Keep`, `MarkPareto` (hidden
   rows must never dominate), `Sort`, `-pareto`. The main flow and `runFull`

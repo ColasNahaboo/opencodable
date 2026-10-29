@@ -131,7 +131,7 @@ Four views help:
 
 The `-now` columns:
 
-- **`burn_req`**: dollars one request really uses. Measured from your own usage once a model has at least 50 requests this month; before that, the official `cost_task`.
+- **`burn_req`**: dollars one request really uses. Measured from your own usage once a model has at least 50 requests this month; before that, the official `cost_task`. For a `[peak]` twin, the measured figure is scaled by the official peak/base price ratio, because the console does not tag tokens by regime.
 - **`spent_mo`**: dollars spent this month on the model (blank if unknown).
 - **`reqs_5h`** and **`reqs_wk`**: requests that fit in the model's 5-hour and weekly windows.
 - **`reqs_mo`**: requests left in the month after what you have spent.
@@ -439,5 +439,5 @@ This repository is developed by me, a human hobbyist in my personal time, acting
 
 ## History
 
-Version v0.1.17 2026-10-29.
+Version v0.1.18 2026-10-29.
 See [HISTORY.md](HISTORY.md).

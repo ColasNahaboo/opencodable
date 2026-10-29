@@ -1,5 +1,11 @@
 # History
 
+- v0.1.18 2026-10-29 `-now` peak twins now scale a measured `burn_req` by the
+  official peak/base price ratio, so a `[peak]` row never looks cheaper per
+  request than its base. Before this, the twin used the official peak profile
+  while the base used the measured average; when actual usage was heavier than
+  the official profile (DeepSeek V4.1 Flash), peak appeared to afford more
+  requests.
 - v0.1.17 2026-10-29 Migrate the Artificial Analysis client to the supported
   V2 endpoints before the legacy `/api/v2/data/*` retirement on November 4,
   2026: `/api/v2/language/models/free` by default, the Pro route

@@ -108,11 +108,15 @@ func TestBuildNowRowsUsesMeasuredBurn(t *testing.T) {
 	if r.usable != wantUsable {
 		t.Errorf("usable = %d, want 5h cap %d", r.usable, wantUsable)
 	}
-	// The twin shares the spend dollars but prices the official peak
-	// profile: measured burn needs regime-tagged tokens.
+	// The twin shares the spend dollars; with a measured base burn, scale it
+	// by the official peak/base ratio so peak costs more per request.
 	tw := byID["deepseek-v4.1-flash-peak"]
-	if tw.burn != cost.PerRequest(deepseek, true) {
-		t.Errorf("twin burn = %v, want official peak %v", tw.burn, cost.PerRequest(deepseek, true))
+	wantTwin := 0.005 * cost.PerRequest(deepseek, true) / cost.PerRequest(deepseek, false)
+	if math.Abs(tw.burn-wantTwin) > 1e-12 {
+		t.Errorf("twin burn = %v, want measured peak %v", tw.burn, wantTwin)
+	}
+	if tw.usable >= r.usable {
+		t.Errorf("peak twin usable = %d, must be below base %d", tw.usable, r.usable)
 	}
 	if tw.spentMo != 0.50 || !tw.spentOK {
 		t.Errorf("twin must share base spend: %+v", tw)

@@ -79,7 +79,7 @@ Piped header: `#name	cost_task	burn_req	spent_mo	reqs_5h	reqs_wk	reqs_mo	usable	
 |---|---|---|
 | 1 | `#name` | model display name (models.dev catalog) |
 | 2 | `cost_task` | official allowance cost per coding-agent request (OpenCode token profile, base tier) |
-| 3 | `burn_req` | allowance dollars one request burns: measured from console tokens when the model has at least 50 requests this period, otherwise `cost_task` |
+| 3 | `burn_req` | allowance dollars one request burns: measured from console tokens when the model has at least 50 requests this period, otherwise `cost_task`; `[peak]` twins scale the measured burn by the official peak/base price ratio |
 | 4 | `spent_mo` | allowance dollars spent this period (console tokens priced at Go rates, or `-spent`), subtracted from the model's monthly limit; blank when spend is unknown |
 | 5 | `reqs_5h` | requests in the model's 5h cap (20% of its monthly limit) after estimated window spend |
 | 6 | `reqs_wk` | requests in the model's weekly cap (50% of its monthly limit) after estimated window spend |
@@ -103,8 +103,9 @@ prices) show `limit=unlimited` with empty counts, even when the snapshot lacks
 their entry; paid models missing from the plan snapshot show `limit=unknown`.
 Spend uses only `opencode-go` console rows and prices their token counts at Go
 rates; `-spent` is the offline fallback. Peak-priced models add a `[peak]`
-twin row sharing the base's spend dollars with `burn_req` at official peak
-rates (measured burn needs regime-tagged tokens).
+twin row sharing the base's spend dollars, with `burn_req` and the request
+counts at peak prices (a measured average is scaled by the official peak/base
+ratio; the console does not tag tokens by regime).
 
 ## View: `-full` (static quality plus affordable requests)
 
