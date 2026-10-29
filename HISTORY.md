@@ -1,5 +1,11 @@
 # History
 
+- v0.1.15 2026-10-29 `-doctor` coverage for Arena ratings: `elo` and `btr`
+  matched counts on the coverage line (Arena lists only top models, so a
+  missing value stays silent) and a hint when a model has no match but a
+  leaderboard key is one of its prefixes (a likely alias, such as a Max
+  qualifier). Doctor JSON rows gain `elo_match` and `btr_match`; the caches
+  line and the cache-age warnings cover the Arena caches too.
 - v0.1.14 2026-10-29 `-include`: show only models matching ID/name patterns,
   the pendant of `-exclude` (same wildcard rules; a row must match `-include`
   and dodge `-exclude`; unprobed and unrendered otherwise, so narrow runs

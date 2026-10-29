@@ -138,3 +138,23 @@ func TestArenaLookup(t *testing.T) {
 		t.Error("nil map must miss")
 	}
 }
+
+func TestArenaNear(t *testing.T) {
+	btr := BTR{"glm53": 1480, "gemini4argon": 1520, "musespark13max": 1490, "gpt56sol": 1484}
+	for _, tc := range []struct{ id, want string }{
+		{"glm-5.3-flash", "glm53"},                       // shortened family name: likely alias
+		{"glm-5.3-flash-free", "glm53"},                  // plan suffix stripped before comparing
+		{"muse-spark-1.3-contributor", "musespark13max"}, // the leaderboard adds a Max qualifier
+		{"gemini-3.8-flash", ""},                         // family alone shares no version digit
+		{"kimi-k2.7-code", ""},                           // no leaderboard key shares the prefix
+		{"gpt-5.6-luna", ""},                             // another variant (Luna, not Sol) is no alias
+	} {
+		if got := btr.Near(tc.id); got != tc.want {
+			t.Errorf("Near(%q) = %q, want %q", tc.id, got, tc.want)
+		}
+	}
+	var nilFeed Elo
+	if got := nilFeed.Near("glm-5.3"); got != "" {
+		t.Errorf("nil feed suggested %q", got)
+	}
+}

@@ -147,8 +147,10 @@ internal/config/       opencodable.conf (key=value: API keys + option
   `-doctor` will flag it as unknown and the file default is ignored. The one
   exception is `-config`, which selects the file itself and therefore cannot
   come from it.
-- **Doctor**: `-doctor` audits plan/AA/SWE/probe coverage without running a
-  probe; keep `buildDoctorRows` pure and tested.
+- **Doctor**: `-doctor` audits plan/AA/SWE/Arena/probe coverage without running
+  a probe; keep `buildDoctorRows` pure and tested. Arena (`elo`, `btr`) lists
+  only top models, so an absent value is silent; `Near` hints only when one key
+  is a prefix of the other (a likely alias, such as a Max qualifier).
 - **Console API has no time slicing** (verified Oct 2026: startDate/days/
   period params ignored, from/to 400s): per-model window spend is estimated
   (ledger attribution + monthly-proportional split, `window_method`), never

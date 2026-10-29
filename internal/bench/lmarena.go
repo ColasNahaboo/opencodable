@@ -109,6 +109,54 @@ func (m BTR) Lookup(id string) (float64, bool) {
 	return 0, false
 }
 
+// minNearPrefix is the shortest shared prefix that counts as a near miss.
+const minNearPrefix = 5
+
+// Near suggests the leaderboard key that most likely belongs to id when id has
+// no match: one key is a prefix of the other, as with a Max variant or a
+// shortened family name (glm53 for GLM-5.3-Flash). The shorter key must have
+// at least minNearPrefix characters and a digit. It is a hint for a likely
+// alias gap to check, never a match; "" when none.
+func (m Elo) Near(id string) string { return nearKey(m, id) }
+
+// Near is the BTR counterpart of Elo.Near.
+func (m BTR) Near(id string) string { return nearKey(m, id) }
+
+func nearKey(m map[string]float64, id string) string {
+	k := normalize.Key(stripPlan(id))
+	best := ""
+	for lk := range m {
+		short, long := k, lk
+		if len(lk) < len(k) {
+			short, long = lk, k
+		}
+		if lk == k || len(short) < minNearPrefix || !hasDigit(short) || !strings.HasPrefix(long, short) {
+			continue
+		}
+		if best == "" || lenGap(lk, k) < lenGap(best, k) || (lenGap(lk, k) == lenGap(best, k) && lk < best) {
+			best = lk
+		}
+	}
+	return best
+}
+
+// lenGap is the difference in length between two keys; the closest length wins.
+func lenGap(a, b string) int {
+	if len(a) > len(b) {
+		return len(a) - len(b)
+	}
+	return len(b) - len(a)
+}
+
+func hasDigit(s string) bool {
+	for _, r := range s {
+		if r >= '0' && r <= '9' {
+			return true
+		}
+	}
+	return false
+}
+
 type eloPointer struct {
 	Path string `json:"path"`
 }

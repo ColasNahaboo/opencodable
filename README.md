@@ -232,7 +232,7 @@ Pick one at a time; combining two is an error. Without a view, the main table is
 - `-now`: what you can use right now, per model.
 - `-full`: the main table and `-now` in one wide table.
 - `-usage`: your remaining allowance in the 5-hour, weekly and monthly windows.
-- `-doctor`: a coverage check: missing data per model, cache ages, a warning for each catalog cache that is missing or older than 24 hours, where keys were found, typos in your configuration file. It runs no probes.
+- `-doctor`: a coverage check: missing data per model, Arena and benchmark coverage counts, a warning for each catalog cache that is missing or older than 24 hours, a hint when a model may have an Arena entry under another name, where keys were found, typos in your configuration file. It runs no probes.
 
 ### What to show, and in what order
 
@@ -307,7 +307,7 @@ contract is in [TITLES.md](TITLES.md).
 | `code_b`, `term_b`, `if_b`, `aa_lcr` | pass rates in percent on LiveCodeBench, Terminal-Bench, IFBench and a long-context reasoning test |
 | `swe_b` | percent of real GitHub issues solved in SWE-bench Verified (best recorded run) |
 | `lb_agent`, `lb_code` | LiveBench scores, 0 to 100, for long agentic tasks and for coding |
-| `elo`, `btr` | Arena ratings: `elo` from a daily snapshot of the Arena text leaderboard, `btr` from the official Arena dataset |
+| `elo`, `btr` | Arena ratings: `elo` from a daily snapshot of the Arena text leaderboard, `btr` from the official Arena dataset. Only models on those leaderboards have a value. |
 | `pareto` | `yes` when no other visible model beats it on cost, speed and quality together |
 | `src` | `aa:<effort>` when the speed comes from a reasoning-effort variant of the model |
 | `privacy` | `safe`, `trains` or `unknown` (see [Reading the table](#reading-the-table)) |
@@ -433,5 +433,5 @@ This repository is developed by me, a human hobbyist in my personal time, acting
 
 ## History
 
-Version v0.1.14 2026-10-29.
+Version v0.1.15 2026-10-29.
 See [HISTORY.md](HISTORY.md).

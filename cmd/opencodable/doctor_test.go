@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/ColasNahaboo/opencodable/internal/aa"
+	"github.com/ColasNahaboo/opencodable/internal/bench"
 	"github.com/ColasNahaboo/opencodable/internal/modelsdev"
 	"github.com/ColasNahaboo/opencodable/internal/probe"
 )
@@ -26,6 +27,7 @@ func TestBuildDoctorRows(t *testing.T) {
 		[]modelsdev.Model{glm, space, free},
 		[]aa.Model{{Slug: "glm-5-3"}},
 		map[string]float64{"glm53": 70.0},
+		nil, nil,
 		map[string]probe.Result{
 			"glm-5.3":     {ModelID: "glm-5.3", TokPerSec: 100, WindowSeconds: 3},
 			"space-bunny": {ModelID: "space-bunny", TokPerSec: 900, WindowSeconds: 2, Suspect: true},
@@ -145,10 +147,35 @@ func TestDoctorNoHead(t *testing.T) {
 	}
 }
 
+func TestDoctorArenaMatching(t *testing.T) {
+	glm := modelsdev.Model{ID: "glm-5.3-flash", Name: "GLM-5.3-Flash"}
+	kimi := modelsdev.Model{ID: "kimi-k3", Name: "Kimi K3"}
+	rows := buildDoctorRows(
+		[]modelsdev.Model{glm, kimi}, nil, nil,
+		bench.Elo{"kimik3": 1500}, bench.BTR{"glm53": 1480}, nil, nil,
+	)
+	if rows[0].EloMatch || rows[0].BTRMatch {
+		t.Errorf("glm-5.3-flash must not match: %+v", rows[0])
+	}
+	if !rows[1].EloMatch || rows[1].BTRMatch {
+		t.Errorf("kimi-k3 = elo %v btr %v, want elo only", rows[1].EloMatch, rows[1].BTRMatch)
+	}
+	if !slices.Contains(rows[0].Warnings, "no BTR match (alias? nearest glm53)") {
+		t.Errorf("glm warnings = %v, want a BTR alias hint", rows[0].Warnings)
+	}
+	for _, w := range rows[1].Warnings {
+		if strings.Contains(w, "Elo") || strings.Contains(w, "BTR") {
+			t.Errorf("kimi-k3 must stay silent on Arena feeds: %v", rows[1].Warnings)
+		}
+	}
+}
+
 func TestStaleCacheWarnings(t *testing.T) {
 	got := staleCacheWarnings(map[string]time.Duration{
 		"models.dev": 3 * time.Hour,
 		"aa":         30 * time.Hour,
+		"elo":        time.Hour,
+		"btr":        time.Hour,
 	})
 	if len(got) != 2 {
 		t.Fatalf("got %d warnings, want 2 (aa stale, swe-bench missing): %v", len(got), got)
@@ -156,7 +183,7 @@ func TestStaleCacheWarnings(t *testing.T) {
 	if !strings.Contains(got[0], "aa cache is") || !strings.Contains(got[1], "swe-bench cache missing") {
 		t.Errorf("warnings = %v", got)
 	}
-	fresh := map[string]time.Duration{"models.dev": time.Hour, "aa": time.Hour, "swe-bench": 23 * time.Hour}
+	fresh := map[string]time.Duration{"models.dev": time.Hour, "aa": time.Hour, "swe-bench": 23 * time.Hour, "elo": time.Hour, "btr": time.Hour}
 	if w := staleCacheWarnings(fresh); len(w) != 0 {
 		t.Errorf("fresh caches must stay silent: %v", w)
 	}
