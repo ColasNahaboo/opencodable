@@ -50,6 +50,7 @@ type doctorReport struct {
 	ConfigUnknown []string          `json:"config_unknown,omitempty"`
 	AAError       string            `json:"aa_error,omitempty"`
 	SWEError      string            `json:"swe_error,omitempty"`
+	CacheWarnings []string          `json:"cache_warnings,omitempty"`
 	Rows          []doctorRow       `json:"rows"`
 }
 
@@ -212,6 +213,7 @@ func runDoctor(refresh, offline, jsonOut, withLegend, nohead bool) error {
 	if serr != nil {
 		report.SWEError = serr.Error()
 	}
+	report.CacheWarnings = staleCacheWarnings(catalogAges())
 
 	if jsonOut {
 		enc := json.NewEncoder(os.Stdout)
@@ -223,6 +225,9 @@ func runDoctor(refresh, offline, jsonOut, withLegend, nohead bool) error {
 		report.Version, report.PlanSnapshot, report.PlanEntries)
 	fmt.Fprintf(os.Stderr, "caches: models.dev %s | AA %s | SWE-bench %s | trusted probes %d\n",
 		report.Caches["models.dev"], report.Caches["aa"], report.Caches["swe-bench"], report.TrustedProbes)
+	for _, w := range report.CacheWarnings {
+		fmt.Fprintf(os.Stderr, "warning: %s\n", w)
+	}
 	fmt.Fprintf(os.Stderr, "keys: AA %s | OpenCode Go %s\n",
 		report.Keys["artificial_analysis"], report.Keys["opencode_go"])
 	for _, k := range report.ConfigUnknown {
@@ -238,6 +243,44 @@ func runDoctor(refresh, offline, jsonOut, withLegend, nohead bool) error {
 	}
 
 	return writeDoctor(os.Stdout, rows, isTTY(os.Stdout), withLegend, nohead)
+}
+
+// catalogCaches are the 24h caches doctor refreshes itself.
+var catalogCaches = []struct{ label, file string }{
+	{"models.dev", "modelsdev-opencode-go.json"},
+	{"aa", "aa-models.json"},
+	{"swe-bench", "swebench.json"},
+}
+
+// catalogTTL is the lifetime of those caches (modelsdev, aa and bench all use it).
+const catalogTTL = 24 * time.Hour
+
+// catalogAges returns the age of each catalog cache that exists.
+func catalogAges() map[string]time.Duration {
+	out := map[string]time.Duration{}
+	for _, c := range catalogCaches {
+		if age, ok := cache.Age(c.file); ok {
+			out[c.label] = age
+		}
+	}
+	return out
+}
+
+// staleCacheWarnings names catalog caches that are missing or older than
+// catalogTTL: the refresh failed, or -offline is in effect. Normal runs stay
+// silent on these and serve the old copy; -doctor is where that is said out loud.
+func staleCacheWarnings(ages map[string]time.Duration) []string {
+	var out []string
+	for _, c := range catalogCaches {
+		age, ok := ages[c.label]
+		switch {
+		case !ok:
+			out = append(out, c.label+" cache missing: run without -offline to fetch it")
+		case age > catalogTTL:
+			out = append(out, fmt.Sprintf("%s cache is %s old (older than 24h): refresh failed or -offline", c.label, compactAge(age)))
+		}
+	}
+	return out
 }
 
 // doctorLegend explains the columns; every line starts with "# " so parsers

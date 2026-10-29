@@ -3,7 +3,9 @@
 - v0.1.14 2026-10-29 `-include`: show only models matching ID/name patterns,
   the pendant of `-exclude` (same wildcard rules; a row must match `-include`
   and dodge `-exclude`; unprobed and unrendered otherwise, so narrow runs
-  also save allowance).
+  also save allowance). `-doctor` warns about catalog and benchmark caches
+  older than 24 hours; normal runs stay silent on them. README examples use
+  illustrative numbers.
 - v0.1.13 2026-10-29 `-window-estimate` upgraded from uniform cap scaling
   to spend attribution: ledger-recorded dollars (past runs' console deltas,
   fresh probe burns) first, the implied remainder split

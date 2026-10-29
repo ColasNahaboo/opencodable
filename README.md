@@ -31,8 +31,10 @@ comes out as tab-separated lines or as JSON (see [Output for scripts](#output-fo
 **1. Install.** You need Go 1.26 or newer:
 
 ```sh
-go install github.com/ColasNahaboo/opencodable/cmd/opencodable@master
+go install github.com/ColasNahaboo/opencodable/cmd/opencodable@latest
 ```
+
+`@latest` installs the newest release. Use `@master` for the newest code, which may be ahead of it.
 
 The program lands in `$(go env GOPATH)/bin`, so make sure that folder is on your `PATH`, or copy `opencodable` there in your PATH.
 Without Go, download the archive for your system from the
@@ -53,7 +55,8 @@ opencodable
 ```
 
 Models are listed best quality first. Here is an excerpt, with a few columns
-selected by `-cols` so that it fits on the page:
+selected by `-cols` so that it fits on the page. The numbers in every example
+are illustrative.
 
 ```sh
 opencodable -paid -privacy -cols name,cost_task,r_quota,p_tok_s,aa_int,aa_code,pareto
@@ -61,16 +64,17 @@ opencodable -paid -privacy -cols name,cost_task,r_quota,p_tok_s,aa_int,aa_code,p
 
 ```
 #name            cost_task  r_quota   p_tok_s  aa_int  aa_code  pareto
-Kimi K3          $0.0306    490.2     595.8    -       76.2     yes
-GLM-5.3-Flash    $0.0019    31578.9   113.2    -       71.5     yes
-GPT-5.6 Luna     $0.00146   10245.9   126.0    -       71.4     yes
-GLM-5.2          $0.01516   3957.8    78.9     -       68.8
-Kimi K2.7 Code   $0.01208   4968.3    41.2     -       60.8
+Kimi K3          $0.0306    490.2     71.0     -       76.2     yes
+GLM-5.3-Flash    $0.0019    31578.9   96.5     -       71.5     yes
+GPT-5.6 Luna     $0.00146   10245.9   120.4    -       71.4     yes
+GLM-5.2          $0.01516   3957.8    64.2     -       68.8
+Kimi K2.7 Code   $0.01208   4968.3    44.8     -       60.8
 MiMo V2.5 Pro    $0.00092   16291.1   -        -       60.2     yes
 ```
 
-A `-` means there is no data for that cell. Some models have no scores yet in
-the Artificial Analysis data.
+A `-` means there is no data for that cell. Artificial Analysis is moving to new
+benchmarks, so many quality values are missing for now. `-doctor` shows which
+models it could not match at all.
 
 ## Which command answers my question?
 
@@ -133,10 +137,11 @@ The `-now` columns:
 - **`limit`**: the binding limit: `5h`, `week`, `month`, `unlimited` (free models) or `unknown` (not in our plan data).
 
 ```
-#name                 cost_task  burn_req  spent_mo    reqs_5h  reqs_wk  reqs_mo  usable  limit  p_tok_s
-MiMo-V2.6-Flash       $0.0004    $0.0006   $0.11189    19841    49602    99020    19841   5h     59.5
-MiMo V2.5             $0.0004    $0.00096  $0.15188    12562    31406    62653    12562   5h     89.0
-LongCat-2.0           $0.00105   $0.00105  $0.00077    11435    28587    57174    11435   5h     76.9
+#name           cost_task  burn_req  spent_mo  reqs_5h  reqs_wk  reqs_mo  usable  limit     p_tok_s
+GLM-5.3-Flash   $0.0019    $0.0019   $12.4     6315     15789    25052    6315    5h        96.5
+Kimi K3         $0.0306    $0.0306   $13       98       245      65       65      month     71.0
+MiMo V2.5       $0.0004    $0.0004   $3.1      30000    75000    142250   30000   5h        89.0
+Beam Free       -          -         -         -        -        -        -       unlimited 310.0
 ```
 
 Without the OpenCode key, `-now` and `-full` still run, but they assume you have
@@ -151,9 +156,9 @@ minutes by default. `-ttl <seconds>` changes that (`0` turns the cache off), and
 
 ```
 #window  status  used_pct  remaining_pct  resets_at                  resets_in
-5h       ok      19        81             2026-10-27T21:43:22+01:00  53m 0s
-week     ok      16        84             2026-11-02T01:00:00+01:00  124h 9m 0s
-month    ok      21        79             2026-11-07T14:56:38+01:00  258h 6m 0s
+5h       ok      35        65             2026-11-02T14:00:00+01:00  2h 10m 0s
+week     ok      40        60             2026-11-04T09:00:00+01:00  45h 20m 0s
+month    ok      21        79             2026-11-07T14:00:00+01:00  212h 30m 0s
 ```
 
 ## Configuration
@@ -227,7 +232,7 @@ Pick one at a time; combining two is an error. Without a view, the main table is
 - `-now`: what you can use right now, per model.
 - `-full`: the main table and `-now` in one wide table.
 - `-usage`: your remaining allowance in the 5-hour, weekly and monthly windows.
-- `-doctor`: a coverage check: missing data per model, cache ages, where keys were found, typos in your configuration file. It runs no probes.
+- `-doctor`: a coverage check: missing data per model, cache ages, a warning for each catalog cache that is missing or older than 24 hours, where keys were found, typos in your configuration file. It runs no probes.
 
 ### What to show, and in what order
 
@@ -343,16 +348,16 @@ answer too quickly to time reliably.
 ```json
 {
   "model_id": "kimi-k3.1-pro",
-  "tok_s": 78.67540953897064,
-  "ttft_s": 6.602359389,
-  "e2e_s": 7.911003628,
-  "window_s": 5.567177884,
+  "tok_s": 72.1,
+  "ttft_s": 2.31,
+  "e2e_s": 8.05,
+  "window_s": 5.7,
   "prompt_tokens": 104,
-  "output_tokens": 438,
-  "reasoning_tokens": 283,
+  "output_tokens": 411,
+  "reasoning_tokens": 96,
   "cached_tokens": 0,
-  "allowance_burned": 0.018352,
-  "list_cost": 0.004588
+  "allowance_burned": 0.0184,
+  "list_cost": 0.0046
 }
 ```
 
@@ -391,7 +396,7 @@ OpenCode changes its plans.
 - **Catalog and prices** come from models.dev, the same catalog OpenCode uses.
 - **Your plan** comes from OpenCode's public Go plan data, which the program carries as a snapshot.
 - **Benchmarks** come from the public sources listed above, matched to your models by name. A built-in alias table handles common naming differences, such as `mimo-v2.5` and `mimo-v2-5-0424`.
-- **Caching**: public data is kept for 24 hours, and live allowance data for `-ttl` seconds. When a live refresh of allowance or spending data fails, the last cached copy is used, with a warning that gives its age.
+- **Caching**: catalog and benchmark data is kept for 24 hours. When a refresh fails, the old copy is used silently, and `-doctor` warns about copies older than 24 hours. Live allowance and spending data is kept for `-ttl` seconds (10 minutes by default); when a refresh fails, the old copy is used with a warning that gives its age.
 - **Trust**: a speed measurement that is too short to time, or implausibly fast, is flagged rather than ranked. Estimates say which method produced them.
 - **Dependencies**: the program uses only Go's standard library.
 

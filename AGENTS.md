@@ -87,10 +87,12 @@ internal/config/       opencodable.conf (key=value: API keys + option
 - **AA slug matching**: `normalize.Match` resolves a models.dev ID by exact
   slug, then the alias table in `internal/normalize` (`mimo-v2.5` →
   `mimo-v2-5-0424`, `step-5-preview` → `step-5`, …), then dots-as-dashes
-  (`qwen3.8-max` → `qwen3-8-max`). When a model shows `-` scores, suspect a
-  missing alias first. AA has reasoning-effort variants (`-low/-high/…`); the
-  base slug may exist with tok/s = 0 — `VariantWithSpeed` picks the fastest
-  measured variant.
+  (`qwen3.8-max` → `qwen3-8-max`). `-doctor` separates the two causes of
+  missing AA data: `no AA match` is an alias gap (fix `normalize`); a matched
+  model with empty scores means Artificial Analysis has not published that score
+  yet, which is normal while AA moves to new benchmarks. AA has reasoning-effort
+  variants (`-low/-high/…`); the base slug may exist with tok/s = 0 —
+  `VariantWithSpeed` picks the fastest measured variant.
 - **AA ttft_s artifact**: includes reasoning time (Haiku ~247 s). Reported,
   not a bug.
 - **Go limits are per model, not a shared pot**: docs define each model's
@@ -128,9 +130,10 @@ internal/config/       opencodable.conf (key=value: API keys + option
   from zero prices (`modelsdev.Model.Free`).
 - **Cache hardening**: keys are sanitized (no traversal), writes are
   temp-file + rename, permissions are 0700/0600. `cache.Age` feeds `-doctor`.
-  `cache.Load` serves a stale entry when the fetch fails, so any output built
-  from it must report the age (`staleWarn`), never present it as current.
-  `-ttl 0` always refetches; `-refresh` bypasses the TTL.
+  `cache.Load` serves a stale entry when a fetch fails. Live usage data reports
+  that on stderr (`staleWarn`). The 24h catalog and benchmark caches stay silent
+  in normal runs; `-doctor` warns about them (`staleCacheWarnings`). `-ttl 0`
+  always refetches; `-refresh` bypasses the TTL.
 - **Key resolution order** (both APIs): environment variable →
   `opencodable.conf` (`key=value`, in `os.UserConfigDir()/opencodable/`) →
   legacy cwd dot-file. `internal/config` owns the file; never print values,

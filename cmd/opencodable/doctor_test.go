@@ -145,6 +145,23 @@ func TestDoctorNoHead(t *testing.T) {
 	}
 }
 
+func TestStaleCacheWarnings(t *testing.T) {
+	got := staleCacheWarnings(map[string]time.Duration{
+		"models.dev": 3 * time.Hour,
+		"aa":         30 * time.Hour,
+	})
+	if len(got) != 2 {
+		t.Fatalf("got %d warnings, want 2 (aa stale, swe-bench missing): %v", len(got), got)
+	}
+	if !strings.Contains(got[0], "aa cache is") || !strings.Contains(got[1], "swe-bench cache missing") {
+		t.Errorf("warnings = %v", got)
+	}
+	fresh := map[string]time.Duration{"models.dev": time.Hour, "aa": time.Hour, "swe-bench": 23 * time.Hour}
+	if w := staleCacheWarnings(fresh); len(w) != 0 {
+		t.Errorf("fresh caches must stay silent: %v", w)
+	}
+}
+
 func TestCompactAge(t *testing.T) {
 	cases := map[time.Duration]string{
 		30 * time.Second: "30s",
