@@ -21,19 +21,25 @@ are git-ignored credentials — never print, commit, or copy them.
 ## Layout
 
 ```
-cmd/opencodable/       flags, view orchestration (-now, -usage, -probe, -doctor)
+cmd/opencodable/       flags and view orchestration (-main, -now, -full, -usage,
+                       -probe, -doctor); ledger.go: spend history for
+                       -window-estimate; doctor.go: coverage audit
 internal/modelsdev/    models.dev catalog: prices, limits (authoritative)
 internal/goplan/       OpenCode Go plan SNAPSHOT: allowances, token profiles,
                        peak prices, privacy flags — update when plans change
 internal/aa/           Artificial Analysis data API client
-internal/bench/        external feeds (SWE-bench Verified)
-internal/consoleapi/   console usage API (per-model period spend)
-internal/usage/        allowance windows, budgets/requests math
+internal/bench/        external feeds: SWE-bench Verified, LiveBench 2.0,
+                       Arena Elo (third-party snapshot), Arena BTR (official)
+internal/consoleapi/   console usage API (per-model period spend, TTL-cached)
+internal/usage/        allowance windows (TTL-cached), budgets/requests math
 internal/probe/        live speed probe (SSE streaming, allowance-burn reporting)
 internal/normalize/    name matching + alias table (models.dev ↔ AA slugs)
 internal/cost/         per-request cost model
-internal/table/        join, Pareto, TSV/vertical/JSON rendering
-internal/cache/        24h disk cache (~/.cache/opencodable/)
+internal/table/        join, Pareto, row filters (filter.go), column selection
+                       and -full titles (columns.go), peak twins, TSV/vertical/
+                       JSON rendering
+internal/cache/        disk cache (os.UserCacheDir()/opencodable/): 24h for
+                       catalogs, benchmarks and probes; per-call TTL for usage
 internal/config/       opencodable.conf (key=value: API keys + option
                        defaults) in UserConfigDir; case-coded, see gotchas
 ```
@@ -43,9 +49,10 @@ internal/config/       opencodable.conf (key=value: API keys + option
 - **Standard library only.** No external Go dependencies, ever — a Rust port
   of the same pipeline is planned and must stay mechanical.
 - **[TITLES.md](TITLES.md) is the output contract.** New columns are appended
-  at the end only; renames/removals/reorders bump the major version. JSON
-  keys must equal the TSV column titles (enforced by
-  `TestJSONKeysMatchTitles`).
+  at the end only; renames, removals and reorders bump the major version, but
+  titles may change freely until the `v1.0.0` tag (TITLES.md rule 3). Every TSV
+  title is a JSON key (`TestJSONKeysMatchTitles`); JSON-only extras (`id`,
+  `unlimited`, `window_method`, …) are listed in TITLES.md's JSON section.
 - **Output modes.** tty = padded table, missing = `-`; piped = strict
   single-TAB, missing = empty string. Legends (`# `-prefixed) are opt-in with
   `-l` in every view and every mode; never print notes or assumptions into
@@ -53,13 +60,27 @@ internal/config/       opencodable.conf (key=value: API keys + option
   `#`, and its legend prints only with `-l`.
 - All column titles contain no spaces (underscores only).
 - **Version history lives in [HISTORY.md](HISTORY.md)**, not README.md: on
-  every version bump, prepend the new entry there (as before) and update the
-  one-line `Version vX.Y.Z <date>` marker at the end of README.md's History
-  section to the current version and date.
+  every version bump, set `version` in `cmd/opencodable/main.go`, prepend the
+  new entry to HISTORY.md, and update the one-line `Version vX.Y.Z <date>`
+  marker at the end of README.md's History section.
 - Keep functions small and focused; idiomatic Go 1.26; no refactors outside
   the scope of a change.
-- **All CLI Options** must also be settable in the config file**.
+- **All CLI options** must also be settable in the config file (`-config`
+  excepted, see gotchas).
 - **Boolean CLI options** can be unset by suffixing them by `=false`
+- **Commit each change** once it builds and passes the checks in Build & test.
+  Author it with the auto-commit skill's convention: your active model name,
+  not a model name from the catalog data.
+- **No polling.** Never add loops, daemons or repeated requests against web
+  endpoints: repeated requests may trigger a ban. Every network fetch goes
+  through `cache.Load` with a TTL (24h for catalogs, benchmarks and probes;
+  `-ttl` for the usage endpoints) and honours `-refresh`; `-offline` never
+  reaches the network. Probes are paid: they run only on explicit `-probe` or
+  `-probe-model`.
+- **Private and scratch files.** `TODO.md` is the maintainer's git-ignored
+  scratchpad: don't edit, delete or publish it unless asked. `TMP/` is
+  git-ignored scratch, but `go vet ./...`, `go test ./...` and `gofmt -l .`
+  still compile and scan it: keep scratch programs compiling, or remove them.
 
 ## Data-source gotchas (learned the hard way)
 
@@ -75,6 +96,8 @@ internal/config/       opencodable.conf (key=value: API keys + option
 - **Go limits are per model, not a shared pot**: docs define each model's
   5h/weekly/monthly windows as 20%/50%/100% of *that model's* monthly limit.
   `-now` builds `Budgets` from `goplan.Allowance`; there is no `-pot` flag.
+  `-window-estimate` then subtracts estimated window spend from the 5h and
+  weekly caps.
 - **Allowance burn ≠ list cost**: a probe's `opencode.allowance` can exceed
   `list_cost` (Kimi K3.1 Pro 4×, MiniMax M3.1 Flash 3×), but that ratio is a
   property of the probe's token mix and must **not** be multiplied into the
@@ -94,9 +117,9 @@ internal/config/       opencodable.conf (key=value: API keys + option
   `console.opencode.ai/api/usage/models`; filter to `provider ==
   "opencode-go"` (the API also returns pay-as-you-go `opencode` rows) and
   price the token counts at Go rates. `totalCostMicroCents ÷ 1e8` is the
-  console's list cost, not the allowance cost. `-window-estimate` scales the
-  per-model 5h/week caps by the endpoint's aggregate remaining percentages;
-  it is an approximation, not per-model window spend.
+  console's list cost, not the allowance cost. `-window-estimate` turns the
+  endpoint's aggregate percentages into implied window dollars and attributes
+  them (see Spend ledger); it is an estimate, never per-model window spend.
 - **goplan snapshot**: allowances, profiles and privacy flags are hardcoded
   from the public docs; new OpenCode models need new entries (unknown models
   fall back to a generic profile). `goplan.Privacy` is tri-state
@@ -105,6 +128,9 @@ internal/config/       opencodable.conf (key=value: API keys + option
   from zero prices (`modelsdev.Model.Free`).
 - **Cache hardening**: keys are sanitized (no traversal), writes are
   temp-file + rename, permissions are 0700/0600. `cache.Age` feeds `-doctor`.
+  `cache.Load` serves a stale entry when the fetch fails, so any output built
+  from it must report the age (`staleWarn`), never present it as current.
+  `-ttl 0` always refetches; `-refresh` bypasses the TTL.
 - **Key resolution order** (both APIs): environment variable →
   `opencodable.conf` (`key=value`, in `os.UserConfigDir()/opencodable/`) →
   legacy cwd dot-file. `internal/config` owns the file; never print values,
@@ -113,10 +139,11 @@ internal/config/       opencodable.conf (key=value: API keys + option
   settings (API keys); all-lowercase = command-line option defaults
   (command line beats file beats flag default; booleans are
   true/on/1/yes | false/off/0/no). **When adding a flag**, add its name to
-  the `config.AddOptions` call and to `applyConfig`'s str/boolean maps in
-  `cmd/opencodable/main.go`, or `-doctor` will flag it as unknown and the
-  file default is ignored. The one exception is `-config`, which selects the
-  file itself and therefore cannot come from it.
+  the `config.AddOptions` call and to the `applyConfig` map matching its type
+  (str, boolean, float, int or list) in `cmd/opencodable/main.go`, or
+  `-doctor` will flag it as unknown and the file default is ignored. The one
+  exception is `-config`, which selects the file itself and therefore cannot
+  come from it.
 - **Doctor**: `-doctor` audits plan/AA/SWE/probe coverage without running a
   probe; keep `buildDoctorRows` pure and tested.
 - **Console API has no time slicing** (verified Oct 2026: startDate/days/
@@ -124,13 +151,39 @@ internal/config/       opencodable.conf (key=value: API keys + option
   (ledger attribution + monthly-proportional split, `window_method`), never
   measured. `reqs_5h`/`reqs_wk` are fresh caps without `-window-estimate`.
 - **Live usage endpoints are TTL-cached** (`-ttl` seconds, default 600):
-  console spend + allowance windows; `-refresh` bypasses, stale fallbacks
-  warn with their age. Probes stay 24h; the spend ledger (`spend-ledger.json`)
-  is append-only local history, never polled.
+  console spend and allowance windows. `-refresh` bypasses the TTL; stale
+  fallbacks warn with their age. Probes stay 24h.
+- **Spend ledger** (`spend-ledger.json`, in the cache dir): one previous
+  per-model spend snapshot, written only by `-window-estimate` runs with real
+  spend data, plus each successful live probe's allowance burn; probes older
+  than 35 days are pruned. It sharpens window attribution, and deleting the
+  cache resets it to the proportional fallback. Never snapshot assumed-$0
+  spend: it would forge the next delta. Non-positive deltas are skipped (a
+  period reset shows as a drop).
+- **Peak twins** are synthetic rows (`Name [peak]`, ID suffixed `-peak`) added
+  after paid/privacy pruning and before the value filters, Pareto and sort
+  (`table.WithPeakTwins`; `buildNowRows` for `-now`). They share the base's
+  probes, scores, privacy and spend, so look models up by the base ID (`m.ID`),
+  never the twin's. `-peak` disables twinning.
+- **Row pipeline order is load-bearing**: `Build`, paid/privacy prune, peak
+  twins (not under `-peak`), `Exclude`/`Include`/`Keep`, `MarkPareto` (hidden
+  rows must never dominate), `Sort`, `-pareto`. The main flow and `runFull`
+  each spell this out; keep them in step.
+- **Titles are unique across views.** `FullTitles` dedups by name, so a `-now`
+  title equal to a main title is silently dropped from `-full`. `-cols` and
+  `-excols` validate against `FullTitles`, so a new title needs no registration
+  there. Legend lines are `# <title>  description`; `FilterLegend` keys on the
+  second word.
 
 ## Testing
 
-Table-driven tests next to the code (`*_test.go`). Network is never touched
-by unit tests: parse/normalize/render logic is separated from fetching
-precisely so tests feed fixtures (see `usage_test.go`, `swebench_test.go`,
-`probe_test.go` with a fake SSE server). Run with `-count=1`.
+Table-driven tests next to the code (`*_test.go`). Unit tests never touch the
+network. Logic lives in pure functions over data (`buildNowRows`, `joinFull`,
+`estimateWindowSpend`, `attributeLedger`, `table.WithPeakTwins`, `Filter.Keep`)
+that tests call directly; the `cmd/` wrappers only fetch and print. Fetchers
+are tested through seams: fixtures (`usage_test.go`, `swebench_test.go`),
+`httptest` servers (`consoleapi_test.go`, and the fake SSE server in
+`probe_test.go`) and injected getters (`resolveEloSnapshot`). Tests that touch
+the disk cache or config point `XDG_CACHE_HOME` / `XDG_CONFIG_HOME` at a temp
+dir (honoured on Linux; macOS and Windows resolve their own dirs). Run with
+`-count=1`.
