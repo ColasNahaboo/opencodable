@@ -1,5 +1,15 @@
 # History
 
+- v0.1.17 2026-10-29 Migrate the Artificial Analysis client to the supported
+  V2 endpoints before the legacy `/api/v2/data/*` retirement on November 4,
+  2026: `/api/v2/language/models/free` by default, the Pro route
+  `/api/v2/language/models` with `-aa-pro`, both paginated (200 rows/page,
+  `pagination.has_more`) with prices under `pricing` and medians under
+  `performance`. Free and Pro cache separately
+  (`aa-models-v2-free.json` / `aa-models-v2-pro.json`). AA no longer publishes
+  Coding, Math or LiveCodeBench, so `aa_code`, `aa_math` and `code_b` stay
+  empty; `term_b`, `if_b` and `aa_lcr` need a Pro key. `-aa-pro` is
+  config-settable, and `-doctor` follows the active AA cache.
 - v0.1.16 2026-10-29 Elo aliases for `kimi-k3` (Kimi K3 Max) and
   `muse-spark-1.3-contributor` (Muse Spark 1.3 Max): their Elo values now
   show, and the `-doctor` hints for them are gone.

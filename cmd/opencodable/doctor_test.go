@@ -176,7 +176,7 @@ func TestStaleCacheWarnings(t *testing.T) {
 		"aa":         30 * time.Hour,
 		"elo":        time.Hour,
 		"btr":        time.Hour,
-	})
+	}, false)
 	if len(got) != 2 {
 		t.Fatalf("got %d warnings, want 2 (aa stale, swe-bench missing): %v", len(got), got)
 	}
@@ -184,7 +184,7 @@ func TestStaleCacheWarnings(t *testing.T) {
 		t.Errorf("warnings = %v", got)
 	}
 	fresh := map[string]time.Duration{"models.dev": time.Hour, "aa": time.Hour, "swe-bench": 23 * time.Hour, "elo": time.Hour, "btr": time.Hour}
-	if w := staleCacheWarnings(fresh); len(w) != 0 {
+	if w := staleCacheWarnings(fresh, false); len(w) != 0 {
 		t.Errorf("fresh caches must stay silent: %v", w)
 	}
 }

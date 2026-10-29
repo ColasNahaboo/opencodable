@@ -163,12 +163,12 @@ func keySource(envName, dotfile string) string {
 
 // runDoctor audits plan/AA/SWE/probe coverage and prints where the joins are
 // missing. It never runs a probe; it only reads cached measurements.
-func runDoctor(refresh, offline, jsonOut, withLegend, nohead bool) error {
+func runDoctor(refresh, offline, aaPro, jsonOut, withLegend, nohead bool) error {
 	models, err := modelsdev.Fetch("opencode-go", refresh, offline)
 	if err != nil {
 		return err
 	}
-	aas, aerr := aa.Fetch(refresh, offline)
+	aas, aerr := aa.Fetch(refresh, offline, aaPro)
 	if aerr != nil {
 		aas = nil
 	}
@@ -204,7 +204,7 @@ func runDoctor(refresh, offline, jsonOut, withLegend, nohead bool) error {
 		Models:       len(rows),
 		Caches: map[string]string{
 			"models.dev": cacheAgeLabel("modelsdev-opencode-go.json"),
-			"aa":         cacheAgeLabel("aa-models.json"),
+			"aa":         cacheAgeLabel(aa.CacheKey(aaPro)),
 			"swe-bench":  cacheAgeLabel("swebench.json"),
 			"elo":        cacheAgeLabel("lmarena-elo.json"),
 			"btr":        cacheAgeLabel("lmarena-btr.json"),
@@ -251,7 +251,7 @@ func runDoctor(refresh, offline, jsonOut, withLegend, nohead bool) error {
 	if berr != nil {
 		report.BTRError = berr.Error()
 	}
-	report.CacheWarnings = staleCacheWarnings(catalogAges())
+	report.CacheWarnings = staleCacheWarnings(catalogAges(aaPro), aaPro)
 
 	if jsonOut {
 		enc := json.NewEncoder(os.Stdout)
@@ -291,22 +291,25 @@ func runDoctor(refresh, offline, jsonOut, withLegend, nohead bool) error {
 	return writeDoctor(os.Stdout, rows, isTTY(os.Stdout), withLegend, nohead)
 }
 
-// catalogCaches are the 24h caches doctor refreshes itself.
-var catalogCaches = []struct{ label, file string }{
-	{"models.dev", "modelsdev-opencode-go.json"},
-	{"aa", "aa-models.json"},
-	{"swe-bench", "swebench.json"},
-	{"elo", "lmarena-elo.json"},
-	{"btr", "lmarena-btr.json"},
+// catalogCaches are the 24h caches doctor refreshes itself. The AA cache
+// depends on the endpoint: Free and Pro responses have different shapes.
+func catalogCaches(aaPro bool) []struct{ label, file string } {
+	return []struct{ label, file string }{
+		{"models.dev", "modelsdev-opencode-go.json"},
+		{"aa", aa.CacheKey(aaPro)},
+		{"swe-bench", "swebench.json"},
+		{"elo", "lmarena-elo.json"},
+		{"btr", "lmarena-btr.json"},
+	}
 }
 
 // catalogTTL is the lifetime of those caches (modelsdev, aa and bench all use it).
 const catalogTTL = 24 * time.Hour
 
 // catalogAges returns the age of each catalog cache that exists.
-func catalogAges() map[string]time.Duration {
+func catalogAges(aaPro bool) map[string]time.Duration {
 	out := map[string]time.Duration{}
-	for _, c := range catalogCaches {
+	for _, c := range catalogCaches(aaPro) {
 		if age, ok := cache.Age(c.file); ok {
 			out[c.label] = age
 		}
@@ -317,9 +320,9 @@ func catalogAges() map[string]time.Duration {
 // staleCacheWarnings names catalog caches that are missing or older than
 // catalogTTL: the refresh failed, or -offline is in effect. Normal runs stay
 // silent on these and serve the old copy; -doctor is where that is said out loud.
-func staleCacheWarnings(ages map[string]time.Duration) []string {
+func staleCacheWarnings(ages map[string]time.Duration, aaPro bool) []string {
 	var out []string
-	for _, c := range catalogCaches {
+	for _, c := range catalogCaches(aaPro) {
 		age, ok := ages[c.label]
 		switch {
 		case !ok:

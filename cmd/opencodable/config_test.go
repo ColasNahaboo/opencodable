@@ -46,6 +46,7 @@ func registerOptions(t *testing.T) *flag.FlagSet {
 	peak = fs.Bool("peak", false, "")
 	refresh = fs.Bool("refresh", false, "")
 	offline = fs.Bool("offline", false, "")
+	aaPro = fs.Bool("aa-pro", false, "")
 	probeAll = fs.Bool("probe", false, "")
 	probeOne = fs.String("probe-model", "", "")
 	probeMax = fs.Float64("probe-max-allowance", 0, "")
@@ -64,13 +65,13 @@ func registerOptions(t *testing.T) *flag.FlagSet {
 }
 
 func TestApplyConfig(t *testing.T) {
-	writeConf(t, "plan=go-plus\npaid=yes\nprobe-max-allowance=0.5\nsort=name\n")
+	writeConf(t, "plan=go-plus\npaid=yes\naa-pro=yes\nprobe-max-allowance=0.5\nsort=name\n")
 	fs := registerOptions(t)
 	if err := applyConfig(fs); err != nil {
 		t.Fatal(err)
 	}
-	if *plan != "go-plus" || !*paid || *probeMax != 0.5 || *sortKey != "name" {
-		t.Errorf("config not applied: plan=%q paid=%v max=%v sort=%q", *plan, *paid, *probeMax, *sortKey)
+	if *plan != "go-plus" || !*paid || !*aaPro || *probeMax != 0.5 || *sortKey != "name" {
+		t.Errorf("config not applied: plan=%q paid=%v aa-pro=%v max=%v sort=%q", *plan, *paid, *aaPro, *probeMax, *sortKey)
 	}
 }
 

@@ -28,17 +28,17 @@ Piped header: `#name	cost_tok	cost_task	allowance	r_quota	tok_s	ttft_s	p_tok_s	p
 | 3 | `cost_task` | estimated USD per coding-agent request (OpenCode official token profile, base tier) |
 | 4 | `allowance` | monthly usage budget of this model in the plan; `unlimited` for free models |
 | 5 | `r_quota` | allowance ÷ cost_task ≈ requests per month (theoretical, full reset) |
-| 6 | `tok_s` | Artificial Analysis median output tok/s (reported, other hosts) |
-| 7 | `ttft_s` | AA median seconds to first token, thinking included |
+| 6 | `tok_s` | Artificial Analysis median output tok/s (V2 `performance`, reported, other hosts) |
+| 7 | `ttft_s` | AA median seconds to first token, thinking included (V2 `performance`) |
 | 8 | `p_tok_s` | **measured** output tok/s on your subscription (from `-probe`; too-short or suspect measurements are omitted) |
 | 9 | `p_ttft_s` | **measured** seconds to first content token (from `-probe`; thinking time is included in the wait) |
-| 10 | `aa_int` | Artificial Analysis Intelligence Index (composite) |
-| 11 | `aa_code` | Artificial Analysis Coding Index |
-| 12 | `aa_math` | Artificial Analysis Math Index |
-| 13 | `code_b` | LiveCodeBench pass rate % (via AA) |
-| 14 | `term_b` | Terminal-Bench pass rate % (via AA) |
-| 15 | `if_b` | IFBench instruction-following pass rate % (via AA) |
-| 16 | `aa_lcr` | AA Long-Context Reasoning pass rate % |
+| 10 | `aa_int` | Artificial Analysis Intelligence Index (composite; Free and Pro) |
+| 11 | `aa_code` | AA Coding Index (no longer published; always empty) |
+| 12 | `aa_math` | AA Math Index (no longer published; always empty) |
+| 13 | `code_b` | LiveCodeBench pass rate % (no longer published; always empty) |
+| 14 | `term_b` | Terminal-Bench pass rate % (Pro key with `-aa-pro`) |
+| 15 | `if_b` | IFBench instruction-following pass rate % (Pro key with `-aa-pro`) |
+| 16 | `aa_lcr` | AA Long-Context Reasoning pass rate % (Pro key with `-aa-pro`) |
 | 17 | `swe_b` | SWE-bench Verified % resolved, best recorded agent run |
 | 18 | `pareto` | `yes` when no other visible model is cheaper-or-equal, faster-or-equal AND better-or-equal; empty otherwise. Flags are computed after every row filter (`-exclude`, `-include`, `-max-cost`, `-min-speed`, `-min-quality`, `-paid`, `-privacy`), so a hidden model never dominates a visible one. |
 | 19 | `src` | `aa:<effort>` when the speed came from that AA reasoning-effort variant |

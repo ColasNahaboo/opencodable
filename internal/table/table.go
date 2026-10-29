@@ -72,8 +72,8 @@ func Build(models []modelsdev.Model, aas []aa.Model, probes map[string]probe.Res
 	bySlug := map[string]aa.Model{}
 	for _, a := range aas {
 		slugs[a.Slug] = true
-		if a.TokPerSec > speeds[a.Slug] {
-			speeds[a.Slug] = a.TokPerSec
+		if a.Performance.TokPerSec > speeds[a.Slug] {
+			speeds[a.Slug] = a.Performance.TokPerSec
 		}
 		bySlug[a.Slug] = a
 	}
@@ -109,7 +109,7 @@ func Build(models []modelsdev.Model, aas []aa.Model, probes map[string]probe.Res
 		if slug := normalize.Match(m.ID, slugs); slug != "" {
 			a := bySlug[slug]
 			r.TokPerSec = speeds[slug]
-			r.TTFTSeconds = a.TTFTSeconds
+			r.TTFTSeconds = a.Performance.TTFTSeconds
 			r.AAIntel = a.Evaluations.Intel
 			r.AACoding = f(a.Evaluations.Coding)
 			r.AAMath = f(a.Evaluations.Math)
@@ -141,6 +141,9 @@ func Build(models []modelsdev.Model, aas []aa.Model, probes map[string]probe.Res
 	return rows
 }
 
+// Quality is the composite used by -sort quality and the Pareto flags: the
+// AA Intelligence Index. The Coding Index fallback only serves old cached
+// data; Artificial Analysis no longer publishes a Coding Index.
 func Quality(r Row) float64 {
 	if r.AAIntel > 0 {
 		return r.AAIntel
@@ -490,12 +493,12 @@ var legend = []string{
 	"# p_tok_s     MEASURED on your subscription via -probe (trusted windows only; suspect/too-short dropped)",
 	"# p_ttft_s    MEASURED seconds to first content token via -probe (thinking time included in the wait)",
 	"# aa_int      Artificial Analysis Intelligence Index (composite)",
-	"# aa_code     Artificial Analysis Coding Index",
-	"# aa_math     Artificial Analysis Math Index",
-	"# code_b      LiveCodeBench pass rate % (via AA)",
-	"# term_b      Terminal-Bench pass rate % (via AA)",
-	"# if_b        IFBench instruction-following pass rate % (via AA)",
-	"# aa_lcr      AA Long-Context Reasoning pass rate %",
+	"# aa_code     AA Coding Index (no longer published; always empty)",
+	"# aa_math     AA Math Index (no longer published; always empty)",
+	"# code_b      LiveCodeBench pass rate % (no longer published; always empty)",
+	"# term_b      Terminal-Bench pass rate % (Pro key with -aa-pro)",
+	"# if_b        IFBench instruction-following pass rate % (Pro key with -aa-pro)",
+	"# aa_lcr      AA Long-Context Reasoning pass rate % (Pro key with -aa-pro)",
 	"# swe_b       SWE-bench Verified % resolved, best recorded agent run (swebench.com)",
 	"# pareto      yes = no other visible model is cheaper-or-equal, faster-or-equal AND better-or-equal",
 	"# src         aa:<effort> = speed from that AA reasoning-effort variant",

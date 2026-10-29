@@ -44,7 +44,7 @@ program somewhere on your `PATH`.
 **2. Add your keys.** This is optional, but recommended. [Configuration](#configuration) says where to put them.
 
 - Your **OpenCode Go key** unlocks what you can use right now (`-now`, `-full`), your remaining allowance (`-usage`) and speed measurements (`-probe`).
-- A **free Artificial Analysis key** (from artificialanalysis.ai) unlocks the quality and benchmark columns.
+- A **free Artificial Analysis key** (from artificialanalysis.ai) unlocks the Intelligence Index and AA speed columns. A **Pro key** with `-aa-pro` adds the per-benchmark columns.
 
 Without any key you still get prices, budgets and cost per request.
 
@@ -59,22 +59,24 @@ selected by `-cols` so that it fits on the page. The numbers in every example
 are illustrative.
 
 ```sh
-opencodable -paid -privacy -cols name,cost_task,r_quota,p_tok_s,aa_int,aa_code,pareto
+opencodable -paid -privacy -cols name,cost_task,r_quota,p_tok_s,aa_int,pareto
 ```
 
 ```
-#name            cost_task  r_quota   p_tok_s  aa_int  aa_code  pareto
-Kimi K3          $0.0306    490.2     71.0     -       76.2     yes
-GLM-5.3-Flash    $0.0019    31578.9   96.5     -       71.5     yes
-GPT-5.6 Luna     $0.00146   10245.9   120.4    -       71.4     yes
-GLM-5.2          $0.01516   3957.8    64.2     -       68.8
-Kimi K2.7 Code   $0.01208   4968.3    44.8     -       60.8
-MiMo V2.5 Pro    $0.00092   16291.1   -        -       60.2     yes
+#name            cost_task  r_quota   p_tok_s  aa_int  pareto
+Kimi K3.1 Pro    $0.0204    735.3     34.5     46.0    yes
+GLM-5.3-Flash    $0.0019    31578.9   96.5     31.7    yes
+GPT-5.6 Luna     $0.00146   10245.9   120.4    27.8    yes
+GLM-5.2          $0.01516   3957.8    64.2     -
+Kimi K2.7 Code   $0.01208   4968.3    44.8     -
+MiMo V2.5 Pro    $0.00092   16291.1   -        29.9    yes
 ```
 
-A `-` means there is no data for that cell. Artificial Analysis is moving to new
-benchmarks, so many quality values are missing for now. `-doctor` shows which
-models it could not match at all.
+A `-` means there is no data for that cell. The Free Artificial Analysis tier
+publishes the Intelligence Index and AA speed. Per-benchmark scores (`term_b`,
+`if_b`, `aa_lcr`) need a Pro key and `-aa-pro`. Artificial Analysis no longer
+publishes the Coding, Math or LiveCodeBench scores, so `aa_code`, `aa_math` and
+`code_b` stay empty. `-doctor` shows which models it could not match at all.
 
 ## Which command answers my question?
 
@@ -99,7 +101,7 @@ look at first; the [Columns](#columns) section lists them all.
 
 - **`cost_task`**: estimated cost of one typical coding-agent request, in dollars, based on OpenCode's own figures.
 - **`r_quota`**: roughly how many such requests your monthly budget covers for that model.
-- **`aa_int`** and **`aa_code`**: overall intelligence and coding scores, from 0 to 100 (Artificial Analysis). Higher is better.
+- **`aa_int`**: overall intelligence score, from 0 to 100 (Artificial Analysis). Higher is better. `aa_code`, `aa_math` and `code_b` are no longer published and stay empty; `term_b`, `if_b` and `aa_lcr` need a Pro key with `-aa-pro`.
 - **`p_tok_s`**: output speed measured on your own subscription, in tokens per second. Run `-probe` to fill it in. `tok_s` is the speed reported for other hosts.
 - **`pareto`**: `yes` when no other visible model is at least as cheap, as fast and as good, and better in at least one way. These are the strong compromises.
 - **`privacy`**: `safe` (the provider does not train on your requests), `trains` (it may), or `unknown` (not in our data).
@@ -168,7 +170,7 @@ month    ok      21        79             2026-11-07T14:00:00+01:00  212h 30m 0s
 | Key | What it unlocks | Needed? |
 |---|---|---|
 | `OPENCODE_API_KEY`: your OpenCode Go key | `-now`, `-full`, `-usage`, `-window-estimate`, `-probe` | for those views |
-| `AA_API_KEY`: free Artificial Analysis key | quality and benchmark columns | recommended |
+| `AA_API_KEY`: Artificial Analysis key | Intelligence Index, AA speed, and (with a Pro key and `-aa-pro`) per-benchmark columns | recommended |
 
 Each key is looked up in this order: an environment variable, then
 `opencodable.conf`, then a dot-file in the folder you run the command from
@@ -176,8 +178,9 @@ Each key is looked up in this order: an environment variable, then
 
 Without the OpenCode key, `-now` and `-full` assume zero spending (and say so),
 while `-usage` and `-probe` stop with a message. Without the Artificial Analysis
-key you get a warning, and the quality columns and the Artificial Analysis speed
-columns stay empty.
+key you get a warning, and `aa_int`, the AA speed columns and the benchmark
+columns stay empty. A free key fills `aa_int` and the AA speed columns; a Pro key
+with `-aa-pro` also fills `term_b`, `if_b` and `aa_lcr`.
 
 ### The configuration file
 
@@ -202,11 +205,12 @@ plan=go-plus
 paid=yes
 privacy=on
 probe-max-allowance=1
+# aa-pro=yes          # only with an Artificial Analysis Pro key
 
 # Filters and columns
 exclude=grok*
 max-cost=0.02
-min-quality=aa_int=35,aa_code=70
+min-quality=aa_int=35,lb_code=60
 #cols=cost_task,p_tok_s,aa_int,swe_b
 ```
 
@@ -236,12 +240,13 @@ Pick one at a time; combining two is an error. Without a view, the main table is
 
 ### What to show, and in what order
 
-- `-sort <key>`: `quality` (the default: intelligence, falling back to the coding score), `price` (cheapest request first), `speed`, `reqs` (most requests a month first), `usable` (most usable right now, for `-full`), or `name`.
+- `-sort <key>`: `quality` (the default: the AA Intelligence Index), `price` (cheapest request first), `speed`, `reqs` (most requests a month first), `usable` (most usable right now, for `-full`), or `name`.
 - `-pareto`: keep only the models that no other visible model beats on cost, speed and quality together.
 - `-paid`: hide free models.
 - `-privacy`: hide models that may train on your prompts, and models whose status is unknown.
 - `-plan go|go-plus`: which plan's budgets to use. The default is `go`; Go Plus has larger budgets.
 - `-provider <name>`: the default is `opencode-go`, the only provider with plan (budget) data.
+- `-aa-pro`: use the Artificial Analysis Pro endpoint (needs a Pro key); fills `term_b`, `if_b` and `aa_lcr`.
 - `-peak`: price DeepSeek at its peak-hour rates everywhere, without the separate `[peak]` rows.
 
 ### Filters
@@ -250,7 +255,7 @@ Pick one at a time; combining two is an error. Without a view, the main table is
 - `-include <patterns>`: show only the models that match.
 - `-max-cost <usd>`: hide models whose estimated cost per request is higher.
 - `-min-speed <tok/s>`: hide slower models (measured speed when available, otherwise the reported one).
-- `-min-quality <metric>=<score>,...`: hide models below a score, for example `aa_int=40,swe_b=30`; a model must meet every bound. The metric names are column titles. A bare number means the overall quality score.
+- `-min-quality <metric>=<score>,...`: hide models below a score, for example `aa_int=40,swe_b=30`; a model must meet every bound. The metric names are column titles; `aa_code`, `aa_math` and `code_b` are no longer published, and `term_b`, `if_b` and `aa_lcr` need a Pro key. A bare number means the overall quality score.
 - `-missing keep|drop`: what to do with a model that has no value for a filtered metric. `keep` (the default) keeps it; `drop` removes it.
 
 Filters work in every view, with one exception: `-now` loads no benchmark data, so
@@ -303,8 +308,9 @@ contract is in [TITLES.md](TITLES.md).
 | `r_quota` | roughly how many requests that budget covers each month |
 | `tok_s`, `ttft_s` | output speed (tokens per second) and wait before the first word, as reported by Artificial Analysis for other hosts |
 | `p_tok_s`, `p_ttft_s` | the same two, measured on your own subscription with `-probe` |
-| `aa_int`, `aa_code`, `aa_math` | Artificial Analysis indexes, 0 to 100: overall intelligence, coding and maths |
-| `code_b`, `term_b`, `if_b`, `aa_lcr` | pass rates in percent on LiveCodeBench, Terminal-Bench, IFBench and a long-context reasoning test |
+| `aa_int` | Artificial Analysis Intelligence Index, 0 to 100 |
+| `aa_code`, `aa_math`, `code_b` | deprecated: AA no longer publishes Coding, Math or LiveCodeBench scores, so these stay empty |
+| `term_b`, `if_b`, `aa_lcr` | Terminal-Bench, IFBench and AA-LCR pass rates; need a Pro key with `-aa-pro` |
 | `swe_b` | percent of real GitHub issues solved in SWE-bench Verified (best recorded run) |
 | `lb_agent`, `lb_code` | LiveBench scores, 0 to 100, for long agentic tasks and for coding |
 | `elo`, `btr` | Arena ratings: `elo` from a daily snapshot of the Arena text leaderboard, `btr` from the official Arena dataset. Only models on those leaderboards have a value. |
@@ -373,7 +379,7 @@ answer too quickly to time reliably.
 |---|---|---|
 | [models.dev](https://models.dev) | the model catalog: prices and context sizes | none |
 | [OpenCode Go](https://opencode.ai/v2/docs/console/go/) | plan budgets, cost per request, peak prices, privacy | none (built into the program as a snapshot) |
-| [Artificial Analysis](https://artificialanalysis.ai) | quality indexes, benchmark scores, reported speed | free key |
+| [Artificial Analysis](https://artificialanalysis.ai) | Intelligence Index and reported speed (free key); per-benchmark scores with a Pro key and `-aa-pro` | free or Pro key |
 | [LiveBench](https://livebench.ai) | agentic and coding scores (pinned release) | none |
 | [SWE-bench Verified](https://www.swebench.com/) | percent of GitHub issues solved | none |
 | Arena text leaderboard, [daily snapshot](https://github.com/oolong-tea-2026/arena-ai-leaderboards) (third-party mirror, MIT) | `elo` | none |
@@ -433,5 +439,5 @@ This repository is developed by me, a human hobbyist in my personal time, acting
 
 ## History
 
-Version v0.1.16 2026-10-29.
+Version v0.1.17 2026-10-29.
 See [HISTORY.md](HISTORY.md).

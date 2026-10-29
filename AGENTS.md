@@ -27,7 +27,7 @@ cmd/opencodable/       flags and view orchestration (-main, -now, -full, -usage,
 internal/modelsdev/    models.dev catalog: prices, limits (authoritative)
 internal/goplan/       OpenCode Go plan SNAPSHOT: allowances, token profiles,
                        peak prices, privacy flags — update when plans change
-internal/aa/           Artificial Analysis data API client
+internal/aa/           Artificial Analysis V2 data API client (Free/Pro, paginated)
 internal/bench/        external feeds: SWE-bench Verified, LiveBench 2.0,
                        Arena Elo (third-party snapshot), Arena BTR (official)
 internal/consoleapi/   console usage API (per-model period spend, TTL-cached)
@@ -86,15 +86,25 @@ internal/config/       opencodable.conf (key=value: API keys + option
 
 ## Data-source gotchas (learned the hard way)
 
+- **AA API v2**: the legacy `/api/v2/data/llms/models` endpoint retires on
+  2026-11-04. `internal/aa` uses `/api/v2/language/models/free` by default and
+  the Pro route `/api/v2/language/models` under `-aa-pro`. Both are paginated
+  (`?page=N`, 200 rows/page, follow `pagination.has_more`) and nest prices
+  under `pricing` and medians under `performance`. Free carries the
+  Intelligence Index and capability indices only; `term_b`, `if_b` and
+  `aa_lcr` need Pro. AA no longer publishes Coding, Math or LiveCodeBench, so
+  `aa_code`, `aa_math` and `code_b` stay empty. Free and Pro use separate cache
+  keys (`aa-models-v2-free.json` / `aa-models-v2-pro.json`); the Free tier
+  allows 100 requests per 24h, so a full refresh costs 4.
 - **AA slug matching**: `normalize.Match` resolves a models.dev ID by exact
   slug, then the alias table in `internal/normalize` (`mimo-v2.5` →
   `mimo-v2-5-0424`, `step-5-preview` → `step-5`, …), then dots-as-dashes
   (`qwen3.8-max` → `qwen3-8-max`). `-doctor` separates the two causes of
   missing AA data: `no AA match` is an alias gap (fix `normalize`); a matched
-  model with empty scores means Artificial Analysis has not published that score
-  yet, which is normal while AA moves to new benchmarks. AA has reasoning-effort
-  variants (`-low/-high/…`); the base slug may exist with tok/s = 0 —
-  `VariantWithSpeed` picks the fastest measured variant.
+  model with empty scores means Artificial Analysis has not published that
+  score yet, or the score is Pro-only (see the previous bullet). AA has
+  reasoning-effort variants (`-low/-high/…`); the base slug may exist with
+  tok/s = 0 — `VariantWithSpeed` picks the fastest measured variant.
 - **AA ttft_s artifact**: includes reasoning time (Haiku ~247 s). Reported,
   not a bug.
 - **Go limits are per model, not a shared pot**: docs define each model's

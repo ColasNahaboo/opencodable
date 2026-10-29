@@ -10,9 +10,11 @@ var QualityMetricNames = []string{
 }
 
 // qualityMetrics maps a metric name to its accessor. "quality" is the
-// composite used by -sort quality and the Pareto flags: aa_int, else aa_code.
-// elo and btr are filterable but join neither the composite nor Pareto,
-// like the other benchmark columns.
+// composite used by -sort quality and the Pareto flags: aa_int, with an
+// aa_code fallback for old cached data (AA no longer publishes that index).
+// aa_code, aa_math and code_b remain accepted for compatibility but are
+// always empty on the V2 API. elo and btr are filterable but join neither
+// the composite nor Pareto, like the other benchmark columns.
 var qualityMetrics = map[string]func(Row) float64{
 	"aa_int":   func(r Row) float64 { return r.AAIntel },
 	"aa_code":  func(r Row) float64 { return r.AACoding },

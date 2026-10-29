@@ -30,7 +30,7 @@ import (
 )
 
 // version is displayed at the bottom of the -h help text.
-var version = "v0.1.16"
+var version = "v0.1.17"
 
 // colList accumulates comma-separated -cols/-excols values. The flag may be
 // repeated and unions with the config-file default; output order always
@@ -73,6 +73,7 @@ var (
 	peak       *bool
 	refresh    *bool
 	offline    *bool
+	aaPro      *bool
 	probeAll   *bool
 	probeOne   *string
 	probeMax   *float64
@@ -114,13 +115,14 @@ func main() {
 	include = flag.String("include", "", "show only models whose ID or name matches any comma-separated pattern ('*' and '?' are wildcards)")
 	maxCost = flag.Float64("max-cost", 0, "hide models whose cost per task (cost_task, USD) exceeds this value")
 	minSpeed = flag.Float64("min-speed", 0, "hide models slower than this many output tokens/s (measured probe when available, else AA)")
-	minQuality = flag.String("min-quality", "", "hide models below 'metric=value' pairs (aa_int, aa_code, aa_math, swe_b, code_b, term_b, if_b, aa_lcr, lb_agent, lb_code, elo, btr); a bare value means composite quality")
+	minQuality = flag.String("min-quality", "", "hide models below 'metric=value' pairs (aa_int, swe_b, term_b, if_b, aa_lcr, lb_agent, lb_code, elo, btr; aa_code/aa_math/code_b are no longer published); a bare value means composite quality")
 	missing = flag.String("missing", "keep", "numeric filters: keep or drop models with no value for the metric (keep|drop)")
 	flag.Var(&colsFlag, "cols", "show only these columns (comma-separated titles, repeatable; name is always shown)")
 	flag.Var(&excolsFlag, "excols", "hide these columns (comma-separated titles, repeatable; name is always shown)")
 	peak = flag.Bool("peak", false, "use peak-hours prices (DeepSeek); the whole table is peak-priced, so no [peak] twins are added")
 	refresh = flag.Bool("refresh", false, "bypass the 24h cache and refetch")
 	offline = flag.Bool("offline", false, "cache only for catalog/benchmarks/probes; -usage still needs network")
+	aaPro = flag.Bool("aa-pro", false, "use the Artificial Analysis Pro endpoint (per-benchmark scores; requires a Pro key)")
 	probeAll = flag.Bool("probe", false, "measure live speed of every model (paid requests, cached 24h)")
 	probeOne = flag.String("probe-model", "", "measure live speed of one model ID and print the result")
 	probeMax = flag.Float64("probe-max-allowance", 0, "stop -probe after this many allowance dollars (0 = no limit)")
@@ -139,7 +141,7 @@ func main() {
 	config.AddOptions("provider", "plan", "sort", "pareto", "paid", "privacy",
 		"exclude", "include", "max-cost", "min-speed", "min-quality", "missing",
 		"cols", "excols",
-		"peak", "refresh", "offline", "probe", "probe-model", "probe-max-allowance",
+		"peak", "refresh", "offline", "aa-pro", "probe", "probe-model", "probe-max-allowance",
 		"usage", "now", "full", "main", "window-estimate", "doctor", "spent", "vertical", "json", "l", "nohead", "ttl")
 	flag.Parse()
 	// The config path itself cannot come from the config file: it is needed
@@ -236,7 +238,7 @@ func main() {
 			fmt.Fprintln(os.Stderr, "-doctor only supports -provider opencode-go")
 			os.Exit(2)
 		}
-		if err := runDoctor(*refresh, *offline, *jsonOut, *showLegend, *nohead); err != nil {
+		if err := runDoctor(*refresh, *offline, *aaPro, *jsonOut, *showLegend, *nohead); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
@@ -329,7 +331,7 @@ func applyConfig(fs *flag.FlagSet) error {
 	}
 	boolean := map[string]*bool{
 		"pareto": pareto, "paid": paid, "privacy": privacy, "peak": peak,
-		"refresh": refresh, "offline": offline, "probe": probeAll, "usage": showUse,
+		"refresh": refresh, "offline": offline, "aa-pro": aaPro, "probe": probeAll, "usage": showUse,
 		"now": now, "full": fullView, "main": mainView, "window-estimate": winEst, "doctor": doctor,
 		"vertical": vertical, "json": jsonOut, "l": showLegend, "nohead": nohead,
 	}
@@ -610,7 +612,7 @@ func mustJSON(v any) []byte {
 // missing source.
 func fetchBenchmarks(refresh, offline bool) (aas []aa.Model, swe map[string]float64, lb bench.LB, elo bench.Elo, btr bench.BTR) {
 	var aerr error
-	if aas, aerr = aa.Fetch(refresh, offline); aerr != nil {
+	if aas, aerr = aa.Fetch(refresh, offline, *aaPro); aerr != nil {
 		fmt.Fprintln(os.Stderr, "warning: benchmark data unavailable:", aerr)
 		aas = nil
 	}
