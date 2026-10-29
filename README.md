@@ -584,9 +584,8 @@ Ideas under consideration — no promises, no timeline.
 - True per-model 5h/weekly spend (the API exposes only aggregate percentages;
   `-window-estimate` is a uniform approximation)
 - Peak/off-peak *scheduling advice* (when DeepSeek is cheapest)
-- Optional LMArena Elo column
 - Multi-provider comparison (`-provider any`)
-- Rust port of the same pipeline
+- Recoding in Rust with same functionalities
 
 ## Contributing
 
