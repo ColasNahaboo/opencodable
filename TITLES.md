@@ -40,7 +40,7 @@ Piped header: `#name	cost_tok	cost_task	allowance	r_quota	tok_s	ttft_s	p_tok_s	p
 | 15 | `if_b` | IFBench instruction-following pass rate % (via AA) |
 | 16 | `aa_lcr` | AA Long-Context Reasoning pass rate % |
 | 17 | `swe_b` | SWE-bench Verified % resolved, best recorded agent run |
-| 18 | `pareto` | `yes` when no other visible model is cheaper-or-equal, faster-or-equal AND better-or-equal; empty otherwise. Flags are computed after every row filter (`-exclude`, `-max-cost`, `-min-speed`, `-min-quality`, `-paid`, `-privacy`), so a hidden model never dominates a visible one. |
+| 18 | `pareto` | `yes` when no other visible model is cheaper-or-equal, faster-or-equal AND better-or-equal; empty otherwise. Flags are computed after every row filter (`-exclude`, `-include`, `-max-cost`, `-min-speed`, `-min-quality`, `-paid`, `-privacy`), so a hidden model never dominates a visible one. |
 | 19 | `src` | `aa:<effort>` when the speed came from that AA reasoning-effort variant |
 | 20 | `privacy` | `safe` (no training on request data), `trains` (contributor), or `unknown` (no plan-snapshot verdict) |
 | 21 | `ctx_k` | context window in thousands of tokens (models.dev) |

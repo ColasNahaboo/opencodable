@@ -30,7 +30,7 @@ import (
 )
 
 // version is displayed at the bottom of the -h help text.
-var version = "v0.1.13"
+var version = "v0.1.14"
 
 // colList accumulates comma-separated -cols/-excols values. The flag may be
 // repeated and unions with the config-file default; output order always
@@ -63,6 +63,7 @@ var (
 	paid       *bool
 	privacy    *bool
 	exclude    *string
+	include    *string
 	maxCost    *float64
 	minSpeed   *float64
 	minQuality *string
@@ -110,6 +111,7 @@ func main() {
 	paid = flag.Bool("paid", false, "hide free models (cost_task = 0)")
 	privacy = flag.Bool("privacy", false, "hide models that train on request data or have unknown privacy status")
 	exclude = flag.String("exclude", "", "hide models whose ID or name matches any comma-separated pattern ('*' and '?' are wildcards)")
+	include = flag.String("include", "", "show only models whose ID or name matches any comma-separated pattern ('*' and '?' are wildcards)")
 	maxCost = flag.Float64("max-cost", 0, "hide models whose cost per task (cost_task, USD) exceeds this value")
 	minSpeed = flag.Float64("min-speed", 0, "hide models slower than this many output tokens/s (measured probe when available, else AA)")
 	minQuality = flag.String("min-quality", "", "hide models below 'metric=value' pairs (aa_int, aa_code, aa_math, swe_b, code_b, term_b, if_b, aa_lcr, lb_agent, lb_code, elo, btr); a bare value means composite quality")
@@ -135,7 +137,7 @@ func main() {
 	jsonOut = flag.Bool("json", false, "JSON output instead of TSV")
 	showLegend = flag.Bool("l", false, "print the legend block explaining each column")
 	config.AddOptions("provider", "plan", "sort", "pareto", "paid", "privacy",
-		"exclude", "max-cost", "min-speed", "min-quality", "missing",
+		"exclude", "include", "max-cost", "min-speed", "min-quality", "missing",
 		"cols", "excols",
 		"peak", "refresh", "offline", "probe", "probe-model", "probe-max-allowance",
 		"usage", "now", "full", "main", "window-estimate", "doctor", "spent", "vertical", "json", "l", "nohead", "ttl")
@@ -271,7 +273,7 @@ func main() {
 		rows = table.WithPeakTwins(rows, models)
 	}
 	rows = slices.DeleteFunc(rows, func(r table.Row) bool {
-		return flt.Excluded(r.ID, r.Name) || !flt.Keep(r)
+		return flt.Excluded(r.ID, r.Name) || !flt.Included(r.ID, r.Name) || !flt.Keep(r)
 	})
 	// Pareto is relative to the set the user actually sees: a model hidden
 	// by any filter must not dominate a visible one.
@@ -323,7 +325,7 @@ func applyConfig(fs *flag.FlagSet) error {
 	str := map[string]*string{
 		"provider": provider, "plan": plan, "sort": sortKey,
 		"probe-model": probeOne, "spent": spent,
-		"exclude": exclude, "min-quality": minQuality, "missing": missing,
+		"exclude": exclude, "include": include, "min-quality": minQuality, "missing": missing,
 	}
 	boolean := map[string]*bool{
 		"pareto": pareto, "paid": paid, "privacy": privacy, "peak": peak,
@@ -419,7 +421,7 @@ func buildColumns() (colSel, error) {
 // returns the row selection. -missing defaults to keep: a row without a value
 // for a filtered metric is not pruned by that bound.
 func buildFilter(fs *flag.FlagSet) (table.Filter, error) {
-	f := table.Filter{Exclude: splitList(*exclude)}
+	f := table.Filter{Exclude: splitList(*exclude), Include: splitList(*include)}
 	if optionSet(fs, "max-cost") {
 		f.MaxCost = maxCost
 	}
@@ -636,8 +638,8 @@ func fetchBenchmarks(refresh, offline bool) (aas []aa.Model, swe map[string]floa
 }
 
 // probeModels returns cached probe measurements, running fresh paid probes
-// when asked. Models hidden by -privacy or -exclude are skipped: hidden rows
-// are not worth paid probe requests.
+// when asked. Hidden models (-privacy, -exclude, or missing -include) are
+// skipped: hidden rows are not worth paid probe requests.
 func probeModels(models []modelsdev.Model, flt table.Filter, doProbe, doRefresh, doOffline, doPrivacy bool, probeMax float64) (map[string]probe.Result, error) {
 	probes := map[string]probe.Result{}
 	for _, m := range models {
@@ -660,7 +662,7 @@ func probeModels(models []modelsdev.Model, flt table.Filter, doProbe, doRefresh,
 		if doPrivacy && goplan.ExcludedByPrivacy(m.ID) {
 			continue
 		}
-		if flt.Excluded(m.ID, m.Name) {
+		if flt.Excluded(m.ID, m.Name) || !flt.Included(m.ID, m.Name) {
 			continue
 		}
 		r, fresh := loadOrProbe(m.ID, key, doRefresh, doOffline)
@@ -1063,7 +1065,7 @@ func buildNowRows(models []modelsdev.Model, spend map[string]spendInfo, spendKno
 // are not evaluated: this view loads no AA scores.
 func filterNowRows(rows []nowRow, flt table.Filter) []nowRow {
 	return slices.DeleteFunc(rows, func(r nowRow) bool {
-		return flt.Excluded(r.id, r.name) || !flt.CostOK(r.costTask) || !flt.SpeedOK(r.probeTokS)
+		return flt.Excluded(r.id, r.name) || !flt.Included(r.id, r.name) || !flt.CostOK(r.costTask) || !flt.SpeedOK(r.probeTokS)
 	})
 }
 
@@ -1288,7 +1290,7 @@ func runFull(planName string, spentFile map[string]float64, spentGiven, paid, pr
 		mrows = table.WithPeakTwins(mrows, models)
 	}
 	mrows = slices.DeleteFunc(mrows, func(r table.Row) bool {
-		return flt.Excluded(r.ID, r.Name) || !flt.Keep(r)
+		return flt.Excluded(r.ID, r.Name) || !flt.Included(r.ID, r.Name) || !flt.Keep(r)
 	})
 	// Pareto is relative to the set the user actually sees.
 	table.MarkPareto(mrows)

@@ -169,6 +169,7 @@ opencodable -offline                 # cache only for catalog/benchmarks/probes
 opencodable -paid=false              # turn off a paid=yes from opencodable.conf
 opencodable -config ./ci.conf        # alternative config file (empty = no defaults)
 opencodable -exclude '*grok*'        # hide models by ID or display name
+opencodable -include deepseek        # show only DeepSeek models (both price regimes)
 opencodable -max-cost 0.01 -min-speed 60   # cheap and fast only
 opencodable -min-quality aa_int=40,swe_b=30  # quality floors (missing values kept)
 opencodable -missing drop            # ...or drop models with no value for a floor
@@ -255,6 +256,11 @@ off-peak. With `-peak` the twins disappear (everything is already peak).
   prefix. `*` matches any run of characters (including the `/` in
   provider-prefixed IDs). Excluded models are not probed, so the filter also
   saves allowance.
+- `-include <pattern>[,<pattern>…]` — show only models whose ID or display
+  name matches (same case-insensitive wildcard rules). Empty means all
+  models. Combines with `-exclude`: a model must match `-include` and dodge
+  `-exclude`. Included-only models are probed, so the filter also saves
+  allowance on narrow comparisons like `-include deepseek`.
 - `-max-cost <usd>` — hide models costing more than `<usd>` per coding-agent
   request (`cost_task`). Free models cost 0 and always pass.
 - `-min-speed <tok/s>` — hide models slower than this. Uses the measured
@@ -273,7 +279,7 @@ off-peak. With `-peak` the twins disappear (everything is already peak).
   `cost_task` is always known.
 
 Filters run before `-pareto`, so a hidden model never dominates a visible one.
-`-now` honours `-exclude`, `-max-cost` and `-min-speed` (against its own
+`-now` honours `-exclude`, `-include`, `-max-cost` and `-min-speed` (against its own
 `p_tok_s`); quality bounds are ignored there because that view loads no AA
 scores, with a note on stderr. `-full` honours every filter, including
 quality, with speed measured the main-table way (probe when trusted, else AA).
@@ -633,5 +639,5 @@ This repository is developed by me, a human hobbyist in my personal time, acting
 
 ## History
 
-Version v0.1.13 2026-10-29.
+Version v0.1.14 2026-10-29.
 See [HISTORY.md](HISTORY.md).

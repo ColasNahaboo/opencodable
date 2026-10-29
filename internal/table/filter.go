@@ -49,6 +49,7 @@ func qualityValue(r Row, metric string) (float64, bool) {
 // distinguish "not set" from an explicit 0.
 type Filter struct {
 	Exclude     []string           // -exclude patterns
+	Include     []string           // -include patterns (empty keeps all)
 	MaxCost     *float64           // -max-cost: cost_task ceiling
 	MinSpeed    *float64           // -min-speed: effective tok/s floor
 	MinQuality  map[string]float64 // -min-quality: metric -> floor
@@ -60,6 +61,21 @@ type Filter struct {
 // otherwise they are globs (* = any run, ? = one character).
 func (f Filter) Excluded(id, name string) bool {
 	for _, p := range f.Exclude {
+		if matchPattern(p, id) || matchPattern(p, name) {
+			return true
+		}
+	}
+	return false
+}
+
+// Included reports whether id or name passes the -include patterns: empty
+// means everything is included. Same case-insensitive matching as Excluded;
+// combine both so a row must match -include (when given) and dodge -exclude.
+func (f Filter) Included(id, name string) bool {
+	if len(f.Include) == 0 {
+		return true
+	}
+	for _, p := range f.Include {
 		if matchPattern(p, id) || matchPattern(p, name) {
 			return true
 		}

@@ -34,6 +34,7 @@ func registerOptions(t *testing.T) *flag.FlagSet {
 	paid = fs.Bool("paid", false, "")
 	privacy = fs.Bool("privacy", false, "")
 	exclude = fs.String("exclude", "", "")
+	include = fs.String("include", "", "")
 	maxCost = fs.Float64("max-cost", 0, "")
 	minSpeed = fs.Float64("min-speed", 0, "")
 	minQuality = fs.String("min-quality", "", "")
@@ -101,7 +102,7 @@ func TestApplyConfigBoolOverride(t *testing.T) {
 }
 
 func TestBuildFilterFromConfig(t *testing.T) {
-	writeConf(t, "exclude=grok*,kimi-*\nmax-cost=0.01\nmin-speed=60\nmin-quality=aa_int=40,aa_code=35\nmissing=drop\n")
+	writeConf(t, "exclude=grok*,kimi-*\ninclude=deepseek\nmax-cost=0.01\nmin-speed=60\nmin-quality=aa_int=40,aa_code=35\nmissing=drop\n")
 	fs := registerOptions(t)
 	if err := applyConfig(fs); err != nil {
 		t.Fatal(err)
@@ -112,6 +113,9 @@ func TestBuildFilterFromConfig(t *testing.T) {
 	}
 	if len(flt.Exclude) != 2 || flt.Exclude[0] != "grok*" || flt.Exclude[1] != "kimi-*" {
 		t.Errorf("Exclude = %v", flt.Exclude)
+	}
+	if len(flt.Include) != 1 || flt.Include[0] != "deepseek" {
+		t.Errorf("Include = %v", flt.Include)
 	}
 	if flt.MaxCost == nil || *flt.MaxCost != 0.01 {
 		t.Errorf("MaxCost = %v, want 0.01", flt.MaxCost)

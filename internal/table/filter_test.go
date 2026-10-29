@@ -31,6 +31,38 @@ func TestFilterExcluded(t *testing.T) {
 	}
 }
 
+func TestFilterIncluded(t *testing.T) {
+	if !(Filter{}).Included("anything", "Anything") {
+		t.Error("empty -include must keep everything")
+	}
+	f := Filter{Include: []string{"deepseek", "kimi-*"}, Exclude: []string{"*flash*"}}
+	cases := []struct {
+		id, name string
+		want     bool
+	}{
+		{"deepseek-v4-pro", "DeepSeek V4 Pro", true},    // substring include
+		{"kimi-k3.1-pro", "Kimi K3.1 Pro", true},        // prefix glob include
+		{"KIMI-K2", "Kimi K2", true},                    // case-insensitive
+		{"grok-4.1", "Grok 4.1", false},                 // matches nothing
+		{"deepseek-v4.1-flash", "DeepSeek Flash", true}, // include match here...
+	}
+	for _, tc := range cases {
+		if got := f.Included(tc.id, tc.name); got != tc.want {
+			t.Errorf("Included(%q, %q) = %v, want %v", tc.id, tc.name, got, tc.want)
+		}
+	}
+	// ...but -exclude still wins over -include in the combined predicate.
+	combined := func(id, name string) bool {
+		return f.Excluded(id, name) || !f.Included(id, name)
+	}
+	if !combined("deepseek-v4.1-flash", "DeepSeek Flash") {
+		t.Error("exclude *flash* must drop the included flash model")
+	}
+	if combined("deepseek-v4-pro", "DeepSeek V4 Pro") {
+		t.Error("included non-excluded model must survive")
+	}
+}
+
 // TestExcludePeakBrackets guards the [peak] twin convention: brackets are
 // literal in patterns (unlike path.Match), so '*[peak]' selects twins only
 // while a family name hides both regimes.
