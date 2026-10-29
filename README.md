@@ -582,7 +582,8 @@ expect the specific numbers to drift; the patterns below are stable):
 Ideas under consideration — no promises, no timeline.
 
 - True per-model 5h/weekly spend (the API exposes only aggregate percentages;
-  `-window-estimate` is a uniform approximation)
+  `-window-estimate` is a uniform approximation; a local ledger of
+  `opencode.allowance` burns from probes/sessions could approximate it)
 - Peak/off-peak *scheduling advice* (when DeepSeek is cheapest)
 - Multi-provider comparison (`-provider any`)
 - Recoding in Rust with same functionalities
