@@ -603,7 +603,7 @@ benchmark feeds). Any output change must respect [TITLES.md](TITLES.md).
 
 ![Co-Designed with AI](https://img.shields.io/badge/Co--Designed%20with-AI-blueviolet?style=flat-square&logo=openai)
 
-This repository is developed by me, a human hobbyist in my personal time in close collaboration with various AI programming assistants. System architecture, logic design, and final reviews are handled by me, while code scaffolding, repetitive tasks, and standard styling are co-piloted by AI. AI contributions are commited under their model name, and can be quite verbose for tracability.
+This repository is developed by me, a human hobbyist in my personal time, acting as a project manager and tech lead of a team of various AI agents whose contributions are commited under their model name.
 
 ## History
 
