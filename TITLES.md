@@ -13,9 +13,9 @@ columns, in order, with their meaning. Scripts can rely on it.
 4. Values never contain TAB characters. In piped (non-tty) output, every data
    row has exactly one value per column, separated by single TABs; missing
    values are empty strings. Lines starting with `#` are comments or headers.
-5. The piped output of every view starts with the `#<viewname>` header row,
-   which repeats the column titles below — scripts can also read them
-   dynamically from there instead of hardcoding.
+5. The piped output of every view starts with the `#name` header row,
+   which repeats the column titles below — scripts can thus also read them
+   dynamically from there instead of hardcoding column names.
 
 ## View: main table (`opencodable`, `-main`)
 
