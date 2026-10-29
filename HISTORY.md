@@ -1,5 +1,29 @@
 # History
 
+- v0.1.11 2026-10-29 `-nohead`: omit the header row in every view (data
+  rows only; `-l` still prints, no-op in `-vertical`/`-json`).
+- v0.1.10 2026-10-29 Arena columns in the main view (and `-full`): `elo`
+  (daily third-party snapshot of the arena.ai text leaderboard: top-20, can
+  lag, walks back ≤31 days for the newest non-empty snapshot) and `btr`
+  (official Bradley–Terry rating on the Elo scale, text with style control,
+  fresh; overall rows lead so the fetch stops after 2–3 pages). Both
+  filterable via `-min-quality`; neither joins the composite quality, Pareto
+  or `-sort`. A dead feed blanks its column with a warning, never an error.
+- v0.1.9 2026-10-29 `-full` view: the main table joined with `-now`
+  (main columns first, then the affordability columns). Column titles are
+  now unique across views: main `reqs_mo` is renamed `r_quota` (pre-1.0).
+  Plus column selection in every model view: repeatable `-cols` (show only)
+  and `-excols` (show all but), validated against all views at once so one
+  global preset serves main, `-now` and `-full`; `name` is always shown.
+  Plus `-main` to name the default view explicitly; combining two views is
+  an error.
+- v0.1.8 2026-10-28 Row filters: `-exclude` (case-insensitive ID/name
+  patterns, `*`/`?` wildcards),
+  `-max-cost` (`cost_task` ceiling), `-min-speed` (effective tok/s),
+  `-min-quality` (`metric=value` floors over the quality columns, composite
+  when bare) and `-missing keep|drop` (default `keep`: no value means the
+  bound does not apply). Filters run before Pareto marking; `-now` honours
+  exclude/cost/speed and notes that quality needs AA data.
 - v0.1.7 2026-10-28 legends are opt-in: every view prints only its header row
   by default, and `-l` adds the `# `-prefixed column legend (terminal, piped,
   `-vertical`, `-now`, `-usage`, `-doctor`).

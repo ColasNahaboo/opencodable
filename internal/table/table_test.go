@@ -31,9 +31,9 @@ func TestMarkPareto(t *testing.T) {
 
 func TestSort(t *testing.T) {
 	rows := []Row{
-		{Name: "b", TokPerSec: 10, AAIntel: 20, CostTask: 0.5, ReqsMonth: 10},
-		{Name: "a", TokPerSec: 50, AAIntel: 10, CostTask: 0.1, ReqsMonth: 100},
-		{Name: "c", TokPerSec: 20, AAIntel: 30, CostTask: 1, ReqsMonth: 1},
+		{Name: "b", TokPerSec: 10, AAIntel: 20, CostTask: 0.5, RQuota: 10},
+		{Name: "a", TokPerSec: 50, AAIntel: 10, CostTask: 0.1, RQuota: 100},
+		{Name: "c", TokPerSec: 20, AAIntel: 30, CostTask: 1, RQuota: 1},
 	}
 	Sort(rows, "speed")
 	if rows[0].Name != "a" || rows[2].Name != "b" {
@@ -84,12 +84,12 @@ func TestWriteTSVMachineMode(t *testing.T) {
 		{Name: "m2"},
 	}
 	var b strings.Builder
-	if err := WriteTSV(&b, rows, false, false); err != nil {
+	if err := WriteTSV(&b, rows, nil, false, false, false); err != nil {
 		t.Fatal(err)
 	}
 	lines := strings.Split(strings.TrimRight(b.String(), "\n"), "\n")
-	nCol := len(headerCells())
-	headJoin := strings.Join(headerCells(), "\t")
+	nCol := len(HeaderCells())
+	headJoin := strings.Join(HeaderCells(), "\t")
 	var row1, row2 []string
 	for _, l := range lines {
 		switch {
@@ -113,7 +113,7 @@ func TestWriteTSVMachineMode(t *testing.T) {
 			}
 		}
 	}
-	srcIdx := slices.Index(headerCells(), "src")
+	srcIdx := slices.Index(HeaderCells(), "src")
 	if row1[srcIdx] != "aa:high" {
 		t.Errorf("source cell = %q, want aa:high", row1[srcIdx])
 	}
@@ -122,7 +122,7 @@ func TestWriteTSVMachineMode(t *testing.T) {
 			continue
 		}
 		if v != "" {
-			t.Errorf("m2 empty-model field %q = %q, want empty", headerCells()[i], v)
+			t.Errorf("m2 empty-model field %q = %q, want empty", HeaderCells()[i], v)
 		}
 	}
 }
@@ -133,7 +133,7 @@ func TestWriteVertical(t *testing.T) {
 		{Name: "m2", AACoding: 70},
 	}
 	var b strings.Builder
-	if err := WriteVertical(&b, rows, false); err != nil {
+	if err := WriteVertical(&b, rows, nil, false); err != nil {
 		t.Fatal(err)
 	}
 	out := b.String()
@@ -167,7 +167,7 @@ func TestJSONKeysMatchTitles(t *testing.T) {
 		t.Fatalf("want 1 record, got %d", len(recs))
 	}
 	// every TSV column title (sans #) must exist as a JSON key
-	for _, title := range headerCells() {
+	for _, title := range HeaderCells() {
 		key := strings.TrimPrefix(title, "#")
 		if _, ok := recs[0][key]; !ok {
 			t.Errorf("JSON missing key %q for column %q", key, title)
@@ -181,7 +181,7 @@ func TestJSONKeysMatchTitles(t *testing.T) {
 func TestWriteTSVTTYMode(t *testing.T) {
 	rows := []Row{{Name: "m1", PriceOut1M: 10}}
 	var b strings.Builder
-	if err := WriteTSV(&b, rows, true, false); err != nil {
+	if err := WriteTSV(&b, rows, nil, true, false, false); err != nil {
 		t.Fatal(err)
 	}
 	if strings.Contains(b.String(), "# ") {
@@ -202,7 +202,7 @@ func TestLegendOptIn(t *testing.T) {
 	rows := []Row{{Name: "m1", PriceOut1M: 10}}
 	for _, tty := range []bool{false, true} {
 		var b strings.Builder
-		if err := WriteTSV(&b, rows, tty, true); err != nil {
+		if err := WriteTSV(&b, rows, nil, tty, true, false); err != nil {
 			t.Fatal(err)
 		}
 		if !strings.Contains(b.String(), "# name        model display name") {
@@ -210,7 +210,7 @@ func TestLegendOptIn(t *testing.T) {
 		}
 	}
 	var v strings.Builder
-	if err := WriteVertical(&v, rows, true); err != nil {
+	if err := WriteVertical(&v, rows, nil, true); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(v.String(), "# name        model display name") {
@@ -220,12 +220,12 @@ func TestLegendOptIn(t *testing.T) {
 
 func TestQualFallsBackToCoding(t *testing.T) {
 	r := Row{AACoding: 70}
-	if qual(r) != 70 {
-		t.Errorf("qual fallback = %v", qual(r))
+	if Quality(r) != 70 {
+		t.Errorf("qual fallback = %v", Quality(r))
 	}
 	r2 := Row{AAIntel: 55, AACoding: 70}
-	if qual(r2) != 55 {
-		t.Errorf("qual prefer intel = %v", qual(r2))
+	if Quality(r2) != 55 {
+		t.Errorf("qual prefer intel = %v", Quality(r2))
 	}
 }
 
@@ -245,8 +245,8 @@ func TestSortDeterministicTies(t *testing.T) {
 
 func TestSortReqsUnlimitedFirst(t *testing.T) {
 	rows := []Row{
-		{ID: "paid", ReqsMonth: 10},
-		{ID: "free", Unlimited: true, ReqsMonth: 0},
+		{ID: "paid", RQuota: 10},
+		{ID: "free", Unlimited: true, RQuota: 0},
 	}
 	Sort(rows, "reqs")
 	if rows[0].ID != "free" {
@@ -292,7 +292,7 @@ func TestBuildContextAndPrivacyColumns(t *testing.T) {
 			Limit: modelsdev.Context{Context: 200_000},
 			Cost:  modelsdev.Cost{Input: 1, Output: 2},
 		},
-	}, nil, nil, nil, nil, "go", false)
+	}, nil, nil, nil, nil, nil, nil, "go", false)
 	if len(rows) != 2 {
 		t.Fatalf("got %d rows", len(rows))
 	}

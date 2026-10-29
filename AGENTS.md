@@ -58,6 +58,8 @@ internal/config/       opencodable.conf (key=value: API keys + option
   section to the current version and date.
 - Keep functions small and focused; idiomatic Go 1.26; no refactors outside
   the scope of a change.
+- **All CLI Options** must also be settable in the config file**.
+- **Boolean CLI options** can be unset by suffixing them by `=false`
 
 ## Data-source gotchas (learned the hard way)
 

@@ -112,10 +112,21 @@ Two kinds of keys, told apart by case:
 OPENCODE_API_KEY=your-key
 AA_API_KEY=your-key
 
-plan=go-plus        # default tier
-paid=yes            # always hide free models
-privacy=on          # always exclude training/unknown models
+# Option defaults; comments must be on their own line, not after a value.
+plan=go-plus
+paid=yes
+privacy=on
 probe-max-allowance=1
+
+# Filters (see "Filtering" below).
+exclude=grok*
+max-cost=0.02
+min-quality=aa_int=35,aa_code=70
+
+# Columns (see "Columns" below): global presets, refined per run. Both are
+# additive: the command line unions with these, then -excols subtracts.
+#cols=cost_task,p_tok_s,aa_int,swe_b
+#excols=ctx_k,out_k,src
 ```
 
 For a single run, `-config FILE` reads settings and option defaults from
@@ -157,6 +168,13 @@ opencodable -refresh                 # refetch everything, ignore the 24h cache
 opencodable -offline                 # cache only for catalog/benchmarks/probes
 opencodable -paid=false              # turn off a paid=yes from opencodable.conf
 opencodable -config ./ci.conf        # alternative config file (empty = no defaults)
+opencodable -exclude '*grok*'        # hide models by ID or display name
+opencodable -max-cost 0.01 -min-speed 60   # cheap and fast only
+opencodable -min-quality aa_int=40,swe_b=30  # quality floors (missing values kept)
+opencodable -missing drop            # ...or drop models with no value for a floor
+opencodable -full -sort usable       # static quality plus affordable requests, most usable first
+opencodable -cols name,cost_task,usable,limit  # only these columns (+name is automatic)
+opencodable -excols ctx_k,out_k,src  # all columns but these
 ```
 
 ### Options
@@ -165,6 +183,15 @@ Every flag is optional; the bare command needs none of them. Each one except
 `-config` can also be set as a default in `opencodable.conf` under its
 lowercase name (see [Configuration](#configuration)); the command line always
 wins.
+
+**Views** — pick at most one (combining two is an error):
+
+- `-main` — the default ranking table: static cost, speed and quality per
+  model. What you get with no view flag at all; the flag exists so scripts
+  and configs can name it explicitly.
+- `-usage`, `-now`, `-full` — allowance windows, affordable requests, and
+  both joined; see [Your allowance](#your-allowance) below.
+- `-doctor` — coverage audit; see [Diagnosis](#diagnosis) below.
 
 **Configuration override**
 
@@ -184,13 +211,14 @@ wins.
   public catalogs, e.g. `opencodable -provider openrouter`. Only
   `opencode-go` has allowance/plan data.
 - `-plan go|go-plus` — which subscription tier's per-model monthly limits to
-  use. Go Plus gives every paid model a larger limit, so `reqs_mo` and the
+  use. Go Plus gives every paid model a larger limit, so `r_quota` and the
   `-now` counts grow accordingly. Default `go`.
-- `-sort name|price|speed|quality|reqs` — column to rank rows by:
+- `-sort name|price|speed|quality|reqs|usable` — column to rank rows by:
   alphabetical, cheapest request first, fastest first, smartest first
-  (Artificial Analysis intelligence index), or most requests per month first.
-  Default `quality`. Example: `opencodable -sort price` to find the budget
-  option.
+  (Artificial Analysis intelligence index), largest monthly quota first
+  (`r_quota`), or most affordable requests first (`usable` ranks `-full`;
+  elsewhere it falls back to `name`). Default `quality`. Example:
+  `opencodable -sort price` to find the budget option.
 - `-pareto` — keep only the models that are not dominated: no other model is
   simultaneously cheaper, faster and better. What remains is the honest
   "best compromise" shortlist. Combine with `-paid` to ignore free models.
@@ -202,6 +230,55 @@ wins.
 - `-peak` — price DeepSeek models at their peak-hours rates instead of the
   off-peak ones, so cost columns reflect what you pay if you only code during
   business hours.
+
+**Filtering**
+
+- `-exclude <pattern>[,<pattern>…]` — hide models whose ID or display name
+  matches. Case-insensitive; a pattern without `*` or `?` matches anywhere, so
+  `-exclude grok` hides every Grok model while `-exclude 'kimi-*'` anchors the
+  prefix. `*` matches any run of characters (including the `/` in
+  provider-prefixed IDs). Excluded models are not probed, so the filter also
+  saves allowance.
+- `-max-cost <usd>` — hide models costing more than `<usd>` per coding-agent
+  request (`cost_task`). Free models cost 0 and always pass.
+- `-min-speed <tok/s>` — hide models slower than this. Uses the measured
+  `p_tok_s` when a trusted probe exists, otherwise AA `tok_s` — the same speed
+  `-sort speed` ranks by.
+- `-min-quality <metric>=<score>[,…]` — hide models below a score on one or
+  more metrics: `aa_int`, `aa_code`, `aa_math`, `swe_b`, `code_b`, `term_b`,
+  `if_b`, `aa_lcr`, `lb_agent`, `lb_code`, `elo`, `btr` (the column titles, see
+  [TITLES.md](TITLES.md)). Listed metrics are ANDed. A bare number means the
+  composite `-sort quality` uses: `aa_int`, falling back to `aa_code`. Both
+  Arena scales run ~1400–1550 like Elo: `btr` is the fresh official rating,
+  `elo` the third-party snapshot (top-20, can lag).
+- `-missing keep|drop` — default `keep`: a model with no value for a filtered
+  metric is not judged by that bound (its `-` stays visible). `drop` is the
+  fail-closed mode that removes such rows. Applies to speed and quality;
+  `cost_task` is always known.
+
+Filters run before `-pareto`, so a hidden model never dominates a visible one.
+`-now` honours `-exclude`, `-max-cost` and `-min-speed` (against its own
+`p_tok_s`); quality bounds are ignored there because that view loads no AA
+scores, with a note on stderr. `-full` honours every filter, including
+quality, with speed measured the main-table way (probe when trusted, else AA).
+
+**Columns**
+
+- `-cols <title>[,<title>…]` — show only these columns in the main, `-now`
+  and `-full` views. Repeatable; values union.
+- `-excols <title>[,<title>…]` — show all columns except these. Repeatable;
+  values union, then subtract from the `-cols` set (or from all columns when
+  `-cols` is unset). Example: `-cols aa_int,aa_code -excols aa_code` hides
+  `aa_code`.
+- `name` is always shown, even under `-excols name`. Titles are
+  case-insensitive and use the [TITLES.md](TITLES.md) vocabulary. A name
+  unknown in **every** view is an error (`-cols: unknown column "foo"`); a
+  name known only in another view is silently ignored, so one global
+  `cols=`/`excols=` preset in `opencodable.conf` works for every view and each
+  run refines it. Column order always follows the view, never the flag order.
+  The `-l` legend and `-json` output follow the selection (JSON keeps its
+  view extras: `id`, `unlimited`, `known`, …). `-usage` and `-doctor` ignore
+  the selection.
 
 **Measuring live speed (costs a few cents)**
 
@@ -227,11 +304,19 @@ wins.
   still fit in each window given your real spend this period (fetched from
   the console usage API automatically). See
   [Choosing a model right now](#choosing-a-model-right-now--now) below.
-- `-window-estimate` — with `-now`, scale each model's 5h/weekly caps by the
+- `-full` — the main table joined with `-now`: every static cost/speed/
+  quality column first, then the affordability columns (`burn_req`,
+  `spent_mo`, `reqs_5h`, `reqs_wk`, `reqs_mo`, `usable`, `limit`). No title
+  collides: the theoretical monthly count is `r_quota`, the remaining count
+  is `reqs_mo`.
+  Live like `-now` (needs a key; `-offline` assumes $0 spent), filters like
+  the main table (quality applies), sorts with `-sort` plus `usable`.
+  Thirty-one columns wide — pair it with `-cols` (see "Columns" above).
+- `-window-estimate` — with `-now`/`-full`, scale each model's 5h/weekly caps by the
   account-wide remaining percentages from `-usage`, instead of assuming fresh
   windows. An explicit approximation (the API has no per-model window
   breakdown), clearly labelled on stderr.
-- `-spent <file>` — offline fallback for `-now`: subtract per-model spend
+- `-spent <file>` — offline fallback for `-now`/`-full`: subtract per-model spend
   read from a pasted console "usage by model" table instead of calling the
   API. Note: a pasted file carries no request counts, so measured `burn_req`
   never kicks in and the official estimate is used.
@@ -240,12 +325,15 @@ wins.
 
 - `-vertical` — one model per block of `field: value` lines instead of a wide
   table; much easier for screen readers and for `grep`. Applies to the main
-  table and `-now`.
+  table, `-now` and `-full`.
 - `-json` — machine-readable output for every view, keys equal to the column
   titles (see [TITLES.md](TITLES.md)). Example:
   `opencodable -json | jq '.[] | select(.pareto)'`.
 - `-l` — print the `#`-prefixed legend block that explains each column.
   Off by default in every view; works in terminal, piped and `-vertical` modes.
+- `-nohead` — omit the header row (`#name…`), data rows only, in every view.
+  Handy for `tail`/`wc`/append pipelines when the column order is already
+  known. The `-l` legend still prints; no-op in `-vertical` and `-json`.
 - Output also adapts automatically: on a terminal you get a padded table;
   piped or redirected, strict TAB-separated values. Neither prints a legend
   unless `-l` is given — see [Output adapts to stdout](#output-adapts-to-stdout).
@@ -325,8 +413,8 @@ opencodable | grep -v '^#' | awk -F'\t' '{print $1, $6}'
 
 `-vertical` renders one model per block of `field: value` lines with blank
 lines between records and empty fields skipped — much easier to read with a
-screen reader than a wide table, and applies to both the model table and
-`-now`. The field names are the legend, so no prose block is printed unless
+screen reader than a wide table, and applies to the model table, `-now` and
+`-full`. The field names are the legend, so no prose block is printed unless
 `-l` is given.
 
 ```sh
@@ -335,7 +423,7 @@ name: Kimi K3.1 Pro
 cost_tok: $10
 cost_task: $0.0204
 allowance: $15
-reqs_mo: 735.3
+r_quota: 735.3
 p_tok_s: 78.7
 aa_int: 55.1
 pareto: yes
@@ -352,7 +440,7 @@ removals or reorders bump the major version.
 Main view (`opencodable -pareto -paid -privacy`, columns excerpt — 3 first lines):
 
 ```sh
-#name           cost_tok  cost_task  allowance  reqs_mo   p_tok_s  aa_int  swe_b  pareto
+#name           cost_tok  cost_task  allowance  r_quota   p_tok_s  aa_int  swe_b  pareto
 Kimi K3.1 Pro   $10       $0.0204    $15        735.3     78.7     55.1    -      yes
 Gemini 4 Argon  $10       $0.019     $30        1578.9    85.8     52.6    -      yes
 Grok 4.7        $6        $0.01775   $15        845.1     172.3    46.4    -      yes
@@ -405,7 +493,7 @@ free models). `-now` also carries `known`, `spent_known` and
 | `cost_tok` | retail USD per 1M output tokens |
 | `cost_task` | estimated USD per coding-agent request (OpenCode's official token profile, base tier) |
 | `allowance` | monthly usage budget of this model in your plan; `unlimited` for free models |
-| `reqs_mo` | allowance ÷ cost_task ≈ requests per month |
+| `r_quota` | allowance ÷ cost_task ≈ requests per month (quota) |
 | `tok_s`, `ttft_s` | Artificial Analysis reported output speed / time to first token |
 | `p_tok_s`, `p_ttft_s` | **measured on your subscription** via `-probe` |
 | `aa_int`, `aa_code`, `aa_math` | Artificial Analysis composite indexes |
@@ -416,6 +504,8 @@ free models). `-now` also carries `known`, `spent_known` and
 | `privacy` | `safe`, `trains`, or `unknown` (no plan-snapshot verdict) |
 | `ctx_k`, `out_k` | context window / maximum output in thousands of tokens (models.dev) |
 | `lb_agent`, `lb_code` | LiveBench 2.0 Long Agentic / Coding scores (0–100, single run) |
+| `elo` | Arena Elo, daily snapshot of the arena.ai text leaderboard (third-party mirror; top-20, can lag) |
+| `btr` | Arena Bradley–Terry rating on the Elo scale, text with style control, overall (official mirror, fresh) |
 
 Missing data prints as `-` (terminal) or empty (piped) — never a wrong score.
 
@@ -428,6 +518,8 @@ Missing data prints as `-` (terminal) or empty (piped) — never a wrong score.
 | [Artificial Analysis](https://artificialanalysis.ai) | benchmark indexes, reported speed | free key |
 | [LiveBench 2.0](https://livebench.ai) | long-horizon agentic and coding scores (pinned release) | none |
 | [SWE-bench Verified](https://www.swebench.com/) leaderboard JSON | agentic repo-fixing % resolved | none |
+| Arena text leaderboard snapshot ([mirror](https://github.com/oolong-tea-2026/arena-ai-leaderboards), MIT) | Elo per model (top 20, daily) | none |
+| [Arena leaderboard dataset](https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset) (CC-BY-4.0) | Bradley–Terry rating, text with style control | none |
 | [Console usage API](https://console.opencode.ai/api/usage) (`/usage/models`) | per-model tokens and spend for the current period; Go allowance spend recomputed from tokens | same Go key |
 | Your subscription endpoint (probe) | real tok/s, TTFT, allowance burn | `OPENCODE_API_KEY` |
 
@@ -440,7 +532,7 @@ expect the specific numbers to drift; the patterns below are stable):
 
 - **Allowance ≠ value.** High-quality flagship models often carry the thinnest
   monthly allowances (e.g. $15), while mid-tier models buy orders of magnitude
-  more requests — `reqs_mo` flips the usual leaderboard ordering.
+  more requests — `r_quota` flips the usual leaderboard ordering.
 - **Your routes can beat public numbers.** Subscription endpoints frequently
   measure *faster* than aggregator averages (reserved capacity), but routing
   varies hour to hour and per model — sometimes 2-3×. Site-reported speeds are
@@ -481,11 +573,13 @@ expect the specific numbers to drift; the patterns below are stable):
 - **Known artifact.** AA's `ttft_s` for reasoning models includes thinking time
   (e.g. Claude Haiku 5.5 ~247 s median) — treat it as time to first *answer* token.
 - **Allowances are the comparison basis.** Your subscription bills per-model
-  allowances, not retail; that is why `reqs_mo` matters more than `cost_tok`
+  allowances, not retail; that is why `r_quota` matters more than `cost_tok`
   for choosing a daily driver, and why Pareto flags are computed after the
   `-paid`/`-privacy` filters.
 
-## Roadmap
+## Possible enhancements
+
+Ideas under consideration — no promises, no timeline.
 
 - True per-model 5h/weekly spend (the API exposes only aggregate percentages;
   `-window-estimate` is a uniform approximation)
@@ -513,5 +607,5 @@ This repository is developed by me, a human hobbyist in my personal time in clos
 
 ## History
 
-Version v0.1.7 2026-10-28.
+Version v0.1.11 2026-10-29.
 See [HISTORY.md](HISTORY.md).

@@ -6,6 +6,7 @@ import (
 
 	"github.com/ColasNahaboo/opencodable/internal/cost"
 	"github.com/ColasNahaboo/opencodable/internal/modelsdev"
+	"github.com/ColasNahaboo/opencodable/internal/table"
 )
 
 func testModel(id, name string, in, out, cached float64) modelsdev.Model {
@@ -140,5 +141,45 @@ func TestBuildNowRowsFilters(t *testing.T) {
 	}
 	if rows := buildNowRows([]modelsdev.Model{free}, nil, false, "go", false, true, false, 0, 0, nil); len(rows) != 0 {
 		t.Errorf("-paid kept %d free rows", len(rows))
+	}
+}
+
+func TestFilterNowRows(t *testing.T) {
+	rows := []nowRow{
+		{id: "grok-4.1", name: "Grok 4.1", costTask: 0.001, probeTokS: 100},
+		{id: "cheap-slow", name: "Cheap Slow", costTask: 0.001, probeTokS: 10},
+		{id: "pricey-fast", name: "Pricey Fast", costTask: 0.02, probeTokS: 100},
+		{id: "unmeasured", name: "Unmeasured", costTask: 0.001},
+	}
+	maxCost, minSpeed := 0.01, 60.0
+	flt := table.Filter{
+		Exclude:  []string{"grok"},
+		MaxCost:  &maxCost,
+		MinSpeed: &minSpeed,
+	}
+	got := filterNowRows(rows, flt)
+	ids := map[string]bool{}
+	for _, r := range got {
+		ids[r.id] = true
+	}
+	if ids["grok-4.1"] {
+		t.Error("-exclude kept Grok")
+	}
+	if ids["pricey-fast"] {
+		t.Error("-max-cost kept a model over the bound")
+	}
+	if ids["cheap-slow"] {
+		t.Error("-min-speed kept a slow model")
+	}
+	if !ids["unmeasured"] {
+		t.Error("default -missing keep must keep unmeasured speed")
+	}
+
+	flt.DropMissing = true
+	got = filterNowRows(rows, flt)
+	for _, r := range got {
+		if r.id == "unmeasured" {
+			t.Error("-missing drop kept an unmeasured model")
+		}
 	}
 }

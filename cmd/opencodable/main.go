@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"math"
 	"net/http"
 	"os"
 	"slices"
@@ -29,7 +30,27 @@ import (
 )
 
 // version is displayed at the bottom of the -h help text.
-var version = "v0.1.7"
+var version = "v0.1.11"
+
+// colList accumulates comma-separated -cols/-excols values. The flag may be
+// repeated and unions with the config-file default; output order always
+// follows the view, never the flag order.
+type colList []string
+
+func (c *colList) String() string { return strings.Join(*c, ",") }
+func (c *colList) Set(s string) error {
+	*c = append(*c, s)
+	return nil
+}
+
+// split flattens every occurrence into trimmed, non-blank column names.
+func (c colList) split() []string {
+	var out []string
+	for _, s := range c {
+		out = append(out, splitList(s)...)
+	}
+	return out
+}
 
 // Parsed options; package-level so applyConfig can override them from
 // opencodable.conf. Registered in main.
@@ -41,6 +62,13 @@ var (
 	pareto     *bool
 	paid       *bool
 	privacy    *bool
+	exclude    *string
+	maxCost    *float64
+	minSpeed   *float64
+	minQuality *string
+	missing    *string
+	colsFlag   colList
+	excolsFlag colList
 	peak       *bool
 	refresh    *bool
 	offline    *bool
@@ -49,6 +77,9 @@ var (
 	probeMax   *float64
 	showUse    *bool
 	now        *bool
+	fullView   *bool
+	mainView   *bool
+	nohead     *bool
 	winEst     *bool
 	doctor     *bool
 	spent      *string
@@ -73,10 +104,17 @@ func main() {
 	configPath = flag.String("config", "", "read settings and option defaults from this file instead of the per-user opencodable.conf")
 	provider = flag.String("provider", "opencode-go", "models.dev provider to rank")
 	plan = flag.String("plan", "go", "subscription plan: go|go-plus (allowances)")
-	sortKey = flag.String("sort", "quality", "sort: name|price|speed|quality|reqs")
+	sortKey = flag.String("sort", "quality", "sort: name|price|speed|quality|reqs|usable (usable ranks -full by affordable requests)")
 	pareto = flag.Bool("pareto", false, "only Pareto-optimal rows")
 	paid = flag.Bool("paid", false, "hide free models (cost_task = 0)")
 	privacy = flag.Bool("privacy", false, "hide models that train on request data or have unknown privacy status")
+	exclude = flag.String("exclude", "", "hide models whose ID or name matches any comma-separated pattern ('*' and '?' are wildcards)")
+	maxCost = flag.Float64("max-cost", 0, "hide models whose cost per task (cost_task, USD) exceeds this value")
+	minSpeed = flag.Float64("min-speed", 0, "hide models slower than this many output tokens/s (measured probe when available, else AA)")
+	minQuality = flag.String("min-quality", "", "hide models below 'metric=value' pairs (aa_int, aa_code, aa_math, swe_b, code_b, term_b, if_b, aa_lcr, lb_agent, lb_code, elo, btr); a bare value means composite quality")
+	missing = flag.String("missing", "keep", "numeric filters: keep or drop models with no value for the metric (keep|drop)")
+	flag.Var(&colsFlag, "cols", "show only these columns (comma-separated titles, repeatable; name is always shown)")
+	flag.Var(&excolsFlag, "excols", "hide these columns (comma-separated titles, repeatable; name is always shown)")
 	peak = flag.Bool("peak", false, "use peak-hours prices (DeepSeek)")
 	refresh = flag.Bool("refresh", false, "bypass the 24h cache and refetch")
 	offline = flag.Bool("offline", false, "cache only for catalog/benchmarks/probes; -usage still needs network")
@@ -85,15 +123,20 @@ func main() {
 	probeMax = flag.Float64("probe-max-allowance", 0, "stop -probe after this many allowance dollars (0 = no limit)")
 	showUse = flag.Bool("usage", false, "show remaining Go allowance for the 5h/week/month windows")
 	now = flag.Bool("now", false, "per model: requests affordable in each Go window, using the model's own monthly limit")
-	winEst = flag.Bool("window-estimate", false, "scale -now 5h/week caps by the account-wide usage percentages (estimate)")
+	fullView = flag.Bool("full", false, "join the main table and -now: static cost/speed/quality plus affordable requests per model")
+	mainView = flag.Bool("main", false, "show the default ranking table (static cost/speed/quality); the default when no view is given")
+	nohead = flag.Bool("nohead", false, "omit the header row (data rows only); no-op in -vertical/-json, which have no header")
+	winEst = flag.Bool("window-estimate", false, "scale -now/-full 5h/week caps by the account-wide usage percentages (estimate)")
 	doctor = flag.Bool("doctor", false, "audit plan/AA/SWE/probe coverage and exit")
 	spent = flag.String("spent", "", "path to a pasted console 'usage by model' TSV; offline fallback for per-model spend")
 	vertical = flag.Bool("vertical", false, "one model per block of 'field: value' lines (screen-reader friendly); applies to the table and -now")
 	jsonOut = flag.Bool("json", false, "JSON output instead of TSV")
 	showLegend = flag.Bool("l", false, "print the legend block explaining each column")
 	config.AddOptions("provider", "plan", "sort", "pareto", "paid", "privacy",
+		"exclude", "max-cost", "min-speed", "min-quality", "missing",
+		"cols", "excols",
 		"peak", "refresh", "offline", "probe", "probe-model", "probe-max-allowance",
-		"usage", "now", "window-estimate", "doctor", "spent", "vertical", "json", "l")
+		"usage", "now", "full", "main", "window-estimate", "doctor", "spent", "vertical", "json", "l", "nohead")
 	flag.Parse()
 	// The config path itself cannot come from the config file: it is needed
 	// to read it. Hence it is not registered with config.AddOptions.
@@ -103,6 +146,20 @@ func main() {
 	}
 	if err := applyConfig(flag.CommandLine); err != nil {
 		fmt.Fprintln(os.Stderr, "opencodable.conf:", err)
+		os.Exit(2)
+	}
+	flt, ferr := buildFilter(flag.CommandLine)
+	if ferr != nil {
+		fmt.Fprintln(os.Stderr, ferr)
+		os.Exit(2)
+	}
+	csel, cerr := buildColumns()
+	if cerr != nil {
+		fmt.Fprintln(os.Stderr, cerr)
+		os.Exit(2)
+	}
+	if vs := selectedViews(); len(vs) > 1 {
+		fmt.Fprintf(os.Stderr, "only one view at a time: %s\n", strings.Join(vs, ", "))
 		os.Exit(2)
 	}
 
@@ -124,7 +181,7 @@ func main() {
 			fmt.Fprintln(os.Stderr, "-usage reads the live allowance endpoint; remove -offline")
 			os.Exit(2)
 		}
-		if err := runUsage(*jsonOut, *showLegend, isTTY(os.Stdout)); err != nil {
+		if err := runUsage(*jsonOut, *showLegend, isTTY(os.Stdout), *nohead); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
@@ -136,15 +193,29 @@ func main() {
 			fmt.Fprintln(os.Stderr, "-now only supports -provider opencode-go")
 			os.Exit(2)
 		}
-		var spentByModel map[string]float64
-		if *spent != "" {
-			var err error
-			if spentByModel, err = usage.ParseSpentFile(*spent); err != nil {
-				fmt.Fprintln(os.Stderr, "spent file:", err)
-				os.Exit(1)
-			}
+		spentByModel, err := loadSpentFile(*spent)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "spent file:", err)
+			os.Exit(1)
 		}
-		if err := runNow(*plan, spentByModel, *spent != "", *paid, *privacy, *peak, *winEst, *vertical, *jsonOut, *showLegend, *refresh, *offline, isTTY(os.Stdout)); err != nil {
+		if err := runNow(*plan, spentByModel, *spent != "", *paid, *privacy, flt, *peak, *winEst, *vertical, *jsonOut, *showLegend, *refresh, *offline, isTTY(os.Stdout), csel, *nohead); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
+
+	if *fullView {
+		if *provider != "opencode-go" {
+			fmt.Fprintln(os.Stderr, "-full only supports -provider opencode-go")
+			os.Exit(2)
+		}
+		spentByModel, err := loadSpentFile(*spent)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "spent file:", err)
+			os.Exit(1)
+		}
+		if err := runFull(*plan, spentByModel, *spent != "", *paid, *privacy, flt, *peak, *winEst, *vertical, *jsonOut, *showLegend, *refresh, *offline, isTTY(os.Stdout), csel, *nohead); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
@@ -156,7 +227,7 @@ func main() {
 			fmt.Fprintln(os.Stderr, "-doctor only supports -provider opencode-go")
 			os.Exit(2)
 		}
-		if err := runDoctor(*refresh, *offline, *jsonOut, *showLegend); err != nil {
+		if err := runDoctor(*refresh, *offline, *jsonOut, *showLegend, *nohead); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
@@ -168,64 +239,18 @@ func main() {
 		fmt.Fprintln(os.Stderr, "models.dev:", err)
 		os.Exit(1)
 	}
-	aas, aerr := aa.Fetch(*refresh, *offline)
-	if aerr != nil {
-		fmt.Fprintln(os.Stderr, "warning: benchmark data unavailable:", aerr)
-		aas = nil
-	}
-	swe, serr := bench.SWEBench(*refresh, *offline)
-	if serr != nil {
-		fmt.Fprintln(os.Stderr, "warning: SWE-bench unavailable:", serr)
-		swe = nil
-	}
-	lb, lerr := bench.LiveBench(*refresh, *offline)
-	if lerr != nil {
-		fmt.Fprintln(os.Stderr, "warning: LiveBench unavailable:", lerr)
-		lb = nil
+	aas, swe, lb, elo, btr := fetchBenchmarks(*refresh, *offline)
+
+	probes, perr := probeModels(models, flt, *probeAll, *refresh, *offline, *privacy, *probeMax)
+	if perr != nil {
+		fmt.Fprintln(os.Stderr, "probe:", perr)
+		os.Exit(1)
 	}
 
-	probes := map[string]probe.Result{}
-	for _, m := range models {
-		if r, ok := cachedProbe(m.ID); ok {
-			probes[m.ID] = r
-		}
-	}
-	if *probeAll {
-		key := ""
-		if !*offline {
-			var kerr error
-			if key, kerr = probe.Key(); kerr != nil {
-				fmt.Fprintln(os.Stderr, "probe:", kerr)
-				os.Exit(1)
-			}
-		}
-		burned := 0.0
-		for _, m := range models {
-			if *privacy && goplan.ExcludedByPrivacy(m.ID) {
-				continue
-			}
-			r, fresh := loadOrProbe(m.ID, key, *refresh, *offline)
-			probes[m.ID] = r
-			suspect := ""
-			if r.Suspect {
-				suspect = " suspect"
-			}
-			fmt.Fprintf(os.Stderr, "probe %-32s tok/s=%-7.1f ttft=%-6.2fs allowance=$%.6f%s %s\n",
-				m.ID, r.TokPerSec, r.TTFTSeconds, r.Allowance, suspect, r.Error)
-			if fresh {
-				burned += r.Allowance
-			}
-			if *probeMax > 0 && burned >= *probeMax {
-				fmt.Fprintf(os.Stderr, "probe: stopping after $%.6f allowance burned (limit $%.6f)\n", burned, *probeMax)
-				break
-			}
-		}
-		if !*offline {
-			fmt.Fprintf(os.Stderr, "probe total allowance burned: $%.6f\n", burned)
-		}
-	}
-
-	rows := table.Build(models, aas, probes, swe, lb, *plan, *peak)
+	rows := table.Build(models, aas, probes, swe, lb, elo, btr, *plan, *peak)
+	rows = slices.DeleteFunc(rows, func(r table.Row) bool {
+		return flt.Excluded(r.ID, r.Name) || !flt.Keep(r)
+	})
 	if *paid {
 		rows = slices.DeleteFunc(rows, func(r table.Row) bool { return r.CostTask == 0 })
 	}
@@ -235,34 +260,39 @@ func main() {
 		})
 	}
 	// Pareto is relative to the set the user actually sees: a model hidden
-	// by -paid/-privacy must not dominate a visible one.
+	// by any filter must not dominate a visible one.
 	table.MarkPareto(rows)
 	table.Sort(rows, *sortKey)
 	if *pareto {
 		rows = slices.DeleteFunc(rows, func(r table.Row) bool { return !r.Pareto })
 	}
 	if len(rows) == 0 {
-		fmt.Fprintln(os.Stderr, "no models matched; check -provider, -plan and cache state")
+		fmt.Fprintln(os.Stderr, "no models matched; check -provider, -plan, filters and cache state")
 		os.Exit(1)
+	}
+	sel, serr := table.SelectTitles(table.HeaderCells(), csel.includes, csel.excludes)
+	if serr != nil {
+		fmt.Fprintln(os.Stderr, serr)
+		os.Exit(2)
 	}
 	if *vertical && *jsonOut {
 		fmt.Fprintln(os.Stderr, "warning: -vertical is ignored with -json")
 	}
 	if *jsonOut {
-		if err := table.WriteJSON(os.Stdout, rows); err != nil {
+		if err := table.WriteJSON(os.Stdout, rows, sel); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
 		return
 	}
 	if *vertical {
-		if err := table.WriteVertical(os.Stdout, rows, *showLegend); err != nil {
+		if err := table.WriteVertical(os.Stdout, rows, sel, *showLegend); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
 		return
 	}
-	if err := table.WriteTSV(os.Stdout, rows, isTTY(os.Stdout), *showLegend); err != nil {
+	if err := table.WriteTSV(os.Stdout, rows, sel, isTTY(os.Stdout), *showLegend, *nohead); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
@@ -279,12 +309,13 @@ func applyConfig(fs *flag.FlagSet) error {
 	str := map[string]*string{
 		"provider": provider, "plan": plan, "sort": sortKey,
 		"probe-model": probeOne, "spent": spent,
+		"exclude": exclude, "min-quality": minQuality, "missing": missing,
 	}
 	boolean := map[string]*bool{
 		"pareto": pareto, "paid": paid, "privacy": privacy, "peak": peak,
 		"refresh": refresh, "offline": offline, "probe": probeAll, "usage": showUse,
-		"now": now, "window-estimate": winEst, "doctor": doctor,
-		"vertical": vertical, "json": jsonOut, "l": showLegend,
+		"now": now, "full": fullView, "main": mainView, "window-estimate": winEst, "doctor": doctor,
+		"vertical": vertical, "json": jsonOut, "l": showLegend, "nohead": nohead,
 	}
 	for name, p := range str {
 		if v, ok := config.Option(name); ok && !set[name] {
@@ -302,14 +333,161 @@ func applyConfig(fs *flag.FlagSet) error {
 		}
 		*p = b
 	}
-	if v, ok := config.Option("probe-max-allowance"); ok && !set["probe-max-allowance"] {
-		f, err := strconv.ParseFloat(v, 64)
-		if err != nil {
-			return fmt.Errorf("option probe-max-allowance: %w", err)
+	floats := map[string]*float64{
+		"probe-max-allowance": probeMax,
+		"max-cost":            maxCost,
+		"min-speed":           minSpeed,
+	}
+	for name, p := range floats {
+		if v, ok := config.Option(name); ok && !set[name] {
+			f, err := strconv.ParseFloat(v, 64)
+			if err != nil {
+				return fmt.Errorf("option %s: %w", name, err)
+			}
+			*p = f
 		}
-		*probeMax = f
+	}
+	// Column sets are additive: the command line unions with the config
+	// file, so a global preset can be refined per run with -excols.
+	lists := map[string]*colList{"cols": &colsFlag, "excols": &excolsFlag}
+	for name, p := range lists {
+		v, ok := config.Option(name)
+		if !ok {
+			continue
+		}
+		if set[name] {
+			*p = append(splitList(v), *p...)
+		} else {
+			*p = splitList(v)
+		}
 	}
 	return nil
+}
+
+// colSel is the resolved -cols/-excols selection: raw column names,
+// matched case-insensitively when projected onto a view.
+type colSel struct {
+	includes []string
+	excludes []string
+}
+
+// buildColumns validates the column selection against every model view.
+// Unknown names fail here, so typos surface even for views that ignore the
+// selection (-usage, -doctor, -probe-model).
+func buildColumns() (colSel, error) {
+	s := colSel{includes: colsFlag.split(), excludes: excolsFlag.split()}
+	for _, n := range s.includes {
+		if !table.KnownColumn(n) {
+			return s, fmt.Errorf("-cols: unknown column %q", n)
+		}
+	}
+	for _, n := range s.excludes {
+		if !table.KnownColumn(n) {
+			return s, fmt.Errorf("-excols: unknown column %q", n)
+		}
+	}
+	return s, nil
+}
+
+// buildFilter validates the filter options (command line or config) and
+// returns the row selection. -missing defaults to keep: a row without a value
+// for a filtered metric is not pruned by that bound.
+func buildFilter(fs *flag.FlagSet) (table.Filter, error) {
+	f := table.Filter{Exclude: splitList(*exclude)}
+	if optionSet(fs, "max-cost") {
+		f.MaxCost = maxCost
+	}
+	if optionSet(fs, "min-speed") {
+		f.MinSpeed = minSpeed
+	}
+	metrics, err := parseMinQuality(*minQuality)
+	if err != nil {
+		return f, err
+	}
+	f.MinQuality = metrics
+	switch strings.ToLower(strings.TrimSpace(*missing)) {
+	case "", "keep":
+		f.DropMissing = false
+	case "drop":
+		f.DropMissing = true
+	default:
+		return f, fmt.Errorf("-missing %q: want keep or drop", *missing)
+	}
+	return f, nil
+}
+
+// selectedViews names the requested output views (-usage, -now, -full,
+// -main, -doctor). At most one may be set; with none the main table runs.
+func selectedViews() []string {
+	var out []string
+	if *showUse {
+		out = append(out, "-usage")
+	}
+	if *now {
+		out = append(out, "-now")
+	}
+	if *fullView {
+		out = append(out, "-full")
+	}
+	if *mainView {
+		out = append(out, "-main")
+	}
+	if *doctor {
+		out = append(out, "-doctor")
+	}
+	return out
+}
+
+// optionSet reports whether name was set on the command line or in the config
+// file, so an explicit 0 is distinguishable from an unset bound.
+func optionSet(fs *flag.FlagSet, name string) bool {
+	found := false
+	fs.Visit(func(f *flag.Flag) {
+		if f.Name == name {
+			found = true
+		}
+	})
+	if found {
+		return true
+	}
+	_, ok := config.Option(name)
+	return ok
+}
+
+// splitList splits a comma-separated option value, dropping blanks.
+func splitList(s string) []string {
+	var out []string
+	for _, part := range strings.Split(s, ",") {
+		if part = strings.TrimSpace(part); part != "" {
+			out = append(out, part)
+		}
+	}
+	return out
+}
+
+// parseMinQuality parses "aa_int=40,aa_code=35": one or more metric=value
+// pairs, or a bare value for the composite quality used by -sort quality.
+func parseMinQuality(s string) (map[string]float64, error) {
+	if strings.TrimSpace(s) == "" {
+		return nil, nil
+	}
+	out := map[string]float64{}
+	for _, part := range splitList(s) {
+		metric, value := "quality", part
+		if k, v, ok := strings.Cut(part, "="); ok {
+			metric, value = strings.ToLower(strings.TrimSpace(k)), strings.TrimSpace(v)
+		}
+		if !table.IsQualityMetric(metric) {
+			return nil, fmt.Errorf("-min-quality: unknown metric %q (want %s, or quality)",
+				metric, strings.Join(table.QualityMetricNames, ", "))
+		}
+		f, err := strconv.ParseFloat(value, 64)
+		if err != nil || math.IsNaN(f) || math.IsInf(f, 0) {
+			return nil, fmt.Errorf("-min-quality: %s=%q: want a score", metric, value)
+		}
+		out[metric] = f
+	}
+	return out, nil
 }
 
 // isTTY reports whether f is an interactive terminal.
@@ -396,9 +574,185 @@ func mustJSON(v any) []byte {
 	return b
 }
 
+// fetchBenchmarks loads the AA scores, SWE-bench, LiveBench, Arena Elo and
+// Bradley-Terry snapshots, warning on stderr and continuing without the
+// missing source.
+func fetchBenchmarks(refresh, offline bool) (aas []aa.Model, swe map[string]float64, lb bench.LB, elo bench.Elo, btr bench.BTR) {
+	var aerr error
+	if aas, aerr = aa.Fetch(refresh, offline); aerr != nil {
+		fmt.Fprintln(os.Stderr, "warning: benchmark data unavailable:", aerr)
+		aas = nil
+	}
+	var serr error
+	if swe, serr = bench.SWEBench(refresh, offline); serr != nil {
+		fmt.Fprintln(os.Stderr, "warning: SWE-bench unavailable:", serr)
+		swe = nil
+	}
+	var lerr error
+	if lb, lerr = bench.LiveBench(refresh, offline); lerr != nil {
+		fmt.Fprintln(os.Stderr, "warning: LiveBench unavailable:", lerr)
+		lb = nil
+	}
+	var eerr error
+	if elo, eerr = bench.FetchElo(refresh, offline); eerr != nil {
+		fmt.Fprintln(os.Stderr, "warning: Arena Elo unavailable:", eerr)
+		elo = nil
+	}
+	var berr error
+	if btr, berr = bench.FetchBTRating(refresh, offline); berr != nil {
+		fmt.Fprintln(os.Stderr, "warning: Arena BTR unavailable:", berr)
+		btr = nil
+	}
+	return aas, swe, lb, elo, btr
+}
+
+// probeModels returns cached probe measurements, running fresh paid probes
+// when asked. Models hidden by -privacy or -exclude are skipped: hidden rows
+// are not worth paid probe requests.
+func probeModels(models []modelsdev.Model, flt table.Filter, doProbe, doRefresh, doOffline, doPrivacy bool, probeMax float64) (map[string]probe.Result, error) {
+	probes := map[string]probe.Result{}
+	for _, m := range models {
+		if r, ok := cachedProbe(m.ID); ok {
+			probes[m.ID] = r
+		}
+	}
+	if !doProbe {
+		return probes, nil
+	}
+	key := ""
+	if !doOffline {
+		var kerr error
+		if key, kerr = probe.Key(); kerr != nil {
+			return nil, kerr
+		}
+	}
+	burned := 0.0
+	for _, m := range models {
+		if doPrivacy && goplan.ExcludedByPrivacy(m.ID) {
+			continue
+		}
+		if flt.Excluded(m.ID, m.Name) {
+			continue
+		}
+		r, fresh := loadOrProbe(m.ID, key, doRefresh, doOffline)
+		probes[m.ID] = r
+		suspect := ""
+		if r.Suspect {
+			suspect = " suspect"
+		}
+		fmt.Fprintf(os.Stderr, "probe %-32s tok/s=%-7.1f ttft=%-6.2fs allowance=$%.6f%s %s\n",
+			m.ID, r.TokPerSec, r.TTFTSeconds, r.Allowance, suspect, r.Error)
+		if fresh {
+			burned += r.Allowance
+		}
+		if probeMax > 0 && burned >= probeMax {
+			fmt.Fprintf(os.Stderr, "probe: stopping after $%.6f allowance burned (limit $%.6f)\n", burned, probeMax)
+			break
+		}
+	}
+	if !doOffline {
+		fmt.Fprintf(os.Stderr, "probe total allowance burned: $%.6f\n", burned)
+	}
+	return probes, nil
+}
+
+// loadSpentFile parses the pasted console TSV, or returns nil when no path
+// was given (spend then comes from the live console API).
+func loadSpentFile(path string) (map[string]float64, error) {
+	if path == "" {
+		return nil, nil
+	}
+	return usage.ParseSpentFile(path)
+}
+
+// fetchSpend returns per-model period spend in allowance dollars, straight
+// from the console API with the same key (the -spent paste file overrides
+// when given). Spend sources and assumptions print on stderr, never stdout.
+func fetchSpend(byID map[string]modelsdev.Model, spentFile map[string]float64, spentGiven, peak, offline bool) (map[string]spendInfo, bool) {
+	spend := map[string]spendInfo{}
+	spendKnown := false
+	src := "unavailable: assuming $0 spent"
+	listCostRows := 0
+	switch {
+	case spentGiven:
+		spendKnown = true
+		src = "-spent file"
+		for id, usd := range spentFile {
+			spend[id] = spendInfo{usd: usd, known: true}
+		}
+	case offline:
+		src = "offline: assuming $0 spent"
+	default:
+		key, kerr := probe.Key()
+		if kerr != nil {
+			src = "unavailable: " + kerr.Error() + "; assuming $0 spent"
+			break
+		}
+		mu, merr := consoleapi.FetchModelUsage(key)
+		if merr != nil {
+			src = "unavailable: " + merr.Error() + "; assuming $0 spent"
+			break
+		}
+		spendKnown = true
+		src = "console api (opencode-go rows, tokens at Go prices)"
+		for _, s := range mu {
+			if s.Provider != "opencode-go" && s.Provider != "" {
+				continue // pay-as-you-go rows are not Go allowance spend
+			}
+			usd := s.CostUSD
+			m, known := byID[s.Model]
+			tokens := s.InputTokens + s.OutputTokens + s.CacheReadTokens + s.CacheWriteTokens()
+			if known && tokens > 0 {
+				usd = cost.FromTokens(m, s.InputTokens, s.CacheReadTokens, s.OutputTokens, s.CacheWriteTokens(), peak)
+			} else {
+				listCostRows++ // console list cost, not necessarily allowance cost
+			}
+			prev := spend[s.Model]
+			prev.usd += usd
+			prev.reqs += s.Requests
+			prev.known = true
+			spend[s.Model] = prev
+		}
+	}
+
+	fmt.Fprintf(os.Stderr, "# per-model spend: %s\n", src)
+	fmt.Fprintln(os.Stderr, "# per-model Go limits: 5h=20%, week=50%, month=100% of each model's monthly limit; reqs_5h/reqs_wk are fresh-window caps")
+	if listCostRows > 0 {
+		fmt.Fprintf(os.Stderr, "# warning: %d console rows priced at their reported list cost (no catalog entry or no token counts); allowance cost may differ\n", listCostRows)
+	}
+	return spend, spendKnown
+}
+
+// fetchWindowFactors returns the remaining fractions of the aggregate 5h and
+// weekly windows for -window-estimate (0 keeps full caps: buildNowRows maps
+// non-positive factors to 1). The estimate basis prints on stderr.
+func fetchWindowFactors(doEstimate, offline bool) (fiveFactor, weekFactor float64) {
+	if !doEstimate {
+		return 0, 0
+	}
+	if offline {
+		fmt.Fprintln(os.Stderr, "# window estimate: offline; using full 5h/week caps")
+		return 0, 0
+	}
+	key, kerr := probe.Key()
+	if kerr != nil {
+		fmt.Fprintf(os.Stderr, "# window estimate: %v; using full 5h/week caps\n", kerr)
+		return 0, 0
+	}
+	ws, uerr := usage.Fetch(key)
+	if uerr != nil {
+		fmt.Fprintf(os.Stderr, "# window estimate: %v; using full 5h/week caps\n", uerr)
+		return 0, 0
+	}
+	f := usage.RemainingFactors(ws)
+	fmt.Fprintf(os.Stderr, "# window estimate: 5h %.0f%% left, week %.0f%% left (account-wide; applied to every model)\n",
+		f.Five*100, f.Week*100)
+	return f.Five, f.Week
+}
+
 // runUsage prints the remaining Go allowance windows, as JSON, tty-padded
 // or piped as strict TABs — same style rules as the model table.
-func runUsage(jsonOut, withLegend, tty bool) error {
+func runUsage(jsonOut, withLegend, tty, nohead bool) error {
 	key, err := probe.Key()
 	if err != nil {
 		return err
@@ -449,14 +803,18 @@ func runUsage(jsonOut, withLegend, tty bool) error {
 		}
 	}
 	if !tty {
-		fmt.Fprintln(os.Stdout, strings.Join(head, "\t"))
+		if !nohead {
+			fmt.Fprintln(os.Stdout, strings.Join(head, "\t"))
+		}
 		for _, w := range ws {
 			fmt.Fprintln(os.Stdout, strings.Join(useCells(w, false), "\t"))
 		}
 		return nil
 	}
 	tw := tabwriter.NewWriter(os.Stdout, 0, 2, 2, ' ', 0)
-	fmt.Fprintln(tw, strings.Join(head, "\t"))
+	if !nohead {
+		fmt.Fprintln(tw, strings.Join(head, "\t"))
+	}
 	for _, w := range ws {
 		fmt.Fprintln(tw, strings.Join(useCells(w, true), "\t"))
 	}
@@ -614,6 +972,14 @@ func buildNowRows(models []modelsdev.Model, spend map[string]spendInfo, spendKno
 	return rows
 }
 
+// filterNowRows applies the view-neutral filters to -now rows. Quality bounds
+// are not evaluated: this view loads no AA scores.
+func filterNowRows(rows []nowRow, flt table.Filter) []nowRow {
+	return slices.DeleteFunc(rows, func(r nowRow) bool {
+		return flt.Excluded(r.id, r.name) || !flt.CostOK(r.costTask) || !flt.SpeedOK(r.probeTokS)
+	})
+}
+
 // nowRank orders paid models first, then unlimited, then unknown.
 func nowRank(r nowRow) int {
 	if r.known && !r.unlimited {
@@ -629,7 +995,7 @@ func nowRank(r nowRow) int {
 // requests fit in its own Go 5h/weekly/monthly windows. There is no shared
 // pot: the docs define the windows as percentages of each model's monthly
 // limit. Per-model spend is measured from console token counts at Go prices.
-func runNow(planName string, spentFile map[string]float64, spentGiven, paid, privacy, peak, windowEstimate, vertical, jsonOut, withLegend, refresh, offline, tty bool) error {
+func runNow(planName string, spentFile map[string]float64, spentGiven, paid, privacy bool, flt table.Filter, peak, windowEstimate, vertical, jsonOut, withLegend, refresh, offline, tty bool, sel colSel, nohead bool) error {
 	models, err := modelsdev.Fetch("opencode-go", refresh, offline)
 	if err != nil {
 		return err
@@ -639,133 +1005,68 @@ func runNow(planName string, spentFile map[string]float64, spentGiven, paid, pri
 		byID[m.ID] = m
 	}
 
-	// Per-model spend for the current period, straight from the console API
-	// with the same key; the -spent paste file overrides when given.
-	spend := map[string]spendInfo{}
-	spendKnown := false
-	src := "unavailable: assuming $0 spent"
-	listCostRows := 0
-	switch {
-	case spentGiven:
-		spendKnown = true
-		src = "-spent file"
-		for id, usd := range spentFile {
-			spend[id] = spendInfo{usd: usd, known: true}
-		}
-	case offline:
-		src = "offline: assuming $0 spent"
-	default:
-		key, kerr := probe.Key()
-		if kerr != nil {
-			src = "unavailable: " + kerr.Error() + "; assuming $0 spent"
-			break
-		}
-		mu, merr := consoleapi.FetchModelUsage(key)
-		if merr != nil {
-			src = "unavailable: " + merr.Error() + "; assuming $0 spent"
-			break
-		}
-		spendKnown = true
-		src = "console api (opencode-go rows, tokens at Go prices)"
-		for _, s := range mu {
-			if s.Provider != "opencode-go" && s.Provider != "" {
-				continue // pay-as-you-go rows are not Go allowance spend
-			}
-			usd := s.CostUSD
-			m, known := byID[s.Model]
-			tokens := s.InputTokens + s.OutputTokens + s.CacheReadTokens + s.CacheWriteTokens()
-			if known && tokens > 0 {
-				usd = cost.FromTokens(m, s.InputTokens, s.CacheReadTokens, s.OutputTokens, s.CacheWriteTokens(), peak)
-			} else {
-				listCostRows++ // console list cost, not necessarily allowance cost
-			}
-			prev := spend[s.Model]
-			prev.usd += usd
-			prev.reqs += s.Requests
-			prev.known = true
-			spend[s.Model] = prev
-		}
-	}
-
-	fmt.Fprintf(os.Stderr, "# per-model spend: %s\n", src)
-	fmt.Fprintln(os.Stderr, "# per-model Go limits: 5h=20%, week=50%, month=100% of each model's monthly limit; reqs_5h/reqs_wk are fresh-window caps")
-	if listCostRows > 0 {
-		fmt.Fprintf(os.Stderr, "# warning: %d console rows priced at their reported list cost (no catalog entry or no token counts); allowance cost may differ\n", listCostRows)
-	}
-
-	var fiveFactor, weekFactor float64
-	if windowEstimate {
-		switch {
-		case offline:
-			fmt.Fprintln(os.Stderr, "# window estimate: offline; using full 5h/week caps")
-		default:
-			key, kerr := probe.Key()
-			if kerr != nil {
-				fmt.Fprintf(os.Stderr, "# window estimate: %v; using full 5h/week caps\n", kerr)
-				break
-			}
-			ws, uerr := usage.Fetch(key)
-			if uerr != nil {
-				fmt.Fprintf(os.Stderr, "# window estimate: %v; using full 5h/week caps\n", uerr)
-				break
-			}
-			f := usage.RemainingFactors(ws)
-			fiveFactor, weekFactor = f.Five, f.Week
-			fmt.Fprintf(os.Stderr, "# window estimate: 5h %.0f%% left, week %.0f%% left (account-wide; applied to every model)\n",
-				f.Five*100, f.Week*100)
-		}
-	}
+	spend, spendKnown := fetchSpend(byID, spentFile, spentGiven, peak, offline)
+	fiveFactor, weekFactor := fetchWindowFactors(windowEstimate, offline)
 
 	speeds := cachedProbeSpeeds(models)
 	rows := buildNowRows(models, spend, spendKnown, planName, peak, paid, privacy, fiveFactor, weekFactor, speeds)
+	rows = filterNowRows(rows, flt)
+	if len(flt.MinQuality) > 0 {
+		fmt.Fprintln(os.Stderr, "# warning: -min-quality is ignored by -now (this view loads no AA quality data)")
+	}
 
-	cells := func(r nowRow) []string {
+	fullHead := table.NowTitles()
+	head, herr := table.SelectTitles(fullHead, sel.includes, sel.excludes)
+	if herr != nil {
+		return herr
+	}
+	fullCells := func(r nowRow) []string {
 		switch {
 		case r.unlimited:
 			return []string{r.name, "", "", "", "", "", "", "", "unlimited", table.Num(r.probeTokS, false)}
 		case !r.known:
-			return []string{r.name, table.Num(r.costTask, true), table.Num(r.burn, true), moneyKnown(r.spentMo, r.spentOK), "", "", "", "", "unknown", table.Num(r.probeTokS, false)}
+			return []string{r.name, table.Num(r.costTask, true), table.Num(r.burn, true), table.SpentCell(r.spentMo, r.spentOK, ""), "", "", "", "", "unknown", table.Num(r.probeTokS, false)}
 		default:
 			return []string{
-				r.name, table.Num(r.costTask, true), table.Num(r.burn, true), moneyKnown(r.spentMo, r.spentOK),
+				r.name, table.Num(r.costTask, true), table.Num(r.burn, true), table.SpentCell(r.spentMo, r.spentOK, ""),
 				strconv.Itoa(r.five), strconv.Itoa(r.week), strconv.Itoa(r.month),
 				strconv.Itoa(r.usable), r.binding, table.Num(r.probeTokS, false),
 			}
 		}
 	}
-	head := []string{"#name", "cost_task", "burn_req", "spent_mo", "reqs_5h", "reqs_wk", "reqs_mo", "usable", "limit", "p_tok_s"}
+	cells := func(r nowRow) []string {
+		return table.ProjectCells(fullHead, fullCells(r), head)
+	}
 	if jsonOut {
-		type jsonNow struct {
-			ID             string  `json:"id"`
-			Name           string  `json:"name"`
-			CostTask       float64 `json:"cost_task"`
-			BurnReq        float64 `json:"burn_req"`
-			SpentMo        float64 `json:"spent_mo"`
-			SpentKnown     bool    `json:"spent_known"`
-			Reqs5h         int     `json:"reqs_5h"`
-			ReqsWk         int     `json:"reqs_wk"`
-			ReqsMo         int     `json:"reqs_mo"`
-			Usable         int     `json:"usable"`
-			Limit          string  `json:"limit"`
-			Unlimited      bool    `json:"unlimited"`
-			Known          bool    `json:"known"`
-			WindowEstimate bool    `json:"window_estimate"`
-			ProbeTokS      float64 `json:"p_tok_s"`
+		keep := map[string]bool{
+			"id": true, "unlimited": true, "known": true,
+			"spent_known": true, "window_estimate": true,
 		}
-		out := make([]jsonNow, 0, len(rows))
+		for _, t := range head {
+			keep[strings.ToLower(strings.TrimPrefix(t, "#"))] = true
+		}
+		out := make([]map[string]any, 0, len(rows))
 		for _, r := range rows {
-			out = append(out, jsonNow{
-				ID: r.id, Name: r.name, CostTask: r.costTask, BurnReq: r.burn,
-				SpentMo: r.spentMo, SpentKnown: r.spentOK,
-				Reqs5h: r.five, ReqsWk: r.week, ReqsMo: r.month,
-				Usable: r.usable, Limit: r.binding, Unlimited: r.unlimited,
-				Known: r.known, WindowEstimate: windowEstimate, ProbeTokS: r.probeTokS,
-			})
+			m := map[string]any{
+				"id": r.id, "name": r.name,
+				"cost_task": r.costTask, "burn_req": r.burn,
+				"spent_mo": r.spentMo, "spent_known": r.spentOK,
+				"reqs_5h": r.five, "reqs_wk": r.week, "reqs_mo": r.month,
+				"usable": r.usable, "limit": r.binding,
+				"unlimited": r.unlimited, "known": r.known,
+				"window_estimate": windowEstimate, "p_tok_s": r.probeTokS,
+			}
+			for k := range m {
+				if !keep[k] {
+					delete(m, k)
+				}
+			}
+			out = append(out, m)
 		}
 		return json.NewEncoder(os.Stdout).Encode(out)
 	}
 	if withLegend {
-		for _, l := range nowLegend {
+		for _, l := range table.FilterLegend(nowLegend, head) {
 			fmt.Fprintln(os.Stdout, l)
 		}
 	}
@@ -785,14 +1086,18 @@ func runNow(planName string, spentFile map[string]float64, spentGiven, paid, pri
 		return nil
 	}
 	if !tty {
-		fmt.Fprintln(os.Stdout, strings.Join(head, "\t"))
+		if !nohead {
+			fmt.Fprintln(os.Stdout, strings.Join(head, "\t"))
+		}
 		for _, r := range rows {
 			fmt.Fprintln(os.Stdout, strings.Join(cells(r), "\t"))
 		}
 		return nil
 	}
 	tw := tabwriter.NewWriter(os.Stdout, 0, 2, 2, ' ', 0)
-	fmt.Fprintln(tw, strings.Join(head, "\t"))
+	if !nohead {
+		fmt.Fprintln(tw, strings.Join(head, "\t"))
+	}
 	for _, r := range rows {
 		fmt.Fprintln(tw, strings.Join(cells(r), "\t"))
 	}
@@ -810,14 +1115,118 @@ func cachedProbeSpeeds(models []modelsdev.Model) map[string]float64 {
 	return out
 }
 
-func moneyKnown(v float64, ok bool) string {
-	if !ok {
-		return ""
+// nowOnlyLegend returns the -now legend lines for columns the main table
+// lacks (prose and shared columns excluded: shared values keep the main
+// legend's prose). The -full legend is the main legend plus these lines,
+// filtered to visible columns.
+func nowOnlyLegend() []string {
+	main := map[string]bool{}
+	for _, t := range table.HeaderCells() {
+		main[strings.ToLower(strings.TrimPrefix(t, "#"))] = true
 	}
-	if v == 0 {
-		return "$0"
+	var out []string
+	for _, l := range nowLegend {
+		f := strings.Fields(l)
+		if len(f) < 2 || !table.KnownColumn(f[1]) || main[strings.ToLower(f[1])] {
+			continue
+		}
+		out = append(out, l)
 	}
-	return table.Num(v, true)
+	return out
+}
+
+// fullLegendLine builds the -full legend: shared columns keep the main
+// table's prose (the values are identical), then the -now-only columns.
+func fullLegend(sel []string) []string {
+	lines := append(append([]string{}, table.MainLegend()...), nowOnlyLegend()...)
+	return table.FilterLegend(lines, sel)
+}
+
+// joinFull outer-joins main rows with -now rows by model ID. Main rows drive:
+// a model without -now data (no price to turn dollars into requests) keeps
+// its static columns with blank affordability cells.
+func joinFull(mrows []table.Row, nrows []nowRow, windowEstimate bool) []table.FullRow {
+	byNow := make(map[string]nowRow, len(nrows))
+	for _, nr := range nrows {
+		byNow[nr.id] = nr
+	}
+	out := make([]table.FullRow, 0, len(mrows))
+	for _, mr := range mrows {
+		fr := table.FullRow{Row: mr, Limit: "unknown", WindowEstimate: windowEstimate}
+		if nr, ok := byNow[mr.ID]; ok {
+			fr.Burn, fr.SpentMo, fr.SpentKnown = nr.burn, nr.spentMo, nr.spentOK
+			fr.Reqs5h, fr.ReqsWk, fr.ReqsMo, fr.Usable = nr.five, nr.week, nr.month, nr.usable
+			fr.Limit, fr.Known = nr.binding, nr.known
+		}
+		out = append(out, fr)
+	}
+	return out
+}
+
+// runFull answers "what is the best model I can use right now": every main
+// column (static cost/speed/quality) joined with every -now column
+// (affordable requests from live spend). Column order is the main order,
+// then the -now-only columns. Like -now it needs a key and is live; unlike
+// -now, quality filters apply because AA scores are loaded. Speed filtering
+// uses the effective speed (measured probe when available, else AA).
+func runFull(planName string, spentFile map[string]float64, spentGiven, paid, privacy bool, flt table.Filter, peak, windowEstimate, vertical, jsonOut, withLegend, refresh, offline, tty bool, sel colSel, nohead bool) error {
+	models, err := modelsdev.Fetch("opencode-go", refresh, offline)
+	if err != nil {
+		return err
+	}
+	byID := make(map[string]modelsdev.Model, len(models))
+	for _, m := range models {
+		byID[m.ID] = m
+	}
+	aas, swe, lb, elo, btr := fetchBenchmarks(refresh, offline)
+	probes, perr := probeModels(models, flt, *probeAll, refresh, offline, privacy, *probeMax)
+	if perr != nil {
+		return fmt.Errorf("probe: %w", perr)
+	}
+
+	mrows := table.Build(models, aas, probes, swe, lb, elo, btr, planName, peak)
+	mrows = slices.DeleteFunc(mrows, func(r table.Row) bool {
+		return flt.Excluded(r.ID, r.Name) || !flt.Keep(r)
+	})
+	if paid {
+		mrows = slices.DeleteFunc(mrows, func(r table.Row) bool { return r.CostTask == 0 })
+	}
+	if privacy {
+		mrows = slices.DeleteFunc(mrows, func(r table.Row) bool {
+			return goplan.ExcludedByPrivacy(r.ID)
+		})
+	}
+	// Pareto is relative to the set the user actually sees.
+	table.MarkPareto(mrows)
+
+	spend, spendKnown := fetchSpend(byID, spentFile, spentGiven, peak, offline)
+	fiveFactor, weekFactor := fetchWindowFactors(windowEstimate, offline)
+	speeds := cachedProbeSpeeds(models)
+	nrows := buildNowRows(models, spend, spendKnown, planName, peak, paid, privacy, fiveFactor, weekFactor, speeds)
+
+	rows := joinFull(mrows, nrows, windowEstimate)
+	table.SortFull(rows, *sortKey)
+	if *pareto {
+		rows = slices.DeleteFunc(rows, func(r table.FullRow) bool { return !r.Row.Pareto })
+	}
+	if len(rows) == 0 {
+		return fmt.Errorf("no models matched; check -provider, -plan, filters and cache state")
+	}
+	head, herr := table.SelectTitles(table.FullTitles(), sel.includes, sel.excludes)
+	if herr != nil {
+		return herr
+	}
+	legend := fullLegend(head)
+	if vertical && jsonOut {
+		fmt.Fprintln(os.Stderr, "warning: -vertical is ignored with -json")
+	}
+	if jsonOut {
+		return table.WriteFullJSON(os.Stdout, rows, head)
+	}
+	if vertical {
+		return table.WriteFullVertical(os.Stdout, rows, head, withLegend, legend)
+	}
+	return table.WriteFullTSV(os.Stdout, rows, head, tty, withLegend, legend, nohead)
 }
 
 func runOneProbe(modelID string, refresh, offline bool) error {

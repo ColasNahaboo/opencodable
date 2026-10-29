@@ -73,7 +73,7 @@ func TestDoctorRenderPipedAndTTY(t *testing.T) {
 		Probe: "ok 2h", ProbeOK: true,
 	}}
 	var piped strings.Builder
-	if err := writeDoctor(&piped, rows, false, false); err != nil {
+	if err := writeDoctor(&piped, rows, false, false, false); err != nil {
 		t.Fatal(err)
 	}
 	lines := strings.Split(strings.TrimRight(piped.String(), "\n"), "\n")
@@ -99,7 +99,7 @@ func TestDoctorRenderPipedAndTTY(t *testing.T) {
 		t.Errorf("piped header = %q", header)
 	}
 	var tty strings.Builder
-	if err := writeDoctor(&tty, rows, true, false); err != nil {
+	if err := writeDoctor(&tty, rows, true, false, false); err != nil {
 		t.Fatal(err)
 	}
 	out := tty.String()
@@ -118,11 +118,30 @@ func TestDoctorRenderPipedAndTTY(t *testing.T) {
 		}
 	}
 	var with strings.Builder
-	if err := writeDoctor(&with, rows, false, true); err != nil {
+	if err := writeDoctor(&with, rows, false, true, false); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(with.String(), "# id        models.dev model ID") {
 		t.Error("-l must print the doctor legend")
+	}
+}
+
+func TestDoctorNoHead(t *testing.T) {
+	rows := []doctorRow{{
+		ID: "glm-5.3", Plan: "yes", AA: "glm-5-3", SWE: 70, Privacy: "safe",
+		Probe: "ok 2h", ProbeOK: true,
+	}}
+	var b strings.Builder
+	if err := writeDoctor(&b, rows, false, false, true); err != nil {
+		t.Fatal(err)
+	}
+	for _, l := range strings.Split(strings.TrimRight(b.String(), "\n"), "\n") {
+		if strings.HasPrefix(l, "#id") {
+			t.Errorf("header must be gone: %q", l)
+		}
+	}
+	if !strings.Contains(b.String(), "glm-5.3") {
+		t.Errorf("data row must survive -nohead:\n%s", b.String())
 	}
 }
 

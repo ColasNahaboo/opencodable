@@ -17,9 +17,9 @@ columns, in order, with their meaning. Scripts can rely on it.
    which repeats the column titles below — scripts can also read them
    dynamically from there instead of hardcoding.
 
-## View: main table (`opencodable`)
+## View: main table (`opencodable`, `-main`)
 
-Piped header: `#name	cost_tok	cost_task	allowance	reqs_mo	tok_s	ttft_s	p_tok_s	p_ttft_s	aa_int	aa_code	aa_math	code_b	term_b	if_b	aa_lcr	swe_b	pareto	src	privacy	ctx_k	out_k	lb_agent	lb_code`
+Piped header: `#name	cost_tok	cost_task	allowance	r_quota	tok_s	ttft_s	p_tok_s	p_ttft_s	aa_int	aa_code	aa_math	code_b	term_b	if_b	aa_lcr	swe_b	pareto	src	privacy	ctx_k	out_k	lb_agent	lb_code	elo	btr`
 
 | # | Column | Meaning |
 |---|---|---|
@@ -27,7 +27,7 @@ Piped header: `#name	cost_tok	cost_task	allowance	reqs_mo	tok_s	ttft_s	p_tok_s	p
 | 2 | `cost_tok` | retail USD per 1M output tokens |
 | 3 | `cost_task` | estimated USD per coding-agent request (OpenCode official token profile, base tier) |
 | 4 | `allowance` | monthly usage budget of this model in the plan; `unlimited` for free models |
-| 5 | `reqs_mo` | allowance ÷ cost_task ≈ requests per month (theoretical, full reset) |
+| 5 | `r_quota` | allowance ÷ cost_task ≈ requests per month (theoretical, full reset) |
 | 6 | `tok_s` | Artificial Analysis median output tok/s (reported, other hosts) |
 | 7 | `ttft_s` | AA median seconds to first token, thinking included |
 | 8 | `p_tok_s` | **measured** output tok/s on your subscription (from `-probe`; too-short or suspect measurements are omitted) |
@@ -40,13 +40,15 @@ Piped header: `#name	cost_tok	cost_task	allowance	reqs_mo	tok_s	ttft_s	p_tok_s	p
 | 15 | `if_b` | IFBench instruction-following pass rate % (via AA) |
 | 16 | `aa_lcr` | AA Long-Context Reasoning pass rate % |
 | 17 | `swe_b` | SWE-bench Verified % resolved, best recorded agent run |
-| 18 | `pareto` | `yes` when no other visible model is cheaper-or-equal, faster-or-equal AND better-or-equal; empty otherwise. Flags are computed after `-paid`/`-privacy` filtering, so a hidden model never dominates a visible one. |
+| 18 | `pareto` | `yes` when no other visible model is cheaper-or-equal, faster-or-equal AND better-or-equal; empty otherwise. Flags are computed after every row filter (`-exclude`, `-max-cost`, `-min-speed`, `-min-quality`, `-paid`, `-privacy`), so a hidden model never dominates a visible one. |
 | 19 | `src` | `aa:<effort>` when the speed came from that AA reasoning-effort variant |
 | 20 | `privacy` | `safe` (no training on request data), `trains` (contributor), or `unknown` (no plan-snapshot verdict) |
 | 21 | `ctx_k` | context window in thousands of tokens (models.dev) |
 | 22 | `out_k` | maximum output tokens in thousands (models.dev) |
 | 23 | `lb_agent` | LiveBench 2.0 Long Agentic score, 0–100 (single run) |
 | 24 | `lb_code` | LiveBench 2.0 Coding score, 0–100 (single run) |
+| 25 | `elo` | Arena Elo, daily snapshot of the arena.ai text leaderboard (third-party mirror; integer, missing = not in snapshot) |
+| 26 | `btr` | Arena Bradley–Terry rating on the Elo scale, text with style control, overall category (official mirror, fresh; missing = no match) |
 
 On a terminal: same columns, padded for readability, missing values shown as
 `-`. The `#`-prefixed legend block explaining each column is printed only
@@ -99,6 +101,54 @@ their entry; paid models missing from the plan snapshot show `limit=unknown`.
 Spend uses only `opencode-go` console rows and prices their token counts at Go
 rates; `-spent` is the offline fallback.
 
+## View: `-full` (static quality plus affordable requests)
+
+Piped header: `#name	cost_tok	cost_task	allowance	r_quota	tok_s	ttft_s	p_tok_s	p_ttft_s	aa_int	aa_code	aa_math	code_b	term_b	if_b	aa_lcr	swe_b	pareto	src	privacy	ctx_k	out_k	lb_agent	lb_code	elo	btr	burn_req	spent_mo	reqs_5h	reqs_wk	reqs_mo	usable	limit`
+
+Column order is the main order first, then the `-now`-only columns in `-now`
+order. Shared titles (`name`, `cost_task`, `p_tok_s`) carry the same value in
+both views and appear once. Titles are unique across views: the theoretical
+monthly count is `r_quota` (main), the remaining count is `reqs_mo` (`-now`).
+
+| # | Column | Meaning |
+|---|---|---|
+| 1–24 | main columns, in main order | identical values and meanings to the main table above |
+| 25 | `burn_req` | as in `-now` |
+| 26 | `spent_mo` | as in `-now` |
+| 27 | `reqs_5h` | as in `-now` |
+| 28 | `reqs_wk` | as in `-now` |
+| 29 | `reqs_mo` | as in `-now`: requests left in the monthly limit after `spent_mo` |
+| 30 | `usable` | as in `-now` |
+| 31 | `limit` | as in `-now` |
+
+`-full` is live like `-now` (console spend, aggregate windows) and loads AA
+scores like the main table, so every row filter applies — including
+`-min-quality` — and speed filtering uses the effective speed (measured probe
+when available, else AA). Rows without `-now` data (no price to turn dollars
+into requests) keep their static columns with blank affordability cells and
+`limit=unknown`. JSON extras: `id`, `unlimited` (as in main) plus `known`,
+`spent_known`, `window_estimate` (as in `-now`).
+
+## Column selection (`-cols`, `-excols`; model views only)
+
+`-cols a,b,c` shows only those columns; `-excols e,f` shows all but those.
+Both take comma-separated titles, both are repeatable (values union), both
+are config-file defaults refined per run (`-cols` union plus `-excols` union,
+then subtract). `name` is always shown. A name unknown in **every** view is an
+error; a name known only in another view is silently ignored, so one global
+set works for main, `-now` and `-full` alike (e.g. `-cols name,burn_req`
+renders just `name` in the main table). Selection applies after sorting,
+Pareto flags and filters; `-l` documents only visible columns; `-json` emits
+only visible columns plus the view's JSON-only extras. `-usage` and `-doctor`
+ignore the selection (unknown names still fail fast).
+
+## Header (`-nohead`; every view)
+
+`-nohead` drops the header row, leaving data rows only; scripts that already
+know the column positions (or read them from an earlier headed run) can skip
+parsing it. The `-l` legend still prints. No-op in `-vertical` and `-json`,
+which have no header row.
+
 ## Versioning
 
 - Pre-release (until the `v1.0.0` tag): no guarantee, titles may change (see
@@ -120,6 +170,8 @@ spec covers both formats. Numbers stay numbers, `pareto` stays boolean, and
   `window_estimate` (true when 5h/week caps were scaled by aggregate usage).
   For free/unknown rows the request counts are 0; use `limit` plus these
   booleans, not the zero, to interpret them.
+- `-full`: the main extras plus the `-now` extras; `r_quota` is the
+  theoretical full-reset count and `reqs_mo` the remaining count.
 
 Empty/missing values: absent numeric fields mean zero (the table's `-` and
 the piped empty string both encode "no data" as 0 in JSON); `src` is omitted

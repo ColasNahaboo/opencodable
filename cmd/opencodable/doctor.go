@@ -146,7 +146,7 @@ func keySource(envName, dotfile string) string {
 
 // runDoctor audits plan/AA/SWE/probe coverage and prints where the joins are
 // missing. It never runs a probe; it only reads cached measurements.
-func runDoctor(refresh, offline, jsonOut, withLegend bool) error {
+func runDoctor(refresh, offline, jsonOut, withLegend, nohead bool) error {
 	models, err := modelsdev.Fetch("opencode-go", refresh, offline)
 	if err != nil {
 		return err
@@ -237,7 +237,7 @@ func runDoctor(refresh, offline, jsonOut, withLegend bool) error {
 		fmt.Fprintf(os.Stderr, "warning: SWE-bench: %s\n", report.SWEError)
 	}
 
-	return writeDoctor(os.Stdout, rows, isTTY(os.Stdout), withLegend)
+	return writeDoctor(os.Stdout, rows, isTTY(os.Stdout), withLegend, nohead)
 }
 
 // doctorLegend explains the columns; every line starts with "# " so parsers
@@ -254,10 +254,10 @@ var doctorLegend = []string{
 }
 
 // writeDoctor renders the audit table: an optional legend ("# "-prefixed,
-// only with -l) then a "#id"-prefixed header. tty pads columns and shows "-"
-// for missing values; piped output is strict single-TAB rows with empty
-// fields.
-func writeDoctor(w io.Writer, rows []doctorRow, tty, withLegend bool) error {
+// only with -l) then a "#id"-prefixed header (dropped by -nohead). tty pads
+// columns and shows "-" for missing values; piped output is strict
+// single-TAB rows with empty fields.
+func writeDoctor(w io.Writer, rows []doctorRow, tty, withLegend, nohead bool) error {
 	if withLegend {
 		for _, l := range doctorLegend {
 			if _, err := fmt.Fprintln(w, l); err != nil {
@@ -275,8 +275,10 @@ func writeDoctor(w io.Writer, rows []doctorRow, tty, withLegend bool) error {
 		tw = tabwriter.NewWriter(w, 0, 2, 2, ' ', 0)
 		out = tw
 	}
-	if _, err := fmt.Fprintln(out, "#id\tplan\taa\tswe_b\tprivacy\tprobe\twarnings"); err != nil {
-		return err
+	if !nohead {
+		if _, err := fmt.Fprintln(out, "#id\tplan\taa\tswe_b\tprivacy\tprobe\twarnings"); err != nil {
+			return err
+		}
 	}
 	for _, r := range rows {
 		swe := missing
