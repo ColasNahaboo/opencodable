@@ -5,610 +5,395 @@
 **Find the best compromise of price, speed and quality among the models of your
 OpenCode subscription — right now, in your terminal.**
 
-[MIT licensed](LICENSE) · [releases](https://github.com/ColasNahaboo/opencodable/releases) · single Go binary · zero dependencies · Go 1.26+
+[MIT licensed](LICENSE) · [releases](https://github.com/ColasNahaboo/opencodable/releases) · single Go program · no dependencies · Go 1.26+
 
 ---
 
-## Overview
+## What it does
 
-`opencodable` is a single Go binary (standard library only, zero dependencies)
-that joins four data sources — your subscription's catalog, OpenCode's own plan
-data, Artificial Analysis benchmarks, and live measurements of *your* endpoints.
+An OpenCode Go subscription does not work like a pay-per-token account. Each
+model gets its own **monthly dollar budget**, and every request spends part of
+it. The cheapest-looking model is therefore not always the one that lets you get
+the most done.
 
-It outputs a simple text table on the terminal, but is designed to be scripted either by its JSON output or unix tab-separated lines if its output is piped into a program. Basically it gathers data so that you can present it as you like.
+`opencodable` puts the numbers side by side, in one table:
 
-## The problem
+- what a typical coding request costs on each model, and how many requests your budget covers;
+- how smart and how fast each model is, from public benchmarks and from measurements on your own subscription;
+- how much of your budget you have used, and which models you can still use right now;
+- whether a model may train on your prompts.
 
-Choosing a model inside a subscription like OpenCode Go is confusing:
+In a terminal you get a readable table. If you write scripts, the same data
+comes out as tab-separated lines or as JSON (see [Output for scripts](#output-for-scripts)).
 
-- **Retail prices mislead.** The subscription bills through *per-model monthly
-  allowances* (e.g. $15/month for GLM-5.3, $60/month for GLM-5.3-Flash), not
-  token prices — so the "cheapest" model is not the one that gives you the most
-  usable work.
-- **Consumption differs wildly.** Reasoning models burn far more tokens per
-  request than flash models; list prices per 1M tokens do not translate into
-  requests you can actually make.
-- **Benchmark sites compare the wrong set.** Public leaderboards (Artificial
-  Analysis, BenchLM, Vellum…) rank the whole market, not the ~40 models your
-  subscription exposes, and their speed numbers reflect *their* hosts, not your
-  provider's routing.
-- **No CLI exists for this.** Everything is a website; nothing outputs plain,
-  scriptable text about *your* plan.
+## Quick start
 
-## The solution
-
-One command joins everything into a decision table:
-
-1. **Catalog & prices** — `models.dev` `api.json` (the source OpenCode itself
-   uses): retail $/1M input/output/cached prices, context limits, reasoning flags.
-2. **Subscription reality** — OpenCode's public Go/Go Plus tables, snapshotted
-   in `internal/goplan`: per-model monthly allowances, OpenCode's own
-   estimated token consumption per coding-agent request, peak-hour price
-   overrides, and privacy flags (which models train on your prompts).
-3. **Quality & reported speed** — Artificial Analysis data API (free key):
-   intelligence/coding/math indexes, LiveCodeBench, Terminal-Bench, IFBench,
-   long-context reasoning, plus median output tok/s and time-to-first-token.
-4. **Measured speed (opt-in)** — a live probe streams a fixed prompt through
-   your actual subscription endpoint and measures tok/s, TTFT and allowance
-   burn per model. Measured values take precedence over reported ones.
-5. **Live allowance state** — the Go usage endpoint (5h/week/month windows)
-   and the console usage API (per-model period spend, same key) make `-usage`
-   and `-now` answer "what can I use right now and how much of it".
-
-The join handles name mismatches between sources (alias table: `mimo-v2.5` →
-`mimo-v2-5-0424`, etc.) and marks every row with a **Pareto flag**: `yes` when
-no other model is simultaneously cheaper-or-equal, faster-or-equal *and*
-better-or-equal. That shortlist is the answer to "what is the best compromise?".
-
-## Installation
-
-Requires Go 1.26+.
+**1. Install.** You need Go 1.26 or newer:
 
 ```sh
-go install github.com/ColasNahaboo/opencodable/cmd/opencodable@latest
+go install github.com/ColasNahaboo/opencodable/cmd/opencodable@master
 ```
 
-Or build from a clone:
+The program lands in `$(go env GOPATH)/bin`, so make sure that folder is on your `PATH`.
+Without Go, download the archive for your system from the
+[releases page](https://github.com/ColasNahaboo/opencodable/releases) and put the
+program somewhere on your `PATH`.
+
+**2. Add your keys.** This is optional, but recommended. [Configuration](#configuration) says where to put them.
+
+- Your **OpenCode Go key** unlocks what you can use right now (`-now`, `-full`), your remaining allowance (`-usage`) and speed measurements (`-probe`).
+- A **free Artificial Analysis key** (from artificialanalysis.ai) unlocks the quality and benchmark columns.
+
+Without any key you still get prices, budgets and cost per request.
+
+**3. Run it.**
 
 ```sh
-git clone https://github.com/ColasNahaboo/opencodable
-cd opencodable
-go build -o ~/.local/bin/opencodable ./cmd/opencodable
+opencodable
 ```
 
-Prebuilt archives for linux/darwin/windows on amd64/arm64 are attached to
-GitHub releases; `scripts/build-release.sh [version]` rebuilds them locally
-and writes checksums.
+Models are listed best quality first. Here is an excerpt, with a few columns
+selected by `-cols` so that it fits on the page:
 
-## Configuration
+```sh
+opencodable -paid -privacy -cols name,cost_task,r_quota,p_tok_s,aa_int,aa_code,pareto
+```
 
-Two optional keys, each resolved in order: **environment variable →
-`opencodable.conf` → git-ignored dot-file in the working directory**:
+```
+#name            cost_task  r_quota   p_tok_s  aa_int  aa_code  pareto
+Kimi K3          $0.0306    490.2     595.8    -       76.2     yes
+GLM-5.3-Flash    $0.0019    31578.9   113.2    -       71.5     yes
+GPT-5.6 Luna     $0.00146   10245.9   126.0    -       71.4     yes
+GLM-5.2          $0.01516   3957.8    78.9     -       68.8
+Kimi K2.7 Code   $0.01208   4968.3    41.2     -       60.8
+MiMo V2.5 Pro    $0.00092   16291.1   -        -       60.2     yes
+```
 
-| Key | Purpose | Required? |
-|---|---|---|
-| `AA_API_KEY` or `.artificialanalysis.key` | benchmark quality/speed columns | recommended (free at artificialanalysis.ai) |
-| `OPENCODE_API_KEY` or `.opencode-go.key` | live speed probe (`-probe`) | only for probing |
+A `-` means there is no data for that cell. Some models have no scores yet in
+the Artificial Analysis data.
 
-`opencodable.conf` is a simple `key=value` file (one setting per line, `#`
-comments) in the per-user config directory:
+## Which command answers my question?
 
-| OS | Path |
+| I want to know… | Run |
 |---|---|
-| Linux | `$XDG_CONFIG_HOME/opencodable/opencodable.conf` (default `~/.config/...`) |
-| macOS | `~/Library/Application Support/opencodable/opencodable.conf` |
-| Windows | `%AppData%\opencodable\opencodable.conf` |
+| which models are the best compromise (cost, speed and quality together) | `opencodable -pareto -paid` |
+| which model is the smartest | `opencodable` (the default order) |
+| which models cost the least per request | `opencodable -sort price` |
+| which models give me the most requests a month | `opencodable -sort reqs` |
+| which models I can use right now, and how many requests | `opencodable -now` |
+| how much of my allowance is left | `opencodable -usage` |
+| everything in one wide table | `opencodable -full` (add `-cols` to choose columns) |
+| which models do not train on my prompts | `opencodable -privacy` |
+| which models are fast enough for me | `opencodable -min-speed 60` |
+| how fast they really are on my subscription | `opencodable -probe` (about a cent per model) |
+| the same data, for my own script | `opencodable -json`, or the piped output |
 
-Two kinds of keys, told apart by case:
+## Reading the table
 
-- **Uppercase = API keys**, mirroring the environment variables above.
-- **Lowercase = command-line options**, as defaults: every flag name except
-  `config` works here (`plan`, `paid`, `privacy`, `sort`, `vertical`, `json`,
-  …), and the command line always wins over the file. Booleans accept
-  `true/on/1/yes` and `false/off/0/no`.
+Each row is one model. Column titles are short. These are the ones most people
+look at first; the [Columns](#columns) section lists them all.
 
-```ini
-# ~/.config/opencodable/opencodable.conf
-OPENCODE_API_KEY=your-key
-AA_API_KEY=your-key
+- **`cost_task`**: estimated cost of one typical coding-agent request, in dollars, based on OpenCode's own figures.
+- **`r_quota`**: roughly how many such requests your monthly budget covers for that model.
+- **`aa_int`** and **`aa_code`**: overall intelligence and coding scores, from 0 to 100 (Artificial Analysis). Higher is better.
+- **`p_tok_s`**: output speed measured on your own subscription, in tokens per second. Run `-probe` to fill it in. `tok_s` is the speed reported for other hosts.
+- **`pareto`**: `yes` when no other visible model is at least as cheap, as fast and as good, and better in at least one way. These are the strong compromises.
+- **`privacy`**: `safe` (the provider does not train on your requests), `trains` (it may), or `unknown` (not in our data).
 
-# Option defaults; comments must be on their own line, not after a value.
-plan=go-plus
-paid=yes
-privacy=on
-probe-max-allowance=1
+### Key words
 
-# Filters (see "Filtering" below).
-exclude=grok*
-max-cost=0.02
-min-quality=aa_int=35,aa_code=70
+- **Token**: a chunk of text that a model reads or writes, roughly a word or part of one. Prices are quoted per million tokens; `cost_tok` is the retail output price.
+- **Allowance**: your monthly dollar budget for one model. Each request uses part of it.
+- **Window**: a model's budget also comes in a 5-hour window (20% of its monthly budget) and a weekly window (50%). A burst of work can use up a window before the month runs out.
+- **Probe**: a short test request, sent through your subscription, that measures real speed. It costs about one cent per model.
+- **Peak hours**: DeepSeek models cost more at certain hours. The table shows a second row for them, named `[peak]`, unless you use `-peak`.
+- **Arena (`elo`, `btr`)**: the public Arena leaderboard (formerly LMArena), where people compare answers without knowing which model wrote them. A higher rating means people preferred that model more often. Typical values are 1400 to 1550.
 
-# Columns (see "Columns" below): global presets, refined per run. Both are
-# additive: the command line unions with these, then -excols subtracts.
-#cols=cost_task,p_tok_s,aa_int,swe_b
-#excols=ctx_k,out_k,src
+## Your allowance
+
+OpenCode Go budgets are **per model**. Each model has its own monthly budget
+(for example $15 for Kimi K3.1 Pro on the Go plan, $60 for GLM-5.3-Flash), and
+its 5-hour and weekly windows are shares of that budget. Budgets are not pooled
+across models.
+
+Four views help:
+
+- **`-now`**: for each model, how many requests fit in each window, given what you have already spent this month. Spending is fetched with your OpenCode key.
+- **`-usage`**: the account-wide percentages OpenCode reports for the 5-hour, weekly and monthly windows, with their reset times.
+- **`-full`**: the main table and `-now` in one wide table.
+- **`-window-estimate`**: also takes out what you have probably used in the current 5-hour and weekly windows. OpenCode only reports the account total, so this is an estimate; the method appears on stderr and, in JSON, as `window_method`. Without this flag, the 5-hour and weekly counts assume fresh windows, which gives an upper bound.
+
+The `-now` columns:
+
+- **`burn_req`**: dollars one request really uses. Measured from your own usage once a model has at least 50 requests this month; before that, the official `cost_task`.
+- **`spent_mo`**: dollars spent this month on the model (blank if unknown).
+- **`reqs_5h`** and **`reqs_wk`**: requests that fit in the model's 5-hour and weekly windows.
+- **`reqs_mo`**: requests left in the month after what you have spent.
+- **`usable`**: the smallest of those three, that is, how many requests you can make right now.
+- **`limit`**: the binding limit: `5h`, `week`, `month`, `unlimited` (free models) or `unknown` (not in our plan data).
+
 ```
-
-For a single run, `-config FILE` reads settings and option defaults from
-`FILE` instead of the per-user file (the path must exist; point it at an empty
-file to drop every default). A boolean default can be turned off without
-touching the file with `-name=false`:
-
-```sh
-opencodable -paid=false        # paid=yes in the file, off for this run
-opencodable -config ./ci.conf  # another file, e.g. keys only
-```
-
-`-doctor` prints where each key was found (`env`, `config`, `dotfile`,
-`none`) and warns about unknown keys in the file (typos). Without any key you
-still get prices, allowances and per-request costs; quality and speed columns
-print as `-`.
-
-## Usage
-
-```sh
-opencodable                          # all subscription models, ranked by quality
-opencodable -pareto -paid            # the non-dominated paid models only
-opencodable -sort reqs               # most requests per month first
-opencodable -privacy                 # exclude models that train on your prompts, or whose status is unknown
-opencodable -plan go-plus            # allowances for the Go Plus plan (default: go)
-opencodable -peak                    # DeepSeek peak-hours pricing
-opencodable -probe                   # measure live speed of every model (paid, cached 24h)
-opencodable -probe -probe-max-allowance 1  # stop after $1 of allowance burn
-opencodable -probe-model kimi-k3     # measure one model, full JSON details
-opencodable -usage                   # remaining Go allowance: 5h / weekly / monthly windows
-opencodable -now                     # requests still affordable per model, per window (spend auto-fetched)
-opencodable -now -window-estimate    # also estimate 5h/week spend (ledger + monthly split)
-opencodable -spent pasted.tsv -now   # offline fallback: subtract spend from a pasted console table
-opencodable -vertical                # one model per 'field: value' block (screen readers)
-opencodable -json                    # machine-readable output for every view
-opencodable -l                       # add the legend block explaining each column
-opencodable -doctor                  # audit plan/AA/SWE/probe coverage
-opencodable -refresh                 # refetch everything, ignore the 24h cache
-opencodable -offline                 # cache only for catalog/benchmarks/probes
-opencodable -paid=false              # turn off a paid=yes from opencodable.conf
-opencodable -config ./ci.conf        # alternative config file (empty = no defaults)
-opencodable -exclude '*grok*'        # hide models by ID or display name
-opencodable -include deepseek        # show only DeepSeek models (both price regimes)
-opencodable -max-cost 0.01 -min-speed 60   # cheap and fast only
-opencodable -min-quality aa_int=40,swe_b=30  # quality floors (missing values kept)
-opencodable -missing drop            # ...or drop models with no value for a floor
-opencodable -full -sort usable       # static quality plus affordable requests, most usable first
-opencodable -cols name,cost_task,usable,limit  # only these columns (+name is automatic)
-opencodable -excols ctx_k,out_k,src  # all columns but these
-```
-
-### Options
-
-Every flag is optional; the bare command needs none of them. Each one except
-`-config` can also be set as a default in `opencodable.conf` under its
-lowercase name (see [Configuration](#configuration)); the command line always
-wins.
-
-**Views** — pick at most one (combining two is an error):
-
-- `-main` — the default ranking table: static cost, speed and quality per
-  model. What you get with no view flag at all; the flag exists so scripts
-  and configs can name it explicitly.
-- `-usage`, `-now`, `-full` — allowance windows, affordable requests, and
-  both joined; see [Your allowance](#your-allowance) below.
-- `-doctor` — coverage audit; see [Diagnosis](#diagnosis) below.
-
-**Configuration override**
-
-- `-config <file>` — read settings and option defaults from `<file>` instead
-  of the per-user `opencodable.conf`. The file must exist; an empty one drops
-  every default. Useful for CI, throwaway experiments, or a second set of API
-  keys.
-- `-name=false` — override a boolean whose config-file default is true, e.g.
-  `opencodable -paid=false`. Write it with `=`: boolean flags do not consume
-  a separate word, so `-paid false` would leave `false` as a positional
-  argument.
-
-**What to rank**
-
-- `-provider <name>` — which models.dev provider to rank. Default
-  `opencode-go` (your subscription); other values are for experimenting with
-  public catalogs, e.g. `opencodable -provider openrouter`. Only
-  `opencode-go` has allowance/plan data.
-- `-plan go|go-plus` — which subscription tier's per-model monthly limits to
-  use. Go Plus gives every paid model a larger limit, so `r_quota` and the
-  `-now` counts grow accordingly. Default `go`.
-- `-sort name|price|speed|quality|reqs|usable` — column to rank rows by:
-  alphabetical, cheapest request first, fastest first, smartest first
-  (Artificial Analysis intelligence index), largest monthly quota first
-  (`r_quota`), or most affordable requests first (`usable` ranks `-full`;
-  elsewhere it falls back to `name`). Default `quality`. Example:
-  `opencodable -sort price` to find the budget option.
-- `-pareto` — keep only the models that are not dominated: no other model is
-  simultaneously cheaper, faster and better. What remains is the honest
-  "best compromise" shortlist. Combine with `-paid` to ignore free models.
-- `-paid` — hide the free models (those costing $0 per request). Useful when
-  you want to decide among the models that actually consume your allowance.
-- `-privacy` — hide every model that trains on your prompts, plus any whose
-  privacy status the plan snapshot does not confirm (fail-closed). Example:
-  `opencodable -pareto -paid -privacy` for the best privacy-safe paid pick.
-- `-peak` — price DeepSeek models at their peak-hours rates instead of the
-  off-peak ones, so cost columns reflect what you pay if you only code during
-  business hours. The whole table is peak-priced, so no `[peak]` twins are
-  added (see "Peak twins" below).
-
-**Peak twins**
-
-Models with peak-hours pricing (DeepSeek) appear twice: the off-peak base
-row plus a `[peak]` twin (e.g. `DeepSeek V4.1 Flash [peak]`, ID suffixed
-`-peak`). Same model, same speed/scores/privacy/allowance dollars — only
-the price regime differs, so `cost_task` and quotas/counts recompute at peak
-rates side-by-side with the base row: run now or wait for off-peak, at a
-glance. Twins inherit `-paid`/`-privacy` verdicts but face the value filters
-themselves (`-max-cost` can keep the base and drop the twin); Pareto never
-flags a twin while its base is visible. In `-now`/`-full` the twin shares
-the base's spend dollars but prices the official peak profile for `burn_req`
-— measured burn needs regime-tagged tokens the console API does not report.
-`-exclude deepseek` hides both regimes; `-exclude '*[peak]'` keeps only
-off-peak. With `-peak` the twins disappear (everything is already peak).
-
-**Filtering**
-
-- `-exclude <pattern>[,<pattern>…]` — hide models whose ID or display name
-  matches. Case-insensitive; a pattern without `*` or `?` matches anywhere, so
-  `-exclude grok` hides every Grok model while `-exclude 'kimi-*'` anchors the
-  prefix. `*` matches any run of characters (including the `/` in
-  provider-prefixed IDs). Excluded models are not probed, so the filter also
-  saves allowance.
-- `-include <pattern>[,<pattern>…]` — show only models whose ID or display
-  name matches (same case-insensitive wildcard rules). Empty means all
-  models. Combines with `-exclude`: a model must match `-include` and dodge
-  `-exclude`. Included-only models are probed, so the filter also saves
-  allowance on narrow comparisons like `-include deepseek`.
-- `-max-cost <usd>` — hide models costing more than `<usd>` per coding-agent
-  request (`cost_task`). Free models cost 0 and always pass.
-- `-min-speed <tok/s>` — hide models slower than this. Uses the measured
-  `p_tok_s` when a trusted probe exists, otherwise AA `tok_s` — the same speed
-  `-sort speed` ranks by.
-- `-min-quality <metric>=<score>[,…]` — hide models below a score on one or
-  more metrics: `aa_int`, `aa_code`, `aa_math`, `swe_b`, `code_b`, `term_b`,
-  `if_b`, `aa_lcr`, `lb_agent`, `lb_code`, `elo`, `btr` (the column titles, see
-  [TITLES.md](TITLES.md)). Listed metrics are ANDed. A bare number means the
-  composite `-sort quality` uses: `aa_int`, falling back to `aa_code`. Both
-  Arena scales run ~1400–1550 like Elo: `btr` is the fresh official rating,
-  `elo` the third-party snapshot (top-20, can lag).
-- `-missing keep|drop` — default `keep`: a model with no value for a filtered
-  metric is not judged by that bound (its `-` stays visible). `drop` is the
-  fail-closed mode that removes such rows. Applies to speed and quality;
-  `cost_task` is always known.
-
-Filters run before `-pareto`, so a hidden model never dominates a visible one.
-`-now` honours `-exclude`, `-include`, `-max-cost` and `-min-speed` (against its own
-`p_tok_s`); quality bounds are ignored there because that view loads no AA
-scores, with a note on stderr. `-full` honours every filter, including
-quality, with speed measured the main-table way (probe when trusted, else AA).
-
-**Columns**
-
-- `-cols <title>[,<title>…]` — show only these columns in the main, `-now`
-  and `-full` views. Repeatable; values union.
-- `-excols <title>[,<title>…]` — show all columns except these. Repeatable;
-  values union, then subtract from the `-cols` set (or from all columns when
-  `-cols` is unset). Example: `-cols aa_int,aa_code -excols aa_code` hides
-  `aa_code`.
-- `name` is always shown, even under `-excols name`. Titles are
-  case-insensitive and use the [TITLES.md](TITLES.md) vocabulary. A name
-  unknown in **every** view is an error (`-cols: unknown column "foo"`); a
-  name known only in another view is silently ignored, so one global
-  `cols=`/`excols=` preset in `opencodable.conf` works for every view and each
-  run refines it. Column order always follows the view, never the flag order.
-  The `-l` legend and `-json` output follow the selection (JSON keeps its
-  view extras: `id`, `unlimited`, `known`, …). `-usage` and `-doctor` ignore
-  the selection.
-
-**Measuring live speed (costs a few cents)**
-
-- `-probe` — send one small paid request to every model through your
-  subscription and measure real tokens/s and time-to-first-token on your
-  account (the `p_tok_s` / `p_ttft_s` columns). Results are cached 24h, so a
-  daily run is cheap. Progress prints on stderr; the table gains the measured
-  columns. Each successful probe's allowance burn is also logged locally and
-  feeds `-window-estimate` attribution.
-- `-probe-max-allowance <usd>` — with `-probe`, stop after burning this many
-  allowance dollars in total: `opencodable -probe -probe-max-allowance 0.5`
-  caps the whole run at 50¢.
-- `-probe-model <id>` — probe a single model and print its full JSON
-  measurement (window length, token counts, burn):
-  `opencodable -probe-model kimi-k3`. Use it to re-measure one suspicious
-  result; add `-refresh` to ignore the cache.
-
-**Your allowance**
-
-- `-usage` — asks OpenCode how much of your allowance is left and prints the
-  three windows (5h rolling, weekly, monthly): percent used, percent
-  remaining, reset time. Needs network and a key; it is one free API call.
-- `-now` — the "what can I use right now" table: per model, how many requests
-  still fit in each window given your real spend this period (fetched from
-  the console usage API automatically). See
-  [Choosing a model right now](#choosing-a-model-right-now--now) below.
-- `-full` — the main table joined with `-now`: every static cost/speed/
-  quality column first, then the affordability columns (`burn_req`,
-  `spent_mo`, `reqs_5h`, `reqs_wk`, `reqs_mo`, `usable`, `limit`). No title
-  collides: the theoretical monthly count is `r_quota`, the remaining count
-  is `reqs_mo`.
-  Live like `-now` (needs a key; `-offline` assumes $0 spent), filters like
-  the main table (quality applies), sorts with `-sort` plus `usable`.
-  Thirty-one columns wide — pair it with `-cols` (see "Columns" above).
-- `-window-estimate` — with `-now`/`-full`, estimate each model's 5h/weekly
-  spend instead of assuming fresh windows. Method cascade, reported on
-  stderr with `window_method` in JSON (`full` fresh caps when off/offline;
-  `ledger` when local history attributes dollars; `proportional` for the
-  monthly-proportional split of the implied remainder). The console API has
-  no time slicing (verified Oct 2026), so window spend is estimated, never
-  measured — except fresh caps, nothing here is exact.
-- `-spent <file>` — offline fallback for `-now`/`-full`: subtract per-model spend
-  read from a pasted console "usage by model" table instead of calling the
-  API. Note: a pasted file carries no request counts, so measured `burn_req`
-  never kicks in and the official estimate is used.
-
-**Output shape**
-
-- `-vertical` — one model per block of `field: value` lines instead of a wide
-  table; much easier for screen readers and for `grep`. Applies to the main
-  table, `-now` and `-full`.
-- `-json` — machine-readable output for every view, keys equal to the column
-  titles (see [TITLES.md](TITLES.md)). Example:
-  `opencodable -json | jq '.[] | select(.pareto)'`.
-- `-l` — print the `#`-prefixed legend block that explains each column.
-  Off by default in every view; works in terminal, piped and `-vertical` modes.
-- `-nohead` — omit the header row (`#name…`), data rows only, in every view.
-  Handy for `tail`/`wc`/append pipelines when the column order is already
-  known. The `-l` legend still prints; no-op in `-vertical` and `-json`.
-- Output also adapts automatically: on a terminal you get a padded table;
-  piped or redirected, strict TAB-separated values. Neither prints a legend
-  unless `-l` is given — see [Output adapts to stdout](#output-adapts-to-stdout).
-
-**Data freshness**
-
-- `-refresh` — ignore the 24h cache and refetch catalog, benchmarks and
-  probe results now (prices and scores move; usually unnecessary since each
-  run reuses the cache).
-- `-offline` — never touch the network for catalog/benchmarks/probes; use
-  whatever the cache holds, however old. Handy on a plane or to re-render
-  cached data. `-usage` is inherently live and rejects `-offline`.
-- `-ttl <seconds>` — cache lifetime for the live usage endpoints (console
-  per-model spend, allowance windows); default 600, `0` disables caching.
-  Repeat `-now` runs inside the TTL cost no API calls; `-refresh` bypasses.
-  A failed fetch serves the stale cache with a warning rather than failing.
-
-**Diagnosis**
-
-- `-doctor` — coverage audit: which models lack a plan entry, an Artificial
-  Analysis match or a SWE-bench score, how fresh each cache is, where your
-  API keys were found, and warnings for unknown keys in `opencodable.conf`.
-  Runs no probes; safe to run anytime. Experimental: its columns are not yet
-  part of the TITLES.md contract.
-
-### Choosing a model right now: `-now`
-
-Go usage limits are **per model**: each model has its own monthly dollar
-limit, and its 5h and weekly caps are 20% and 50% of that limit. There is no
-shared pot and no `-pot` flag. `-now` turns those caps into requests:
-
-- `cost_task` — official allowance cost per request (OpenCode token profile).
-- `burn_req` — allowance dollars one request actually burns: measured from
-  your console token counts when the model has at least 50 requests this
-  period, otherwise the official `cost_task`. Real coding-agent requests are
-  often larger than the official profile (DeepSeek V4.1 Flash measured about
-  5× in our sample), so this can differ substantially.
-- `spent_mo` — allowance dollars spent this period, computed from console
-  token counts at Go prices, not from the console's list-cost total.
-  Subtracted from the model's monthly limit.
-- `reqs_5h` / `reqs_wk` — requests in the model's 5h / weekly cap after
-  estimated window spend. Fresh-window upper bounds by default; with
-  `-window-estimate`, window spend is attributed from local history
-  (past runs' console deltas, probe burns) with the unattributed remainder
-  split monthly-proportionally — an explicit estimate, not per-model truth.
-- `reqs_mo` — requests left in the monthly limit after `spent_mo`.
-- `usable` / `limit` — the minimum and which constraint binds: `5h`, `week`,
-  `month`, `unlimited`, or `unknown`.
-
-The console API is **filtered to `opencode-go` rows**; pay-as-you-go rows are
-ignored. The same Go key authorizes `console.opencode.ai/api/usage/models`, so
-spend is fetched automatically. A pasted console table via `-spent file.tsv`
-is the offline fallback; it carries no request counts, so with `-spent` the
-measured burn never kicks in and `burn_req` stays at the official `cost_task`.
-Free models (zero prices) show `limit=unlimited` with
-empty counts, even when the snapshot lacks their entry; paid models missing
-from the plan snapshot show `limit=unknown` rather than a fake zero.
-
-### Coverage audit: `-doctor`
-
-`-doctor` joins the same sources and prints one row per model: plan status
-(`yes` / `free` / `missing`), AA slug, SWE-bench score, privacy verdict,
-cached probe status, and warnings. It also prints the plan snapshot date,
-cache ages, key presence, and coverage counts (on stderr). It never runs a
-probe; `-json` returns the same report as an object. `-doctor` is
-experimental: its columns are not yet part of the TITLES.md contract, but it
-follows the same conventions — a `#id…` header and, with `-l`, `# `-prefixed
-legend lines.
-
-### Output adapts to stdout
-
-- **Interactive terminal**: columns are padded into a visually aligned table,
-  missing values show as `-`. Add `-l` for a `#`-prefixed legend block that
-  explains each column.
-- **Piped or redirected**: strict machine format — every row is values
-  separated by exactly one TAB character, missing fields are empty strings,
-  no padding. The `#name…` header row keeps its `#` prefix, so it can never be
-  confused with data. Add `-l` to prepend the `# ` legend lines:
-```sh
-opencodable | grep -v '^#' | awk -F'\t' '{print $1, $6}'
-```
-
-`-vertical` renders one model per block of `field: value` lines with blank
-lines between records and empty fields skipped — much easier to read with a
-screen reader than a wide table, and applies to the model table, `-now` and
-`-full`. The field names are the legend, so no prose block is printed unless
-`-l` is given.
-
-```sh
-$ opencodable -pareto -paid -vertical
-name: Kimi K3.1 Pro
-cost_tok: $10
-cost_task: $0.0204
-allowance: $15
-r_quota: 735.3
-p_tok_s: 78.7
-aa_int: 55.1
-pareto: yes
-```
-
-The `-json` flag bypasses TSV entirely and dumps the rows as JSON.
-
-**[TITLES.md](TITLES.md) is the parsing contract**: every view's columns in
-order, with meanings; new columns are always appended at the end; renames,
-removals or reorders bump the major version.
-
-### Sample output
-
-Main view (`opencodable -pareto -paid -privacy`, columns excerpt — 3 first lines):
-
-```sh
-#name           cost_tok  cost_task  allowance  r_quota   p_tok_s  aa_int  swe_b  pareto
-Kimi K3.1 Pro   $10       $0.0204    $15        735.3     78.7     55.1    -      yes
-Gemini 4 Argon  $10       $0.019     $30        1578.9    85.8     52.6    -      yes
-Grok 4.7        $6        $0.01775   $15        845.1     172.3    46.4    -      yes
-```
-
-`-now -paid -privacy` (3 first lines):
-
-```sh
 #name                 cost_task  burn_req  spent_mo    reqs_5h  reqs_wk  reqs_mo  usable  limit  p_tok_s
 MiMo-V2.6-Flash       $0.0004    $0.0006   $0.11189    19841    49602    99020    19841   5h     59.5
 MiMo V2.5             $0.0004    $0.00096  $0.15188    12562    31406    62653    12562   5h     89.0
 LongCat-2.0           $0.00105   $0.00105  $0.00077    11435    28587    57174    11435   5h     76.9
 ```
 
-`-usage` (all three windows):
+Without the OpenCode key, `-now` and `-full` still run, but they assume you have
+spent nothing yet, and they say so on stderr. If you cannot use the key, paste
+the "usage by model" table from the OpenCode console into a text file and pass
+it with `-spent <file>`. A pasted table has no request counts, so the official
+per-request cost is used.
 
-```sh
-#window  status  used_pct  remaining_pct  resets_at                resets_in
+`-usage` needs the network and your key. Live allowance data is cached for 10
+minutes by default. `-ttl <seconds>` changes that (`0` turns the cache off), and
+`-refresh` forces an update.
+
+```
+#window  status  used_pct  remaining_pct  resets_at                  resets_in
 5h       ok      19        81             2026-10-27T21:43:22+01:00  53m 0s
 week     ok      16        84             2026-11-02T01:00:00+01:00  124h 9m 0s
 month    ok      21        79             2026-11-07T14:56:38+01:00  258h 6m 0s
 ```
 
-### Sample probe detail
+## Configuration
 
-```json
-$ opencodable -probe-model kimi-k3.1-pro
-{
-  "model_id": "kimi-k3.1-pro",
-  "tok_s": 78.67,
-  "ttft_s": 6.60,
-  "window_s": 5.57,
-  "output_tokens": 438,
-  "reasoning_tokens": 283,
-  "allowance_burned": 0.018352
-}
+### Keys
+
+| Key | What it unlocks | Needed? |
+|---|---|---|
+| `OPENCODE_API_KEY`: your OpenCode Go key | `-now`, `-full`, `-usage`, `-window-estimate`, `-probe` | for those views |
+| `AA_API_KEY`: free Artificial Analysis key | quality and benchmark columns | recommended |
+
+Each key is looked up in this order: an environment variable, then
+`opencodable.conf`, then a dot-file in the folder you run the command from
+(`.opencode-go.key` or `.artificialanalysis.key`).
+
+Without the OpenCode key, `-now` and `-full` assume zero spending (and say so),
+while `-usage` and `-probe` stop with a message. Without the Artificial Analysis
+key you get a warning, and the quality columns and the Artificial Analysis speed
+columns stay empty.
+
+### The configuration file
+
+`opencodable.conf` is a plain text file with one `name=value` per line. Lines
+starting with `#` are comments; a comment must be on its own line.
+
+| OS | Location |
+|---|---|
+| Linux | `~/.config/opencodable/opencodable.conf` (or `$XDG_CONFIG_HOME/opencodable/`) |
+| macOS | `~/Library/Application Support/opencodable/opencodable.conf` |
+| Windows | `%AppData%\opencodable\opencodable.conf` |
+
+Names in upper case are keys. Names in lower case are default options, so you
+can keep your usual choices there. The command line always wins.
+
+```ini
+OPENCODE_API_KEY=your-key
+AA_API_KEY=your-key
+
+# Default options
+plan=go-plus
+paid=yes
+privacy=on
+probe-max-allowance=1
+
+# Filters and columns
+exclude=grok*
+max-cost=0.02
+min-quality=aa_int=35,aa_code=70
+#cols=cost_task,p_tok_s,aa_int,swe_b
 ```
+
+For a single run, `-config FILE` uses another file instead (it must exist; an
+empty file drops every default). To turn a default off for one run, write
+`-name=false`, for example `opencodable -paid=false`.
+
+`opencodable -doctor` shows where each key was found (`env`, `config`, `dotfile`
+or `none`), and warns about setting names it does not know, which are usually
+typos.
+
+## Options
+
+Every option is optional, and `opencodable -h` lists them all with their
+defaults. Every option except `-config` can also be set in the configuration
+file, under its lower-case name.
+
+### Views
+
+Pick one at a time; combining two is an error. Without a view, the main table is shown.
+
+- `-main`: the main table, with cost, budget and quality. This is the default.
+- `-now`: what you can use right now, per model.
+- `-full`: the main table and `-now` in one wide table.
+- `-usage`: your remaining allowance in the 5-hour, weekly and monthly windows.
+- `-doctor`: a coverage check: missing data per model, cache ages, where keys were found, typos in your configuration file. It runs no probes.
+
+### What to show, and in what order
+
+- `-sort <key>`: `quality` (the default: intelligence, falling back to the coding score), `price` (cheapest request first), `speed`, `reqs` (most requests a month first), `usable` (most usable right now, for `-full`), or `name`.
+- `-pareto`: keep only the models that no other visible model beats on cost, speed and quality together.
+- `-paid`: hide free models.
+- `-privacy`: hide models that may train on your prompts, and models whose status is unknown.
+- `-plan go|go-plus`: which plan's budgets to use. The default is `go`; Go Plus has larger budgets.
+- `-provider <name>`: the default is `opencode-go`, the only provider with plan (budget) data.
+- `-peak`: price DeepSeek at its peak-hour rates everywhere, without the separate `[peak]` rows.
+
+### Filters
+
+- `-exclude <patterns>`: hide models whose ID or name matches. Separate patterns with commas. Matching ignores case; `*` stands for any run of characters and `?` for one character. A plain word matches anywhere, so `-exclude grok` hides every Grok model.
+- `-include <patterns>`: show only the models that match.
+- `-max-cost <usd>`: hide models whose estimated cost per request is higher.
+- `-min-speed <tok/s>`: hide slower models (measured speed when available, otherwise the reported one).
+- `-min-quality <metric>=<score>,...`: hide models below a score, for example `aa_int=40,swe_b=30`; a model must meet every bound. The metric names are column titles. A bare number means the overall quality score.
+- `-missing keep|drop`: what to do with a model that has no value for a filtered metric. `keep` (the default) keeps it; `drop` removes it.
+
+Filters work in every view, with one exception: `-now` loads no benchmark data, so
+it ignores the quality bounds and says so on stderr.
+
+### Column flags
+
+- `-cols <titles>`: show only these columns. `name` is always shown.
+- `-excols <titles>`: hide these columns.
+- `-l`: add a legend that explains each column.
+
+### Output flags
+
+- `-json`: machine-readable output. Keys are the column titles.
+- `-nohead`: leave out the header row.
+- `-vertical`: one model per block of `name: value` lines. Easier with a screen reader, and easy to search with `grep`.
+
+### Allowance flags
+
+- `-window-estimate`: estimate what you have used in the current windows (see [Your allowance](#your-allowance)).
+- `-spent <file>`: use a pasted console table instead of fetching your spending.
+- `-ttl <seconds>`: how long live allowance data stays cached (default 600; `0` turns caching off).
+- `-refresh`: ignore the caches and fetch everything again.
+- `-offline`: use only what is cached, with no network. `-usage` refuses this, and `-now` then assumes no spending unless you pass `-spent`.
+
+### Measurement flags
+
+- `-probe`: measure every model's speed on your subscription. This spends allowance. Results are kept for 24 hours.
+- `-probe-max-allowance <usd>`: stop a `-probe` run once this much allowance has been spent.
+- `-probe-model <id>`: measure one model and print the details as JSON.
+
+### Settings
+
+- `-config <file>`: use this configuration file for the run.
+- `-name=false`: turn off a default that your configuration file sets to yes.
 
 ## Columns
 
-`-json` keys are exactly the column titles below (minus the `#` on `name`),
-plus JSON-only extras: `id` (models.dev model ID) and `unlimited` (boolean,
-free models). `-now` also carries `known`, `spent_known` and
-`window_estimate` so its zero/scaled counts can be interpreted. See
-[TITLES.md](TITLES.md) for the full contract.
+`-json` keys are the column titles below, without the leading `#`. JSON adds
+`id` (the model's catalog ID) and `unlimited` (true for free models). `-now`
+adds `known`, `spent_known`, `window_estimate` and `window_method`. The exact
+contract is in [TITLES.md](TITLES.md).
 
 | Column | Meaning |
 |---|---|
-| `#name` | model display name (models.dev) |
-| `cost_tok` | retail USD per 1M output tokens |
-| `cost_task` | estimated USD per coding-agent request (OpenCode's official token profile, base tier) |
-| `allowance` | monthly usage budget of this model in your plan; `unlimited` for free models |
-| `r_quota` | allowance ÷ cost_task ≈ requests per month (quota) |
-| `tok_s`, `ttft_s` | Artificial Analysis reported output speed / time to first token |
-| `p_tok_s`, `p_ttft_s` | **measured on your subscription** via `-probe` |
-| `aa_int`, `aa_code`, `aa_math` | Artificial Analysis composite indexes |
-| `code_b`, `term_b`, `if_b`, `aa_lcr` | per-benchmark pass rates % via AA: LiveCodeBench, Terminal-Bench, IFBench, Long-Context Reasoning |
-| `swe_b` | SWE-bench Verified % resolved, best recorded agent run |
-| `pareto` | `yes` = not dominated on (cost, speed, quality) after `-paid`/`-privacy` filtering |
-| `src` | `aa:<effort>` when speed came from that AA reasoning-effort variant |
-| `privacy` | `safe`, `trains`, or `unknown` (no plan-snapshot verdict) |
-| `ctx_k`, `out_k` | context window / maximum output in thousands of tokens (models.dev) |
-| `lb_agent`, `lb_code` | LiveBench 2.0 Long Agentic / Coding scores (0–100, single run) |
-| `elo` | Arena Elo, daily snapshot of the arena.ai text leaderboard (third-party mirror; top-20, can lag) |
-| `btr` | Arena Bradley–Terry rating on the Elo scale, text with style control, overall (official mirror, fresh) |
+| `#name` | model name |
+| `cost_tok` | retail price per million output tokens |
+| `cost_task` | estimated cost of one typical coding-agent request |
+| `allowance` | your monthly dollar budget for the model (`unlimited` for free models) |
+| `r_quota` | roughly how many requests that budget covers each month |
+| `tok_s`, `ttft_s` | output speed (tokens per second) and wait before the first word, as reported by Artificial Analysis for other hosts |
+| `p_tok_s`, `p_ttft_s` | the same two, measured on your own subscription with `-probe` |
+| `aa_int`, `aa_code`, `aa_math` | Artificial Analysis indexes, 0 to 100: overall intelligence, coding and maths |
+| `code_b`, `term_b`, `if_b`, `aa_lcr` | pass rates in percent on LiveCodeBench, Terminal-Bench, IFBench and a long-context reasoning test |
+| `swe_b` | percent of real GitHub issues solved in SWE-bench Verified (best recorded run) |
+| `lb_agent`, `lb_code` | LiveBench scores, 0 to 100, for long agentic tasks and for coding |
+| `elo`, `btr` | Arena ratings: `elo` from a daily snapshot of the Arena text leaderboard, `btr` from the official Arena dataset |
+| `pareto` | `yes` when no other visible model beats it on cost, speed and quality together |
+| `src` | `aa:<effort>` when the speed comes from a reasoning-effort variant of the model |
+| `privacy` | `safe`, `trains` or `unknown` (see [Reading the table](#reading-the-table)) |
+| `ctx_k`, `out_k` | context window and maximum output, in thousands of tokens |
 
-Missing data prints as `-` (terminal) or empty (piped) — never a wrong score.
+`-now` adds `burn_req`, `spent_mo`, `reqs_5h`, `reqs_wk`, `reqs_mo`, `usable`
+and `limit` (see [Your allowance](#your-allowance)). `-full` shows the main
+columns followed by these, 33 in total, so use `-cols` to narrow it down. In
+`-full`, `r_quota` is the full-month figure and `reqs_mo` is what remains.
+
+Choose columns with `-cols` or `-excols` (both repeatable). The order always
+follows the view. A column name that exists in another view is silently
+ignored, so one preset in your configuration file works in every view. A name
+that exists nowhere is an error.
+
+## Output for scripts
+
+- **In a terminal** you get an aligned table. **Piped or redirected**, you get tab-separated values: one row per model, one tab between fields, an empty field for missing data, and a header line that starts with `#name`.
+- **JSON** with `-json`, for example `opencodable -json | jq -r '.[] | select(.pareto) | .name'`.
+- **Two columns without a header:** `opencodable -pareto -paid -nohead -cols name,r_quota`.
+- **Legends** are added only with `-l`, so parsing stays simple.
+- Until the `v1.0.0` release, column titles may still change. [TITLES.md](TITLES.md) is the contract that applies after it.
+
+## Measured speed (probes)
+
+Speeds reported by public sites are measured on their own servers. `-probe`
+measures your own subscription instead: it sends one short, fixed coding prompt
+to each model and times the answer. A longer prompt is used for models that
+answer too quickly to time reliably.
+
+- **Cost**: about one cent per model. In our last run, 29 models cost about $0.34 in total. `-probe-max-allowance 0.50` stops a run once half a dollar has been spent.
+- **Caching**: results are kept for 24 hours. `-refresh` measures again, which spends allowance again.
+- **Trust**: a measurement that is too short to time, or implausibly fast, is marked `suspect` and left out of the speed rankings. `-probe-model` shows the raw numbers.
+- **Thinking models** take time before their first visible word. `ttft_s` and `p_ttft_s` include that thinking time, so some models wait tens of seconds and then stream quickly.
+
+`-probe-model` prints the full details of one measurement:
+
+```json
+{
+  "model_id": "kimi-k3.1-pro",
+  "tok_s": 78.67540953897064,
+  "ttft_s": 6.602359389,
+  "e2e_s": 7.911003628,
+  "window_s": 5.567177884,
+  "prompt_tokens": 104,
+  "output_tokens": 438,
+  "reasoning_tokens": 283,
+  "cached_tokens": 0,
+  "allowance_burned": 0.018352,
+  "list_cost": 0.004588
+}
+```
+
+## Things that surprise people
+
+- **Price per request is not the whole story.** Budgets differ a lot between models. In the same table, `r_quota` ranged from a few hundred to a few hundred thousand requests a month. Look at `r_quota` and `usable` as well as the price.
+- **Cheap can mean less private.** Contributor models (`trains`) are often much cheaper per request, because the provider may use your requests for training. `-privacy` hides them, along with models whose status is unknown.
+- **Public speed numbers may not match yours.** Routing can differ by model and by time of day. `-probe` is the only way to know your own speed.
 
 ## Data sources
 
-| Source | Provides | Auth |
+| Source | What it provides | Key |
 |---|---|---|
-| [models.dev](https://models.dev) | prices, context limits, reasoning flags | none |
-| [OpenCode Go docs](https://opencode.ai/v2/docs/console/go/) | allowances, token profiles, peak prices, privacy | none |
-| [Artificial Analysis](https://artificialanalysis.ai) | benchmark indexes, reported speed | free key |
-| [LiveBench 2.0](https://livebench.ai) | long-horizon agentic and coding scores (pinned release) | none |
-| [SWE-bench Verified](https://www.swebench.com/) leaderboard JSON | agentic repo-fixing % resolved | none |
-| Arena text leaderboard snapshot ([mirror](https://github.com/oolong-tea-2026/arena-ai-leaderboards), MIT) | Elo per model (top 20, daily) | none |
-| [Arena leaderboard dataset](https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset) (CC-BY-4.0) | Bradley–Terry rating, text with style control | none |
-| [Console usage API](https://console.opencode.ai/api/usage) (`/usage/models`) | per-model tokens and spend for the current period; Go allowance spend recomputed from tokens | same Go key |
-| Your subscription endpoint (probe) | real tok/s, TTFT, allowance burn | `OPENCODE_API_KEY` |
+| [models.dev](https://models.dev) | the model catalog: prices and context sizes | none |
+| [OpenCode Go](https://opencode.ai/v2/docs/console/go/) | plan budgets, cost per request, peak prices, privacy | none (built into the program as a snapshot) |
+| [Artificial Analysis](https://artificialanalysis.ai) | quality indexes, benchmark scores, reported speed | free key |
+| [LiveBench](https://livebench.ai) | agentic and coding scores (pinned release) | none |
+| [SWE-bench Verified](https://www.swebench.com/) | percent of GitHub issues solved | none |
+| Arena text leaderboard, [daily snapshot](https://github.com/oolong-tea-2026/arena-ai-leaderboards) (third-party mirror, MIT) | `elo` | none |
+| [Arena leaderboard dataset](https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset) (CC-BY-4.0) | `btr` | none |
+| OpenCode console and usage endpoints | your spending and allowance windows | your OpenCode Go key |
+| Your subscription (probe) | your measured speed and allowance per request | your OpenCode Go key |
 
-Dropped with cause: Aider polyglot (public YAML files stale since 2025-10).
+The plan data (budgets, peak prices and privacy flags) comes from OpenCode's
+public documentation and is a snapshot, dated by `-doctor`. Check it when
+OpenCode changes its plans.
 
-## What live probing tends to reveal
+## Keys and privacy
 
-Observations from full runs on the OpenCode Go plan (first: October 2026 —
-expect the specific numbers to drift; the patterns below are stable):
+- Each key is sent only to the service it belongs to: the OpenCode key to OpenCode, the Artificial Analysis key to artificialanalysis.ai. Keys are never printed; `-doctor` only shows where each one was found.
+- Fetched data and results are cached in your user cache folder (`~/.cache/opencodable` on Linux, `~/Library/Caches/opencodable` on macOS). On Linux and macOS, the folder is readable only by you.
+- A probe sends one short coding prompt through your subscription, and nothing else of yours.
 
-- **Allowance ≠ value.** High-quality flagship models often carry the thinnest
-  monthly allowances (e.g. $15), while mid-tier models buy orders of magnitude
-  more requests — `r_quota` flips the usual leaderboard ordering.
-- **Your routes can beat public numbers.** Subscription endpoints frequently
-  measure *faster* than aggregator averages (reserved capacity), but routing
-  varies hour to hour and per model — sometimes 2-3×. Site-reported speeds are
-  a starting point; `-probe` is the ground truth for your setup.
-- **Thinking costs latency.** Heavy-reasoning models can take tens of seconds
-  before their first content token even while streaming fast afterwards.
-  Judge responsiveness by `p_ttft_s`, throughput by `p_tok_s`.
-- **Privacy has a price.** Contributor models are an order of magnitude
-  cheaper per request in exchange for training on your prompts; `-privacy`
-  hides both training models and models whose privacy status is unknown.
-- **Free models are real quality.** Time-limited free tiers on the plan
-  sometimes benchmark in the same range as paid mid-tier models — worth
-  probing before paying attention to price at all.
+## How it works
 
-## Design notes
-
-- **Standard library only.** No Go dependencies, no frameworks — a future Rust
-  rewrite is a mechanical translation.
-- **Caching.** Catalog, benchmark and probe fetches are cached 24h in
-  `~/.cache/opencodable/`; `-refresh` forces refetch, `-offline` forbids
-  network for those. `-usage` is live and still needs network; `-now -offline`
-  uses `-spent` when given and otherwise assumes zero spend. Probe failures
-  are retried on the next run rather than served stale for 24h.
-- **Probe robustness.** Thinking models stream `reasoning_content` first and
-  can exhaust a small token budget before answering, so the probe escalates the
-  budget on failure. Ultra-fast models finish inside a window too short to
-  divide by, so the probe retries with a long-output prompt and only trusts
-  tok/s from windows ≥ 1 s. A short window (< 2 s) above 500 tok/s, or any rate
-  above 1000 tok/s, is flagged suspect and kept out of ranking/`-now`; the raw
-  probe JSON still shows it for inspection. Probes send a unique
-  `x-opencode-session` per run and an `opencodable/<version>` user agent;
-  `-probe-max-allowance` caps the total allowance a run may burn.
-- **Allowance math.** Limits are per model: 5h = 20%, week = 50%, month = 100%
-  of that model's monthly dollar limit. `-now` uses actual console token counts
-  at Go prices when a model has enough traffic, otherwise the official profile.
-  The usage endpoint's percentages are aggregate; `-window-estimate` turns
-  them into implied window dollars and attributes each model its
-  ledger-recorded share first, splitting the remainder monthly-
-  proportionally (method on stderr, `window_method` in JSON).
-- **Known artifact.** AA's `ttft_s` for reasoning models includes thinking time
-  (e.g. Claude Haiku 5.5 ~247 s median) — treat it as time to first *answer* token.
-- **Allowances are the comparison basis.** Your subscription bills per-model
-  allowances, not retail; that is why `r_quota` matters more than `cost_tok`
-  for choosing a daily driver, and why Pareto flags are computed after the
-  `-paid`/`-privacy` filters.
+- **Catalog and prices** come from models.dev, the same catalog OpenCode uses.
+- **Your plan** comes from OpenCode's public Go plan data, which the program carries as a snapshot.
+- **Benchmarks** come from the public sources listed above, matched to your models by name. A built-in alias table handles common naming differences, such as `mimo-v2.5` and `mimo-v2-5-0424`.
+- **Caching**: public data is kept for 24 hours, and live allowance data for `-ttl` seconds. When a live refresh of allowance or spending data fails, the last cached copy is used, with a warning that gives its age.
+- **Trust**: a speed measurement that is too short to time, or implausibly fast, is flagged rather than ranked. Estimates say which method produced them.
+- **Dependencies**: the program uses only Go's standard library.
 
 ## Possible enhancements
 
@@ -627,6 +412,10 @@ matching and the alias table), `internal/goplan/goplan.go` (subscription
 snapshot — update when OpenCode changes plans), `internal/bench/` (new
 benchmark feeds). Any output change must respect [TITLES.md](TITLES.md).
 
+Before sending a change, `gofmt -l .`, `go vet ./...` and `go test ./... -count=1`
+should all come back clean. The architecture and the project rules are in
+[AGENTS.md](AGENTS.md).
+
 ## License
 
 [MIT](LICENSE) © Colas Nahaboo 2026. https://github.com/ColasNahaboo/opencodable
@@ -635,7 +424,7 @@ benchmark feeds). Any output change must respect [TITLES.md](TITLES.md).
 
 ![Co-Designed with AI](https://img.shields.io/badge/Co--Designed%20with-AI-blueviolet?style=flat-square&logo=openai)
 
-This repository is developed by me, a human hobbyist in my personal time, acting as a project manager and tech lead of a team of various AI agents whose contributions are commited under their model name.
+This repository is developed by me, a human hobbyist in my personal time, acting as a project manager and tech lead of a team of various AI agents whose contributions are committed under their model name.
 
 ## History
 
