@@ -58,6 +58,7 @@ func registerOptions(t *testing.T) *flag.FlagSet {
 	vertical = fs.Bool("vertical", false, "")
 	jsonOut = fs.Bool("json", false, "")
 	nohead = fs.Bool("nohead", false, "")
+	ttlSecs = fs.Int("ttl", 600, "")
 	return fs
 }
 
@@ -288,5 +289,21 @@ func TestBuildFilterNegativeScale(t *testing.T) {
 	}
 	if flt.MinQuality["btr"] != -0.1 {
 		t.Errorf("MinQuality = %v", flt.MinQuality)
+	}
+}
+
+func TestApplyConfigTTL(t *testing.T) {
+	writeConf(t, "ttl=300\n")
+	fs := registerOptions(t)
+	if err := applyConfig(fs); err != nil {
+		t.Fatal(err)
+	}
+	if *ttlSecs != 300 {
+		t.Errorf("ttl = %d, want 300", *ttlSecs)
+	}
+	writeConf(t, "ttl=soon\n")
+	fs = registerOptions(t)
+	if err := applyConfig(fs); err == nil {
+		t.Error("ttl=soon must fail")
 	}
 }

@@ -158,7 +158,7 @@ opencodable -probe -probe-max-allowance 1  # stop after $1 of allowance burn
 opencodable -probe-model kimi-k3     # measure one model, full JSON details
 opencodable -usage                   # remaining Go allowance: 5h / weekly / monthly windows
 opencodable -now                     # requests still affordable per model, per window (spend auto-fetched)
-opencodable -now -window-estimate    # also scale 5h/week caps by account-wide usage
+opencodable -now -window-estimate    # also estimate 5h/week spend (ledger + monthly split)
 opencodable -spent pasted.tsv -now   # offline fallback: subtract spend from a pasted console table
 opencodable -vertical                # one model per 'field: value' block (screen readers)
 opencodable -json                    # machine-readable output for every view
@@ -302,7 +302,8 @@ quality, with speed measured the main-table way (probe when trusted, else AA).
   subscription and measure real tokens/s and time-to-first-token on your
   account (the `p_tok_s` / `p_ttft_s` columns). Results are cached 24h, so a
   daily run is cheap. Progress prints on stderr; the table gains the measured
-  columns.
+  columns. Each successful probe's allowance burn is also logged locally and
+  feeds `-window-estimate` attribution.
 - `-probe-max-allowance <usd>` — with `-probe`, stop after burning this many
   allowance dollars in total: `opencodable -probe -probe-max-allowance 0.5`
   caps the whole run at 50¢.
@@ -328,10 +329,13 @@ quality, with speed measured the main-table way (probe when trusted, else AA).
   Live like `-now` (needs a key; `-offline` assumes $0 spent), filters like
   the main table (quality applies), sorts with `-sort` plus `usable`.
   Thirty-one columns wide — pair it with `-cols` (see "Columns" above).
-- `-window-estimate` — with `-now`/`-full`, scale each model's 5h/weekly caps by the
-  account-wide remaining percentages from `-usage`, instead of assuming fresh
-  windows. An explicit approximation (the API has no per-model window
-  breakdown), clearly labelled on stderr.
+- `-window-estimate` — with `-now`/`-full`, estimate each model's 5h/weekly
+  spend instead of assuming fresh windows. Method cascade, reported on
+  stderr with `window_method` in JSON (`full` fresh caps when off/offline;
+  `ledger` when local history attributes dollars; `proportional` for the
+  monthly-proportional split of the implied remainder). The console API has
+  no time slicing (verified Oct 2026), so window spend is estimated, never
+  measured — except fresh caps, nothing here is exact.
 - `-spent <file>` — offline fallback for `-now`/`-full`: subtract per-model spend
   read from a pasted console "usage by model" table instead of calling the
   API. Note: a pasted file carries no request counts, so measured `burn_req`
@@ -362,6 +366,10 @@ quality, with speed measured the main-table way (probe when trusted, else AA).
 - `-offline` — never touch the network for catalog/benchmarks/probes; use
   whatever the cache holds, however old. Handy on a plane or to re-render
   cached data. `-usage` is inherently live and rejects `-offline`.
+- `-ttl <seconds>` — cache lifetime for the live usage endpoints (console
+  per-model spend, allowance windows); default 600, `0` disables caching.
+  Repeat `-now` runs inside the TTL cost no API calls; `-refresh` bypasses.
+  A failed fetch serves the stale cache with a warning rather than failing.
 
 **Diagnosis**
 
@@ -386,10 +394,11 @@ shared pot and no `-pot` flag. `-now` turns those caps into requests:
 - `spent_mo` — allowance dollars spent this period, computed from console
   token counts at Go prices, not from the console's list-cost total.
   Subtracted from the model's monthly limit.
-- `reqs_5h` / `reqs_wk` — requests in the model's 5h / weekly cap. These are
-  fresh-window upper bounds: the API does not expose per-model window spend.
-  With `-window-estimate`, they are scaled by the account-wide remaining
-  percentages from the usage endpoint (an explicit estimate, not per-model).
+- `reqs_5h` / `reqs_wk` — requests in the model's 5h / weekly cap after
+  estimated window spend. Fresh-window upper bounds by default; with
+  `-window-estimate`, window spend is attributed from local history
+  (past runs' console deltas, probe burns) with the unattributed remainder
+  split monthly-proportionally — an explicit estimate, not per-model truth.
 - `reqs_mo` — requests left in the monthly limit after `spent_mo`.
 - `usable` / `limit` — the minimum and which constraint binds: `5h`, `week`,
   `month`, `unlimited`, or `unknown`.
@@ -584,8 +593,10 @@ expect the specific numbers to drift; the patterns below are stable):
 - **Allowance math.** Limits are per model: 5h = 20%, week = 50%, month = 100%
   of that model's monthly dollar limit. `-now` uses actual console token counts
   at Go prices when a model has enough traffic, otherwise the official profile.
-  The usage endpoint's percentages are aggregate; `-window-estimate` optionally
-  applies them as a uniform scaling factor to every model's 5h/weekly caps.
+  The usage endpoint's percentages are aggregate; `-window-estimate` turns
+  them into implied window dollars and attributes each model its
+  ledger-recorded share first, splitting the remainder monthly-
+  proportionally (method on stderr, `window_method` in JSON).
 - **Known artifact.** AA's `ttft_s` for reasoning models includes thinking time
   (e.g. Claude Haiku 5.5 ~247 s median) — treat it as time to first *answer* token.
 - **Allowances are the comparison basis.** Your subscription bills per-model
@@ -597,9 +608,9 @@ expect the specific numbers to drift; the patterns below are stable):
 
 Ideas under consideration — no promises, no timeline.
 
-- True per-model 5h/weekly spend (the API exposes only aggregate percentages;
-  `-window-estimate` is a uniform approximation; a local ledger of
-  `opencode.allowance` burns from probes/sessions could approximate it)
+- Measured (not estimated) per-model 5h/weekly spend — blocked on the
+  console API, which serves period totals only (verified Oct 2026: date
+  params are ignored or rejected)
 - Multi-provider comparison (`-provider any`)
 - Recoding in Rust with same functionalities
 
@@ -622,5 +633,5 @@ This repository is developed by me, a human hobbyist in my personal time, acting
 
 ## History
 
-Version v0.1.12 2026-10-29.
+Version v0.1.13 2026-10-29.
 See [HISTORY.md](HISTORY.md).

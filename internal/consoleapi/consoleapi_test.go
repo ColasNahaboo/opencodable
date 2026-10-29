@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 )
 
 func TestFetchModelUsageParsesTokensAndProvider(t *testing.T) {
@@ -29,8 +30,9 @@ func TestFetchModelUsageParsesTokensAndProvider(t *testing.T) {
 	old := usageModelsURL
 	usageModelsURL = srv.URL
 	defer func() { usageModelsURL = old }()
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
 
-	rows, err := FetchModelUsage("key")
+	rows, _, err := FetchModelUsage("key", 0, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -53,5 +55,28 @@ func TestFetchModelUsageParsesTokensAndProvider(t *testing.T) {
 	}
 	if rows[1].Provider != "opencode" {
 		t.Errorf("second provider = %s, want opencode", rows[1].Provider)
+	}
+}
+
+func TestFetchModelUsageCachesWithinTTL(t *testing.T) {
+	hits := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits++
+		fmt.Fprint(w, `{"items": [], "pageInfo":{"page":1,"pageSize":10,"total":0,"pageCount":1}}`)
+	}))
+	t.Cleanup(srv.Close)
+	old := usageModelsURL
+	usageModelsURL = srv.URL
+	defer func() { usageModelsURL = old }()
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+
+	if _, _, err := FetchModelUsage("key", time.Hour, true); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := FetchModelUsage("key", time.Hour, false); err != nil {
+		t.Fatal(err)
+	}
+	if hits != 1 {
+		t.Errorf("second call within TTL hit the server %d times, want 1", hits)
 	}
 }

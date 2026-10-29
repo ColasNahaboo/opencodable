@@ -30,7 +30,7 @@ import (
 )
 
 // version is displayed at the bottom of the -h help text.
-var version = "v0.1.12"
+var version = "v0.1.13"
 
 // colList accumulates comma-separated -cols/-excols values. The flag may be
 // repeated and unions with the config-file default; output order always
@@ -80,6 +80,7 @@ var (
 	fullView   *bool
 	mainView   *bool
 	nohead     *bool
+	ttlSecs    *int
 	winEst     *bool
 	doctor     *bool
 	spent      *string
@@ -126,6 +127,7 @@ func main() {
 	fullView = flag.Bool("full", false, "join the main table and -now: static cost/speed/quality plus affordable requests per model")
 	mainView = flag.Bool("main", false, "show the default ranking table (static cost/speed/quality); the default when no view is given")
 	nohead = flag.Bool("nohead", false, "omit the header row (data rows only); no-op in -vertical/-json, which have no header")
+	ttlSecs = flag.Int("ttl", 600, "cache lifetime in seconds for live usage endpoints (console + windows); 0 disables caching")
 	winEst = flag.Bool("window-estimate", false, "scale -now/-full 5h/week caps by the account-wide usage percentages (estimate)")
 	doctor = flag.Bool("doctor", false, "audit plan/AA/SWE/probe coverage and exit")
 	spent = flag.String("spent", "", "path to a pasted console 'usage by model' TSV; offline fallback for per-model spend")
@@ -136,7 +138,7 @@ func main() {
 		"exclude", "max-cost", "min-speed", "min-quality", "missing",
 		"cols", "excols",
 		"peak", "refresh", "offline", "probe", "probe-model", "probe-max-allowance",
-		"usage", "now", "full", "main", "window-estimate", "doctor", "spent", "vertical", "json", "l", "nohead")
+		"usage", "now", "full", "main", "window-estimate", "doctor", "spent", "vertical", "json", "l", "nohead", "ttl")
 	flag.Parse()
 	// The config path itself cannot come from the config file: it is needed
 	// to read it. Hence it is not registered with config.AddOptions.
@@ -167,6 +169,11 @@ func main() {
 		fmt.Fprintf(os.Stderr, "invalid -plan %q: want go or go-plus\n", *plan)
 		os.Exit(2)
 	}
+	if *ttlSecs < 0 {
+		fmt.Fprintf(os.Stderr, "invalid -ttl %d: want >= 0 seconds\n", *ttlSecs)
+		os.Exit(2)
+	}
+	ttl := time.Duration(*ttlSecs) * time.Second
 
 	if *probeOne != "" {
 		if err := runOneProbe(*probeOne, *refresh, *offline); err != nil {
@@ -181,7 +188,7 @@ func main() {
 			fmt.Fprintln(os.Stderr, "-usage reads the live allowance endpoint; remove -offline")
 			os.Exit(2)
 		}
-		if err := runUsage(*jsonOut, *showLegend, isTTY(os.Stdout), *nohead); err != nil {
+		if err := runUsage(*jsonOut, *showLegend, isTTY(os.Stdout), *nohead, ttl, *refresh); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
@@ -198,7 +205,7 @@ func main() {
 			fmt.Fprintln(os.Stderr, "spent file:", err)
 			os.Exit(1)
 		}
-		if err := runNow(*plan, spentByModel, *spent != "", *paid, *privacy, flt, *peak, *winEst, *vertical, *jsonOut, *showLegend, *refresh, *offline, isTTY(os.Stdout), csel, *nohead); err != nil {
+		if err := runNow(*plan, spentByModel, *spent != "", *paid, *privacy, flt, *peak, *winEst, *vertical, *jsonOut, *showLegend, *refresh, *offline, isTTY(os.Stdout), csel, *nohead, ttl); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
@@ -215,7 +222,7 @@ func main() {
 			fmt.Fprintln(os.Stderr, "spent file:", err)
 			os.Exit(1)
 		}
-		if err := runFull(*plan, spentByModel, *spent != "", *paid, *privacy, flt, *peak, *winEst, *vertical, *jsonOut, *showLegend, *refresh, *offline, isTTY(os.Stdout), csel, *nohead); err != nil {
+		if err := runFull(*plan, spentByModel, *spent != "", *paid, *privacy, flt, *peak, *winEst, *vertical, *jsonOut, *showLegend, *refresh, *offline, isTTY(os.Stdout), csel, *nohead, ttl); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
@@ -352,6 +359,18 @@ func applyConfig(fs *flag.FlagSet) error {
 				return fmt.Errorf("option %s: %w", name, err)
 			}
 			*p = f
+		}
+	}
+	ints := map[string]*int{
+		"ttl": ttlSecs,
+	}
+	for name, p := range ints {
+		if v, ok := config.Option(name); ok && !set[name] {
+			n, err := strconv.Atoi(v)
+			if err != nil {
+				return fmt.Errorf("option %s: %w", name, err)
+			}
+			*p = n
 		}
 	}
 	// Column sets are additive: the command line unions with the config
@@ -546,6 +565,9 @@ func loadOrProbe(modelID, key string, refresh, offline bool) (probe.Result, bool
 		if err != nil {
 			return probe.Result{ModelID: modelID, Error: err.Error()}
 		}
+		// Ledger: a successful live probe burned real allowance. Cached
+		// reads never reach here, failures carry no burn to record.
+		saveLedger(recordProbeBurn(loadLedger(), modelID, r.Allowance, time.Now()))
 		return r
 	}
 	var cached probe.Result
@@ -672,10 +694,19 @@ func loadSpentFile(path string) (map[string]float64, error) {
 	return usage.ParseSpentFile(path)
 }
 
+// staleWarn reports served-stale data: age beyond both the TTL and a grace
+// interval (fresh writes always read back younger than that).
+func staleWarn(what string, age, ttl time.Duration) {
+	if age > ttl && age > 5*time.Second {
+		fmt.Fprintf(os.Stderr, "# warning: %s is %s old (live fetch failed)\n", what, age.Round(time.Second))
+	}
+}
+
 // fetchSpend returns per-model period spend in allowance dollars, straight
 // from the console API with the same key (the -spent paste file overrides
-// when given). Spend sources and assumptions print on stderr, never stdout.
-func fetchSpend(byID map[string]modelsdev.Model, spentFile map[string]float64, spentGiven, peak, offline bool) (map[string]spendInfo, bool) {
+// when given). Live fetches are TTL-cached; stale fallbacks are reported,
+// never silent. Spend sources and assumptions print on stderr, never stdout.
+func fetchSpend(byID map[string]modelsdev.Model, spentFile map[string]float64, spentGiven, peak, offline bool, ttl time.Duration, refresh bool) (map[string]spendInfo, bool) {
 	spend := map[string]spendInfo{}
 	spendKnown := false
 	src := "unavailable: assuming $0 spent"
@@ -695,11 +726,12 @@ func fetchSpend(byID map[string]modelsdev.Model, spentFile map[string]float64, s
 			src = "unavailable: " + kerr.Error() + "; assuming $0 spent"
 			break
 		}
-		mu, merr := consoleapi.FetchModelUsage(key)
+		mu, age, merr := consoleapi.FetchModelUsage(key, ttl, refresh)
 		if merr != nil {
 			src = "unavailable: " + merr.Error() + "; assuming $0 spent"
 			break
 		}
+		staleWarn("console spend", age, ttl)
 		spendKnown = true
 		src = "console api (opencode-go rows, tokens at Go prices)"
 		for _, s := range mu {
@@ -730,44 +762,81 @@ func fetchSpend(byID map[string]modelsdev.Model, spentFile map[string]float64, s
 	return spend, spendKnown
 }
 
-// fetchWindowFactors returns the remaining fractions of the aggregate 5h and
-// weekly windows for -window-estimate (0 keeps full caps: buildNowRows maps
-// non-positive factors to 1). The estimate basis prints on stderr.
-func fetchWindowFactors(doEstimate, offline bool) (fiveFactor, weekFactor float64) {
+// windowEst is a resolved window estimate: per-model 5h/week window spend
+// plus the derivation method behind window_method.
+type windowEst struct {
+	spend  map[string]windowSpend
+	method string // "full" | "proportional" | "ledger"
+}
+
+// resolveWindowSpend estimates per-model 5h/week window spend for
+// -window-estimate. Without the flag (or offline, or on fetch failure) it
+// returns no spends ("full": fresh caps). Otherwise it fetches the aggregate
+// windows (TTL-cached), attributes the local ledger, and splits the
+// remainder monthly-proportionally. On success with real spend data it also
+// records the snapshot for future runs. Every basis prints on stderr.
+func resolveWindowSpend(doEstimate, offline bool, models []modelsdev.Model, spend map[string]spendInfo, spendKnown bool, planName string, ttl time.Duration, refresh bool) windowEst {
 	if !doEstimate {
-		return 0, 0
+		return windowEst{method: "full"}
 	}
 	if offline {
 		fmt.Fprintln(os.Stderr, "# window estimate: offline; using full 5h/week caps")
-		return 0, 0
+		return windowEst{method: "full"}
 	}
 	key, kerr := probe.Key()
 	if kerr != nil {
 		fmt.Fprintf(os.Stderr, "# window estimate: %v; using full 5h/week caps\n", kerr)
-		return 0, 0
+		return windowEst{method: "full"}
 	}
-	ws, uerr := usage.Fetch(key)
+	ws, age, uerr := usage.Fetch(key, ttl, refresh)
 	if uerr != nil {
 		fmt.Fprintf(os.Stderr, "# window estimate: %v; using full 5h/week caps\n", uerr)
-		return 0, 0
+		return windowEst{method: "full"}
 	}
+	staleWarn("usage windows", age, ttl)
 	f := usage.RemainingFactors(ws)
-	fmt.Fprintf(os.Stderr, "# window estimate: 5h %.0f%% left, week %.0f%% left (account-wide; applied to every model)\n",
-		f.Five*100, f.Week*100)
-	return f.Five, f.Week
+	var reset5h, resetWk time.Time
+	for _, w := range ws {
+		switch w.Name {
+		case "5h":
+			reset5h = w.ResetsAt
+		case "week":
+			resetWk = w.ResetsAt
+		}
+	}
+	now := time.Now()
+	led := loadLedger()
+	attr := attributeLedger(led, spend, now, reset5h, resetWk)
+	est, method := estimateWindowSpend(models, spend, spendKnown, planName, 1-f.Five, 1-f.Week, attr)
+	attributed := 0
+	for _, a := range attr {
+		if a.five+a.week > 0 {
+			attributed++
+		}
+	}
+	if method == "ledger" {
+		fmt.Fprintf(os.Stderr, "# window method: ledger (%d models with ledger-attributed spend)\n", attributed)
+	} else {
+		fmt.Fprintln(os.Stderr, "# window method: proportional (monthly-proportional split; no ledger attribution)")
+	}
+	if spendKnown {
+		saveLedger(recordSnapshot(led, spend, now))
+	}
+	return windowEst{spend: est, method: method}
 }
 
 // runUsage prints the remaining Go allowance windows, as JSON, tty-padded
 // or piped as strict TABs — same style rules as the model table.
-func runUsage(jsonOut, withLegend, tty, nohead bool) error {
+func runUsage(jsonOut, withLegend, tty, nohead bool, ttl time.Duration, refresh bool) error {
 	key, err := probe.Key()
 	if err != nil {
 		return err
 	}
-	ws, err := usage.Fetch(key)
+	ws, age, err := usage.Fetch(key, ttl, refresh)
 	if err != nil {
 		return err
 	}
+	staleWarn("usage windows", age, ttl)
 	now := time.Now()
 	if jsonOut {
 		type jsonWindow struct {
@@ -886,8 +955,8 @@ var nowLegend = []string{
 	"# cost_task  official allowance cost per request (OpenCode token profile, base tier)",
 	"# burn_req   allowance dollars one request burns: measured from console tokens when the model has >=50 requests this period, else cost_task",
 	"# spent_mo   allowance dollars spent this period (console tokens at Go prices, or -spent); subtracted from the model's monthly limit",
-	"# reqs_5h    requests in the model's 5h cap (20% of its monthly limit; fresh-window upper bound, scaled by -window-estimate)",
-	"# reqs_wk    requests in the model's weekly cap (50% of its monthly limit; fresh-window upper bound, scaled by -window-estimate)",
+	"# reqs_5h    requests in the model's 5h cap (20% of its monthly limit) after estimated window spend; -window-estimate method on stderr",
+	"# reqs_wk    requests in the model's weekly cap (50% of its monthly limit) after estimated window spend; -window-estimate method on stderr",
 	"# reqs_mo    requests left in the model's monthly limit after spent_mo",
 	"# usable     min of reqs_5h / reqs_wk / reqs_mo — what you can use now",
 	"# limit      binding constraint: 5h | week | month | unlimited | unknown",
@@ -897,13 +966,9 @@ var nowLegend = []string{
 // buildNowRows is the testable core of -now. Go limits are per model: the
 // 5h and weekly windows are 20% and 50% of that model's monthly limit, and
 // the monthly window is what remains of it. Spend is in allowance dollars.
-func buildNowRows(models []modelsdev.Model, spend map[string]spendInfo, spendKnown bool, planName string, peak, paid, privacy bool, fiveFactor, weekFactor float64, speeds map[string]float64) []nowRow {
-	if fiveFactor <= 0 {
-		fiveFactor = 1
-	}
-	if weekFactor <= 0 {
-		weekFactor = 1
-	}
+// wspend carries estimated window spend per model (nil = fresh caps);
+// over-spent budgets clamp to zero inside usage.Requests.
+func buildNowRows(models []modelsdev.Model, spend map[string]spendInfo, spendKnown bool, planName string, peak, paid, privacy bool, wspend map[string]windowSpend, speeds map[string]float64) []nowRow {
 	var rows []nowRow
 	for _, m := range models {
 		if privacy && goplan.ExcludedByPrivacy(m.ID) {
@@ -952,8 +1017,8 @@ func buildNowRows(models []modelsdev.Model, spend map[string]spendInfo, spendKno
 			spent = 0 // explicit assumption, reported on stderr
 		}
 		b := usage.Budgets{
-			Five:  0.20 * allow * fiveFactor,
-			Week:  0.50 * allow * weekFactor,
+			Five:  0.20*allow - wspend[m.ID].five,
+			Week:  0.50*allow - wspend[m.ID].week,
 			Month: allow - spent,
 		}
 		five, week, month, usable, binding := usage.Requests(b, burn)
@@ -1017,7 +1082,7 @@ func nowRank(r nowRow) int {
 // requests fit in its own Go 5h/weekly/monthly windows. There is no shared
 // pot: the docs define the windows as percentages of each model's monthly
 // limit. Per-model spend is measured from console token counts at Go prices.
-func runNow(planName string, spentFile map[string]float64, spentGiven, paid, privacy bool, flt table.Filter, peak, windowEstimate, vertical, jsonOut, withLegend, refresh, offline, tty bool, sel colSel, nohead bool) error {
+func runNow(planName string, spentFile map[string]float64, spentGiven, paid, privacy bool, flt table.Filter, peak, windowEstimate, vertical, jsonOut, withLegend, refresh, offline, tty bool, sel colSel, nohead bool, ttl time.Duration) error {
 	models, err := modelsdev.Fetch("opencode-go", refresh, offline)
 	if err != nil {
 		return err
@@ -1027,11 +1092,11 @@ func runNow(planName string, spentFile map[string]float64, spentGiven, paid, pri
 		byID[m.ID] = m
 	}
 
-	spend, spendKnown := fetchSpend(byID, spentFile, spentGiven, peak, offline)
-	fiveFactor, weekFactor := fetchWindowFactors(windowEstimate, offline)
+	spend, spendKnown := fetchSpend(byID, spentFile, spentGiven, peak, offline, ttl, refresh)
+	win := resolveWindowSpend(windowEstimate, offline, models, spend, spendKnown, planName, ttl, refresh)
 
 	speeds := cachedProbeSpeeds(models)
-	rows := buildNowRows(models, spend, spendKnown, planName, peak, paid, privacy, fiveFactor, weekFactor, speeds)
+	rows := buildNowRows(models, spend, spendKnown, planName, peak, paid, privacy, win.spend, speeds)
 	rows = filterNowRows(rows, flt)
 	if len(flt.MinQuality) > 0 {
 		fmt.Fprintln(os.Stderr, "# warning: -min-quality is ignored by -now (this view loads no AA quality data)")
@@ -1063,6 +1128,7 @@ func runNow(planName string, spentFile map[string]float64, spentGiven, paid, pri
 		keep := map[string]bool{
 			"id": true, "unlimited": true, "known": true,
 			"spent_known": true, "window_estimate": true,
+			"window_method": true,
 		}
 		for _, t := range head {
 			keep[strings.ToLower(strings.TrimPrefix(t, "#"))] = true
@@ -1076,7 +1142,8 @@ func runNow(planName string, spentFile map[string]float64, spentGiven, paid, pri
 				"reqs_5h": r.five, "reqs_wk": r.week, "reqs_mo": r.month,
 				"usable": r.usable, "limit": r.binding,
 				"unlimited": r.unlimited, "known": r.known,
-				"window_estimate": windowEstimate, "p_tok_s": r.probeTokS,
+				"window_estimate": windowEstimate, "window_method": win.method,
+				"p_tok_s": r.probeTokS,
 			}
 			for k := range m {
 				if !keep[k] {
@@ -1191,7 +1258,7 @@ func joinFull(mrows []table.Row, nrows []nowRow, windowEstimate bool) []table.Fu
 // then the -now-only columns. Like -now it needs a key and is live; unlike
 // -now, quality filters apply because AA scores are loaded. Speed filtering
 // uses the effective speed (measured probe when available, else AA).
-func runFull(planName string, spentFile map[string]float64, spentGiven, paid, privacy bool, flt table.Filter, peak, windowEstimate, vertical, jsonOut, withLegend, refresh, offline, tty bool, sel colSel, nohead bool) error {
+func runFull(planName string, spentFile map[string]float64, spentGiven, paid, privacy bool, flt table.Filter, peak, windowEstimate, vertical, jsonOut, withLegend, refresh, offline, tty bool, sel colSel, nohead bool, ttl time.Duration) error {
 	models, err := modelsdev.Fetch("opencode-go", refresh, offline)
 	if err != nil {
 		return err
@@ -1226,12 +1293,15 @@ func runFull(planName string, spentFile map[string]float64, spentGiven, paid, pr
 	// Pareto is relative to the set the user actually sees.
 	table.MarkPareto(mrows)
 
-	spend, spendKnown := fetchSpend(byID, spentFile, spentGiven, peak, offline)
-	fiveFactor, weekFactor := fetchWindowFactors(windowEstimate, offline)
+	spend, spendKnown := fetchSpend(byID, spentFile, spentGiven, peak, offline, ttl, refresh)
+	win := resolveWindowSpend(windowEstimate, offline, models, spend, spendKnown, planName, ttl, refresh)
 	speeds := cachedProbeSpeeds(models)
-	nrows := buildNowRows(models, spend, spendKnown, planName, peak, paid, privacy, fiveFactor, weekFactor, speeds)
+	nrows := buildNowRows(models, spend, spendKnown, planName, peak, paid, privacy, win.spend, speeds)
 
 	rows := joinFull(mrows, nrows, windowEstimate)
+	for i := range rows {
+		rows[i].WindowMethod = win.method
+	}
 	table.SortFull(rows, *sortKey)
 	if *pareto {
 		rows = slices.DeleteFunc(rows, func(r table.FullRow) bool { return !r.Row.Pareto })

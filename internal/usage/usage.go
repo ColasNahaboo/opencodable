@@ -2,6 +2,7 @@
 package usage
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -10,6 +11,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/ColasNahaboo/opencodable/internal/cache"
 )
 
 const usageURL = "https://opencode.ai/inference/go/v1/usage"
@@ -45,8 +48,26 @@ type payload struct {
 	} `json:"usage"`
 }
 
-// Fetch reads the current allowance usage for the Go plan.
-func Fetch(key string) ([]Window, error) {
+// Fetch reads the current allowance usage for the Go plan, cached for ttl
+// (0 disables caching). It returns how old the data is: ~0 when freshly
+// fetched, older when a failed fetch fell back to a stale cache entry —
+// callers report that, never silently serve it as current.
+func Fetch(key string, ttl time.Duration, refresh bool) ([]Window, time.Duration, error) {
+	b, err := cache.Load("usage-windows.json", ttl, refresh, false, func() ([]byte, error) {
+		return getRaw(key)
+	})
+	if err != nil {
+		return nil, 0, err
+	}
+	ws, err := parse(bytes.NewReader(b))
+	if err != nil {
+		return nil, 0, err
+	}
+	age, _ := cache.Age("usage-windows.json")
+	return ws, age, nil
+}
+
+func getRaw(key string) ([]byte, error) {
 	req, err := http.NewRequest(http.MethodGet, usageURL, nil)
 	if err != nil {
 		return nil, err
@@ -61,7 +82,7 @@ func Fetch(key string) ([]Window, error) {
 		b, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
 		return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode, b)
 	}
-	return parse(resp.Body)
+	return io.ReadAll(resp.Body)
 }
 
 func parse(r io.Reader) ([]Window, error) {

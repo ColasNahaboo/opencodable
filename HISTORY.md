@@ -1,5 +1,12 @@
 # History
 
+- v0.1.13 2026-10-29 `-window-estimate` upgraded from uniform cap scaling
+  to spend attribution: ledger-recorded dollars (past runs' console deltas,
+  fresh probe burns) first, the implied remainder split
+  monthly-proportionally; method on stderr and as `window_method` in JSON
+  (`full`/`proportional`/`ledger`). Live usage endpoints (console spend,
+  allowance windows) are TTL-cached (`-ttl` seconds, default 600, `0` =
+  live); stale fallbacks warn instead of failing silently.
 - v0.1.12 2026-10-29 Peak twins in every model view: models with peak-hours
   pricing (DeepSeek) gain a `Name [peak]` row (ID suffixed `-peak`) with
   `cost_task` and quotas/counts recomputed at peak rates. Twins share the

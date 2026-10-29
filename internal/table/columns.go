@@ -150,6 +150,7 @@ type FullRow struct {
 	Limit          string  `json:"limit"`
 	Known          bool    `json:"known"`
 	WindowEstimate bool    `json:"window_estimate"`
+	WindowMethod   string  `json:"window_method"`
 }
 
 // SpentCell formats spent_mo: blank when spend is unknown, $0 when known

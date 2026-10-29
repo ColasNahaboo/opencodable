@@ -81,8 +81,8 @@ Piped header: `#name	cost_task	burn_req	spent_mo	reqs_5h	reqs_wk	reqs_mo	usable	
 | 2 | `cost_task` | official allowance cost per coding-agent request (OpenCode token profile, base tier) |
 | 3 | `burn_req` | allowance dollars one request burns: measured from console tokens when the model has at least 50 requests this period, otherwise `cost_task` |
 | 4 | `spent_mo` | allowance dollars spent this period (console tokens priced at Go rates, or `-spent`), subtracted from the model's monthly limit; blank when spend is unknown |
-| 5 | `reqs_5h` | requests in the model's 5h cap (20% of its monthly limit; fresh-window upper bound) |
-| 6 | `reqs_wk` | requests in the model's weekly cap (50% of its monthly limit; fresh-window upper bound) |
+| 5 | `reqs_5h` | requests in the model's 5h cap (20% of its monthly limit) after estimated window spend |
+| 6 | `reqs_wk` | requests in the model's weekly cap (50% of its monthly limit) after estimated window spend |
 | 7 | `reqs_mo` | requests left in the model's monthly limit after `spent_mo` |
 | 8 | `usable` | min of `reqs_5h` / `reqs_wk` / `reqs_mo` — what you can use now |
 | 9 | `limit` | binding constraint: `5h` \| `week` \| `month` \| `unlimited` \| `unknown` |
@@ -92,10 +92,12 @@ Piped header: `#name	cost_task	burn_req	spent_mo	reqs_5h	reqs_wk	reqs_mo	usable	
 limits are **per model**. Each model's monthly limit is the dollar allowance
 in `internal/goplan`; its 5h and weekly caps are 20% and 50% of that limit.
 There is no shared pot. The usage endpoint reports one aggregate set of
-percentages; it is not used to derive per-model counts. `reqs_5h` and
-`reqs_wk` are caps for a fresh window, not remaining after earlier window
-usage (the API does not expose per-model window spend); `-window-estimate`
-scales those caps by the aggregate remaining percentages as a rough estimate.
+percentages. `reqs_5h` and `reqs_wk` assume fresh windows unless
+`-window-estimate` attributes spend: ledger-recorded dollars first
+(console deltas between runs, fresh probe burns), the implied remainder
+split monthly-proportionally (`full`/`proportional`/`ledger` in
+`window_method`). The console API serves period totals only, so window
+spend is estimated, never measured.
 Free models (zero
 prices) show `limit=unlimited` with empty counts, even when the snapshot lacks
 their entry; paid models missing from the plan snapshot show `limit=unknown`.
@@ -170,11 +172,14 @@ spec covers both formats. Numbers stay numbers, `pareto` stays boolean, and
 - main table: `id` (models.dev model ID, e.g. `kimi-k3.1-pro`) and
   `unlimited` (true for free models; their `allowance` reads 0).
 - `-now`: `id`, `unlimited`, `known` (false when the plan snapshot has no
-  entry), `spent_known` (false when spend was assumed to be zero) and
-  `window_estimate` (true when 5h/week caps were scaled by aggregate usage).
+  entry), `spent_known` (false when spend was assumed to be zero),
+  `window_estimate` (true when window spend was estimated) and
+  `window_method` (`full` fresh caps, `proportional` monthly split, `ledger`
+  with local attribution).
   For free/unknown rows the request counts are 0; use `limit` plus these
   booleans, not the zero, to interpret them.
-- `-full`: the main extras plus the `-now` extras; `r_quota` is the
+- `-full`: the main extras plus the `-now` extras (including
+  `window_method`); `r_quota` is the
   theoretical full-reset count and `reqs_mo` the remaining count.
 
 Empty/missing values: absent numeric fields mean zero (the table's `-` and

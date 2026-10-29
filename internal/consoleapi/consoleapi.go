@@ -9,6 +9,9 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"time"
+
+	"github.com/ColasNahaboo/opencodable/internal/cache"
 )
 
 var usageModelsURL = "https://console.opencode.ai/api/usage/models"
@@ -55,34 +58,46 @@ type page struct {
 const maxPages = 1000
 
 // FetchModelUsage returns every model's spend for the current period,
-// following pagination.
-func FetchModelUsage(key string) ([]ModelSpend, error) {
-	var out []ModelSpend
-	for pageN := 1; ; pageN++ {
-		if pageN > maxPages {
-			return nil, fmt.Errorf("usage pagination exceeded %d pages", maxPages)
+// following pagination, cached for ttl (0 disables caching). Like usage.Fetch
+// it reports the data age so callers can label stale fallbacks.
+func FetchModelUsage(key string, ttl time.Duration, refresh bool) ([]ModelSpend, time.Duration, error) {
+	b, err := cache.Load("console-usage.json", ttl, refresh, false, func() ([]byte, error) {
+		var out []ModelSpend
+		for pageN := 1; ; pageN++ {
+			if pageN > maxPages {
+				return nil, fmt.Errorf("usage pagination exceeded %d pages", maxPages)
+			}
+			var p page
+			if err := get(fmt.Sprintf("%s?page=%d", usageModelsURL, pageN), key, &p); err != nil {
+				return nil, err
+			}
+			for _, it := range p.Items {
+				out = append(out, ModelSpend{
+					Model:              it.Model,
+					Provider:           it.Provider,
+					Requests:           parseInt(it.TotalRequests),
+					InputTokens:        parseInt(it.TotalInputTokens),
+					OutputTokens:       parseInt(it.TotalOutputTokens),
+					CacheReadTokens:    parseInt(it.TotalCacheReadTokens),
+					CacheWrite5mTokens: parseInt(it.TotalCacheWrite5mToken),
+					CacheWrite1hTokens: parseInt(it.TotalCacheWrite1hToken),
+					CostUSD:            float64(parseInt(it.TotalCostMicroCent)) / 1e8, // microcents → dollars
+				})
+			}
+			if int64(pageN) >= p.PageInfo.PageCount || len(p.Items) == 0 {
+				return json.Marshal(out)
+			}
 		}
-		var p page
-		if err := get(fmt.Sprintf("%s?page=%d", usageModelsURL, pageN), key, &p); err != nil {
-			return nil, err
-		}
-		for _, it := range p.Items {
-			out = append(out, ModelSpend{
-				Model:              it.Model,
-				Provider:           it.Provider,
-				Requests:           parseInt(it.TotalRequests),
-				InputTokens:        parseInt(it.TotalInputTokens),
-				OutputTokens:       parseInt(it.TotalOutputTokens),
-				CacheReadTokens:    parseInt(it.TotalCacheReadTokens),
-				CacheWrite5mTokens: parseInt(it.TotalCacheWrite5mToken),
-				CacheWrite1hTokens: parseInt(it.TotalCacheWrite1hToken),
-				CostUSD:            float64(parseInt(it.TotalCostMicroCent)) / 1e8, // microcents → dollars
-			})
-		}
-		if int64(pageN) >= p.PageInfo.PageCount || len(p.Items) == 0 {
-			return out, nil
-		}
+	})
+	if err != nil {
+		return nil, 0, err
 	}
+	var out []ModelSpend
+	if err := json.Unmarshal(b, &out); err != nil {
+		return nil, 0, err
+	}
+	age, _ := cache.Age("console-usage.json")
+	return out, age, nil
 }
 
 func parseInt(s string) int64 {

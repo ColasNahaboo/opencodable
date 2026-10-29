@@ -566,7 +566,7 @@ func WriteFullJSON(w io.Writer, rows []FullRow, sel []string) error {
 	maps := make([]map[string]any, 0, len(rows))
 	for _, r := range rows {
 		maps = append(maps, selectMap(rowMap(r), sel,
-			"id", "unlimited", "known", "spent_known", "window_estimate"))
+			"id", "unlimited", "known", "spent_known", "window_estimate", "window_method"))
 	}
 	return enc.Encode(maps)
 }

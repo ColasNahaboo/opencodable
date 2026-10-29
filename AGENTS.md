@@ -119,6 +119,14 @@ internal/config/       opencodable.conf (key=value: API keys + option
   file itself and therefore cannot come from it.
 - **Doctor**: `-doctor` audits plan/AA/SWE/probe coverage without running a
   probe; keep `buildDoctorRows` pure and tested.
+- **Console API has no time slicing** (verified Oct 2026: startDate/days/
+  period params ignored, from/to 400s): per-model window spend is estimated
+  (ledger attribution + monthly-proportional split, `window_method`), never
+  measured. `reqs_5h`/`reqs_wk` are fresh caps without `-window-estimate`.
+- **Live usage endpoints are TTL-cached** (`-ttl` seconds, default 600):
+  console spend + allowance windows; `-refresh` bypasses, stale fallbacks
+  warn with their age. Probes stay 24h; the spend ledger (`spend-ledger.json`)
+  is append-only local history, never polled.
 
 ## Testing
 
