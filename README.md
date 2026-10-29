@@ -433,5 +433,5 @@ This repository is developed by me, a human hobbyist in my personal time, acting
 
 ## History
 
-Version v0.1.15 2026-10-29.
+Version v0.1.16 2026-10-29.
 See [HISTORY.md](HISTORY.md).

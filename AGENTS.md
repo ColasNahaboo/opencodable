@@ -68,9 +68,11 @@ internal/config/       opencodable.conf (key=value: API keys + option
 - **All CLI options** must also be settable in the config file (`-config`
   excepted, see gotchas).
 - **Boolean CLI options** can be unset by suffixing them by `=false`
-- **Commit each change** once it builds and passes the checks in Build & test.
-  Author it with the auto-commit skill's convention: your active model name,
-  not a model name from the catalog data.
+- **Commit, version and push each change** once it builds and passes the checks
+  in Build & test: bump the last number of the version (v0.1.15 → v0.1.16), tag
+  that commit, and push the commit and the tag. Author the commit with the
+  auto-commit skill's convention: your active model name, not a model name from
+  the catalog data.
 - **No polling.** Never add loops, daemons or repeated requests against web
   endpoints: repeated requests may trigger a ban. Every network fetch goes
   through `cache.Load` with a TTL (24h for catalogs, benchmarks and probes;

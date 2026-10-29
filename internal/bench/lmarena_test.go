@@ -158,3 +158,12 @@ func TestArenaNear(t *testing.T) {
 		t.Errorf("nil feed suggested %q", got)
 	}
 }
+
+func TestEloAliasesResolveMaxVariants(t *testing.T) {
+	elo := Elo{"kimik3max": 1500, "musespark13max": 1490}
+	for id, want := range map[string]float64{"kimi-k3": 1500, "muse-spark-1.3-contributor": 1490} {
+		if v, ok := elo.Lookup(id); !ok || v != want {
+			t.Errorf("Lookup(%q) = %v, %v; want %v", id, v, ok, want)
+		}
+	}
+}

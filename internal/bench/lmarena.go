@@ -41,7 +41,10 @@ type BTR map[string]float64
 
 // eloAliases maps models.dev IDs to arena base keys where plain matching
 // fails. A blank elo cell means no match: extend here as gaps surface.
-var eloAliases = map[string]string{}
+var eloAliases = map[string]string{
+	"kimi-k3":                    "kimik3max",      // Kimi K3 (Max) on the leaderboard
+	"muse-spark-1.3-contributor": "musespark13max", // Muse Spark 1.3 (Max); same weights
+}
 
 // btrAliases maps models.dev IDs to HF base keys. Dated snapshots rot:
 // bump the value when Arena renames the measured row.

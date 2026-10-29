@@ -1,5 +1,8 @@
 # History
 
+- v0.1.16 2026-10-29 Elo aliases for `kimi-k3` (Kimi K3 Max) and
+  `muse-spark-1.3-contributor` (Muse Spark 1.3 Max): their Elo values now
+  show, and the `-doctor` hints for them are gone.
 - v0.1.15 2026-10-29 `-doctor` coverage for Arena ratings: `elo` and `btr`
   matched counts on the coverage line (Arena lists only top models, so a
   missing value stays silent) and a hint when a model has no match but a
