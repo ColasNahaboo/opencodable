@@ -112,7 +112,7 @@ look at first; the [Columns](#columns) section lists them all.
 - **Allowance**: your monthly dollar budget for one model. Each request uses part of it.
 - **Window**: a model's budget also comes in a 5-hour window (20% of its monthly budget) and a weekly window (50%). A burst of work can use up a window before the month runs out.
 - **Probe**: a short test request, sent through your subscription, that measures real speed. It costs about one cent per model.
-- **Peak hours**: DeepSeek models cost more at certain hours. The table shows a second row for them, named `[peak]`, unless you use `-peak`.
+- **Peak hours**: DeepSeek V4.1 Flash and V4 Pro cost double on weekdays from 01:00–04:00 and 06:00–10:00 UTC (all other hours, including weekends, are off-peak). The table shows a second row for them, named `[peak]`, unless you use `-peak`.
 - **Arena (`elo`, `btr`)**: the public Arena leaderboard (formerly LMArena), where people compare answers without knowing which model wrote them. A higher rating means people preferred that model more often. Typical values are 1400 to 1550.
 
 ## Your allowance
@@ -240,12 +240,12 @@ Pick one at a time; combining two is an error. Without a view, the main table is
 
 ### What to show, and in what order
 
-- `-sort <key>`: `quality` (the default: the AA Intelligence Index), `price` (cheapest request first), `speed`, `reqs` (most requests a month first), `usable` (most usable right now, for `-full`), or `name`.
+- `-sort <key>`: `quality` (the default: the AA Intelligence Index; models without one sort last), `price` (cheapest request first), `speed` (measured speed when available, otherwise the reported one), `reqs` (most requests a month first), `usable` (most usable right now, for `-full`), or `name`.
 - `-pareto`: keep only the models that no other visible model beats on cost, speed and quality together.
 - `-paid`: hide free models.
 - `-privacy`: hide models that may train on your prompts, and models whose status is unknown.
 - `-plan go|go-plus`: which plan's budgets to use. The default is `go`; Go Plus has larger budgets.
-- `-provider <name>`: the default is `opencode-go`, the only provider with plan (budget) data.
+- `-provider <name>`: the models.dev provider to rank. The default is `opencode-go`, the only provider with plan (budget) data; any other name works only for the main table, and `-now`, `-full` and `-doctor` stop with an error.
 - `-aa-pro`: use the Artificial Analysis Pro endpoint (needs a Pro key); fills `term_b`, `if_b` and `aa_lcr`.
 - `-peak`: price DeepSeek at its peak-hour rates everywhere, without the separate `[peak]` rows.
 
@@ -263,8 +263,8 @@ it ignores the quality bounds and says so on stderr.
 
 ### Column flags
 
-- `-cols <titles>`: show only these columns. `name` is always shown.
-- `-excols <titles>`: hide these columns.
+- `-cols <titles>`: show only these columns, comma-separated; repeatable. `name` is always shown.
+- `-excols <titles>`: hide these columns, comma-separated; repeatable.
 - `-l`: add a legend that explains each column.
 
 ### Output flags
@@ -276,16 +276,16 @@ it ignores the quality bounds and says so on stderr.
 ### Allowance flags
 
 - `-window-estimate`: estimate what you have used in the current windows (see [Your allowance](#your-allowance)).
-- `-spent <file>`: use a pasted console table instead of fetching your spending.
+- `-spent <file>`: use a pasted console table instead of fetching your spending. The file holds the console's "usage by model" rows — each line starts with the model ID and ends with its `$cost` (tab- or multi-space-separated; `#` comments allowed).
 - `-ttl <seconds>`: how long live allowance data stays cached (default 600; `0` turns caching off).
-- `-refresh`: ignore the caches and fetch everything again.
+- `-refresh`: ignore the caches and fetch everything again. With `-offline`, `-offline` wins: a cached copy is served and nothing is fetched.
 - `-offline`: use only what is cached, with no network. `-usage` refuses this, and `-now` then assumes no spending unless you pass `-spent`.
 
 ### Measurement flags
 
 - `-probe`: measure every model's speed on your subscription. This spends allowance. Results are kept for 24 hours.
 - `-probe-max-allowance <usd>`: stop a `-probe` run once this much allowance has been spent.
-- `-probe-model <id>`: measure one model and print the details as JSON.
+- `-probe-model <id>`: measure one model and print the details as JSON. The ID is the `id` field of `-json` (for example `kimi-k3.1-pro`).
 
 ### Settings
 
@@ -296,8 +296,11 @@ it ignores the quality bounds and says so on stderr.
 
 `-json` keys are the column titles below, without the leading `#`. JSON adds
 `id` (the model's catalog ID) and `unlimited` (true for free models). `-now`
-adds `known`, `spent_known`, `window_estimate` and `window_method`. The exact
-contract is in [TITLES.md](TITLES.md).
+and `-full` add `known` (false when the plan snapshot has no entry for the
+model), `spent_known` (false when spending was assumed to be zero),
+`window_estimate` (true when window spend was estimated) and `window_method`
+(how it was estimated: `full`, `proportional` or `ledger`). Missing numbers
+become 0. The exact contract is in [TITLES.md](TITLES.md).
 
 | Column | Meaning |
 |---|---|
@@ -332,7 +335,7 @@ that exists nowhere is an error.
 ## Output for scripts
 
 - **In a terminal** you get an aligned table. **Piped or redirected**, you get tab-separated values: one row per model, one tab between fields, an empty field for missing data, and a header line that starts with `#name`.
-- **JSON** with `-json`, for example `opencodable -json | jq -r '.[] | select(.pareto) | .name'`.
+- **JSON** with `-json`, for example `opencodable -json | jq -r '.[] | select(.pareto) | .name'`. It works in every view. Flags that read `yes`/empty in the table (`pareto`, `unlimited`, `known`, `spent_known`, `window_estimate`) are JSON booleans, and missing numbers become 0.
 - **Two columns without a header:** `opencodable -pareto -paid -nohead -cols name,r_quota`.
 - **Legends** are added only with `-l`, so parsing stays simple.
 - Until the `v1.0.0` release, column titles may still change. [TITLES.md](TITLES.md) is the contract that applies after it.
