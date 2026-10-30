@@ -1,5 +1,8 @@
 # History
 
+- v0.1.21 2026-10-30 `-usage` gains `remaining_usd`: estimated dollars left in
+  each window before it resets (remaining percent × summed window caps over
+  capped models; account-wide estimate, 0 when plan budgets are unavailable).
 - v0.1.20 2026-10-30 Live plan snapshots: allowances, token profiles and peak
   prices are now refreshed from the OpenCode Go docs page and models endpoint
   (weekly by default, `-plan-ttl`, forced by `-refresh`) and layered over the

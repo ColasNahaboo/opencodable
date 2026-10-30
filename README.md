@@ -125,7 +125,7 @@ across models.
 Four views help:
 
 - **`-now`**: for each model, how many requests fit in each window, given what you have already spent this month. Spending is fetched with your OpenCode key.
-- **`-usage`**: the account-wide percentages OpenCode reports for the 5-hour, weekly and monthly windows, with their reset times.
+- **`-usage`**: the account-wide percentages OpenCode reports for the 5-hour, weekly and monthly windows, their reset times, and the estimated dollars left in each window (`remaining_usd`).
 - **`-full`**: the main table and `-now` in one wide table.
 - **`-window-estimate`**: also takes out what you have probably used in the current 5-hour and weekly windows. OpenCode only reports the account total, so this is an estimate; the method appears on stderr and, in JSON, as `window_method`. Without this flag, the 5-hour and weekly counts assume fresh windows, which gives an upper bound.
 
@@ -156,11 +156,15 @@ per-request cost is used.
 minutes by default. `-ttl <seconds>` changes that (`0` turns the cache off), and
 `-refresh` forces an update.
 
+`remaining_usd` turns the percentage into dollars: the remaining share of the
+summed window caps across your capped models (an account-wide estimate — the
+endpoint reports one aggregate set, not per-model spend).
+
 ```
-#window  status  used_pct  remaining_pct  resets_at                  resets_in
-5h       ok      35        65             2026-11-02T14:00:00+01:00  2h 10m 0s
-week     ok      40        60             2026-11-04T09:00:00+01:00  45h 20m 0s
-month    ok      21        79             2026-11-07T14:00:00+01:00  212h 30m 0s
+#window  status  used_pct  remaining_pct  resets_at                  resets_in   remaining_usd
+5h       ok      35        65             2026-11-02T14:00:00+01:00  2h 10m 0s   $133.90
+week     ok      40        60             2026-11-04T09:00:00+01:00  45h 20m 0s  $309.00
+month    ok      21        79             2026-11-07T14:00:00+01:00  212h 30m 0s $813.70
 ```
 
 ## Configuration
@@ -448,5 +452,5 @@ This repository is developed by me, a human hobbyist in my personal time, acting
 
 ## History
 
-Version v0.1.20 2026-10-30.
+Version v0.1.21 2026-10-30.
 See [HISTORY.md](HISTORY.md).

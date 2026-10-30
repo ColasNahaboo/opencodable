@@ -31,7 +31,7 @@ import (
 )
 
 // version is displayed at the bottom of the -h help text.
-var version = "v0.1.20"
+var version = "v0.1.21"
 
 // colList accumulates comma-separated -cols/-excols values. The flag may be
 // repeated and unions with the config-file default; output order always
@@ -221,7 +221,7 @@ func main() {
 			fmt.Fprintln(os.Stderr, "-usage reads the live allowance endpoint; remove -offline")
 			os.Exit(2)
 		}
-		if err := runUsage(*jsonOut, *showLegend, isTTY(os.Stdout), *nohead, ttl, *refresh); err != nil {
+		if err := runUsage(*jsonOut, *showLegend, isTTY(os.Stdout), *nohead, ttl, *refresh, *plan); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
@@ -931,9 +931,41 @@ func resolveWindowSpend(doEstimate, offline bool, models []modelsdev.Model, spen
 	return windowEst{spend: est, method: method}
 }
 
+// windowDollars converts the endpoint's aggregate percentages into remaining
+// dollars per window: remaining fraction × summed window caps (20%/50%/100%
+// of each capped model's monthly limit). The endpoint reports one aggregate
+// set, so this is an account-wide estimate over known-limit models, exactly
+// the base -window-estimate attributes from.
+func windowDollars(ws []usage.Window, models []modelsdev.Model, planName string) map[string]float64 {
+	var base float64
+	for _, m := range models {
+		if !goplan.Known(m.ID) {
+			continue
+		}
+		allow, unlimited := goplan.Allowance(m.ID, planName)
+		if !unlimited {
+			base += allow
+		}
+	}
+	out := make(map[string]float64, len(ws))
+	for _, w := range ws {
+		f := 1.0
+		switch w.Name {
+		case "5h":
+			f = 0.20
+		case "week":
+			f = 0.50
+		}
+		out[w.Name] = math.Round(clamp01(w.Remaining()/100)*f*base*100) / 100
+	}
+	return out
+}
+
+func clamp01(v float64) float64 { return min(max(v, 0), 1) }
+
 // runUsage prints the remaining Go allowance windows, as JSON, tty-padded
 // or piped as strict TABs — same style rules as the model table.
-func runUsage(jsonOut, withLegend, tty, nohead bool, ttl time.Duration, refresh bool) error {
+func runUsage(jsonOut, withLegend, tty, nohead bool, ttl time.Duration, refresh bool, planName string) error {
 	key, err := probe.Key()
 	if err != nil {
 		return err
@@ -943,6 +975,12 @@ func runUsage(jsonOut, withLegend, tty, nohead bool, ttl time.Duration, refresh 
 		return err
 	}
 	staleWarn("usage windows", age, ttl)
+	var dollars map[string]float64
+	if models, merr := modelsdev.Fetch("opencode-go", refresh, false); merr != nil {
+		fmt.Fprintln(os.Stderr, "warning: plan budgets unavailable, remaining dollars shown as 0:", merr)
+	} else {
+		dollars = windowDollars(ws, models, planName)
+	}
 	now := time.Now()
 	if jsonOut {
 		type jsonWindow struct {
@@ -952,14 +990,16 @@ func runUsage(jsonOut, withLegend, tty, nohead bool, ttl time.Duration, refresh 
 			RemainingPct float64 `json:"remaining_pct"`
 			ResetsAt     string  `json:"resets_at"`
 			ResetsIn     string  `json:"resets_in"`
+			RemainingUsd float64 `json:"remaining_usd"`
 		}
 		out := make([]jsonWindow, 0, len(ws))
 		for _, w := range ws {
 			out = append(out, jsonWindow{
 				Window: w.Name, Status: w.Status,
 				UsedPct: w.Percent, RemainingPct: w.Remaining(),
-				ResetsAt: w.ResetsAt.Local().Format(time.RFC3339),
-				ResetsIn: resetIn(now, w.ResetsAt),
+				RemainingUsd: dollars[w.Name],
+				ResetsAt:     w.ResetsAt.Local().Format(time.RFC3339),
+				ResetsIn:     resetIn(now, w.ResetsAt),
 			})
 		}
 		return json.NewEncoder(os.Stdout).Encode(out)
@@ -970,15 +1010,17 @@ func runUsage(jsonOut, withLegend, tty, nohead bool, ttl time.Duration, refresh 
 				strconv.FormatFloat(w.Percent, 'f', 0, 64) + "%",
 				strconv.FormatFloat(w.Remaining(), 'f', 0, 64) + "%",
 				w.ResetsAt.Local().Format("2006-01-02 15:04"),
-				resetIn(now, w.ResetsAt)}
+				resetIn(now, w.ResetsAt),
+				"$" + strconv.FormatFloat(dollars[w.Name], 'f', 2, 64)}
 		}
 		return []string{w.Name, w.Status,
 			strconv.FormatFloat(w.Percent, 'f', 0, 64),
 			strconv.FormatFloat(w.Remaining(), 'f', 0, 64),
 			w.ResetsAt.Local().Format(time.RFC3339),
-			resetIn(now, w.ResetsAt)}
+			resetIn(now, w.ResetsAt),
+			strconv.FormatFloat(dollars[w.Name], 'f', 2, 64)}
 	}
-	head := []string{"#window", "status", "used_pct", "remaining_pct", "resets_at", "resets_in"}
+	head := []string{"#window", "status", "used_pct", "remaining_pct", "resets_at", "resets_in", "remaining_usd"}
 	if withLegend {
 		for _, l := range useLegend {
 			fmt.Fprintln(os.Stdout, l)
@@ -1011,6 +1053,7 @@ var useLegend = []string{
 	"# remaining_pct 100 - used_pct",
 	"# resets_at     local time when the window resets",
 	"# resets_in     humanized time until reset",
+	"# remaining_usd estimated dollars left in this window before it resets (remaining percent x summed model caps; account-wide estimate)",
 	"# note          the endpoint reports one aggregate set of windows; per-model caps are in -now",
 }
 

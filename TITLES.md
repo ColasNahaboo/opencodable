@@ -60,7 +60,7 @@ records); the field names are the legend, and the prose block again needs
 
 ## View: `-usage` (allowance windows)
 
-Piped header: `#window	status	used_pct	remaining_pct	resets_at	resets_in`
+Piped header: `#window	status	used_pct	remaining_pct	resets_at	resets_in	remaining_usd`
 
 | # | Column | Meaning |
 |---|---|---|
@@ -70,6 +70,7 @@ Piped header: `#window	status	used_pct	remaining_pct	resets_at	resets_in`
 | 4 | `remaining_pct` | `100 - used_pct` |
 | 5 | `resets_at` | local time (RFC3339) when the window resets |
 | 6 | `resets_in` | humanized time until reset, e.g. `4h 20m 0s` |
+| 7 | `remaining_usd` | estimated dollars left in this window before it resets: remaining percent × summed window caps (20%/50%/100% of each capped model's monthly limit). Account-wide estimate — the endpoint reports one aggregate set, not per-model window spend; 0 when plan budgets are unavailable |
 
 ## View: `-now` (what is affordable right now)
 
