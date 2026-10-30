@@ -73,6 +73,8 @@ internal/config/       opencodable.conf (key=value: API keys + option
   that commit, and push the commit and the tag. Author the commit with the
   auto-commit skill's convention: your active model name, not a model name from
   the catalog data.
+- **Doc-only changes** (no code touched): just commit them — no version bump,
+  no tag, no push.
 - **No polling.** Never add loops, daemons or repeated requests against web
   endpoints: repeated requests may trigger a ban. Every network fetch goes
   through `cache.Load` with a TTL (24h for catalogs, benchmarks and probes;
