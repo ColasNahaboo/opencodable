@@ -255,7 +255,7 @@ Pick one at a time; combining two is an error. Without a view, the main table is
 - `-include <patterns>`: show only the models that match.
 - `-max-cost <usd>`: hide models whose estimated cost per request is higher.
 - `-min-speed <tok/s>`: hide slower models (measured speed when available, otherwise the reported one).
-- `-min-quality <metric>=<score>,...`: hide models below a score, for example `aa_int=40,swe_b=30`; a model must meet every bound. The metric names are column titles; `aa_code`, `aa_math` and `code_b` are no longer published, and `term_b`, `if_b` and `aa_lcr` need a Pro key. A bare number means the overall quality score.
+- `-min-quality <metric>=<score>,...`: hide models below a score, for example `aa_int=40,swe_b=30`; a model must meet every bound. The metric names are column titles; `aa_code`, `aa_math` and `code_b` are no longer published, and `term_b`, `if_b` and `aa_lcr` need a Pro key. A bare number (e.g. `-min-quality 40`) applies to the composite quality score — the AA Intelligence Index (`aa_int`), the same metric `-sort quality` uses by default.
 - `-missing keep|drop`: what to do with a model that has no value for a filtered metric. `keep` (the default) keeps it; `drop` removes it.
 
 Filters work in every view, with one exception: `-now` loads no benchmark data, so
