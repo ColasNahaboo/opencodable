@@ -1,5 +1,15 @@
 # History
 
+- v0.1.20 2026-10-30 Live plan snapshots: allowances, token profiles and peak
+  prices are now refreshed from the OpenCode Go docs page and models endpoint
+  (weekly by default, `-plan-ttl`, forced by `-refresh`) and layered over the
+  compiled-in snapshot. Every scrape passes sanity gates before use — row
+  completeness, value domains, prices cross-checked against models.dev,
+  budgets against the docs' requests-per-month figures, drift caps against the
+  previous snapshot, peak prices against the endpoint's multiplier — and any
+  rejection falls back to the built-in table silently. `-doctor` shows the
+  active source (`live (date)` / `builtin (date)`) and the plan cache age;
+  privacy flags stay built-in.
 - v0.1.19 2026-10-30 Review fixes: `-probe` now counts first-try probe burns
   toward `-probe-max-allowance` and the total burned summary, escalates
   thinking models that exhaust the default token budget in reasoning without

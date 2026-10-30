@@ -6,7 +6,10 @@
 // verified 2026-10-27).
 package goplan
 
-import "strings"
+import (
+	"fmt"
+	"strings"
+)
 
 // Profile is OpenCode's estimated token consumption of one coding-agent
 // request for a given model.
@@ -69,20 +72,61 @@ var table = map[string]entry{
 // GenericProfile is used when a model has no official estimate.
 var GenericProfile = Profile{2000, 100000, 500}
 
+// live holds a validated live snapshot overriding the compiled-in table;
+// nil means "use the built-in snapshot only".
+var live *LiveSnapshot
+
+// Use installs (or with nil, removes) the live plan snapshot overlay.
+func Use(snap *LiveSnapshot) { live = snap }
+
+// Source describes which plan snapshot is active, for -doctor.
+func Source() string {
+	if live != nil {
+		return fmt.Sprintf("live (%s, %d models)", live.FetchedAt.Format("2006-01-02"), len(live.Rows))
+	}
+	return "builtin (" + SnapshotDate + ")"
+}
+
+// liveRow returns the overlay row for id, if any.
+func liveRow(id string) *LiveRow {
+	if live != nil {
+		return live.Rows[id]
+	}
+	return nil
+}
+
 // Known reports whether the model has an entry in the plan snapshot.
 // Unknown models are not the same as free models: their allowance is
 // unknown, not zero.
 func Known(id string) bool {
+	if r := liveRow(id); r != nil {
+		return true
+	}
 	_, ok := table[id]
 	return ok
 }
 
-// Count returns the number of models in the plan snapshot.
-func Count() int { return len(table) }
+// Count returns the number of models in the active plan snapshot.
+func Count() int {
+	if live != nil && len(live.Rows) > 0 {
+		return len(live.Rows)
+	}
+	return len(table)
+}
 
 // Allowance returns the monthly usage budget for the plan ("go"|"go-plus").
 // unlimited=true when the model has no per-model cap.
 func Allowance(id, plan string) (usd float64, unlimited bool) {
+	if r := liveRow(id); r != nil {
+		a := r.GoAllowance
+		if plan == "go-plus" {
+			a = r.PlusAllowance
+		}
+		if r.Unlimited || a == 0 {
+			return 0, true
+		}
+		return a, false
+	}
 	e, ok := table[id]
 	if !ok {
 		return 0, false
@@ -99,6 +143,9 @@ func Allowance(id, plan string) (usd float64, unlimited bool) {
 
 // ProfileFor returns the official per-request token profile.
 func ProfileFor(id string) Profile {
+	if r := liveRow(id); r != nil && r.Profile != nil {
+		return *r.Profile
+	}
 	if e, ok := table[id]; ok && e.Profile != nil {
 		return *e.Profile
 	}
@@ -107,6 +154,9 @@ func ProfileFor(id string) Profile {
 
 // PeakPrice returns the peak-hours [input, output, cache_read] prices, if any.
 func PeakPrice(id string) ([3]float64, bool) {
+	if r := liveRow(id); r != nil && r.Peak != nil {
+		return *r.Peak, true
+	}
 	if e, ok := table[id]; ok && e.Peak != nil {
 		return *e.Peak, true
 	}

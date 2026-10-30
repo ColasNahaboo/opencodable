@@ -278,6 +278,7 @@ it ignores the quality bounds and says so on stderr.
 - `-window-estimate`: estimate what you have used in the current windows (see [Your allowance](#your-allowance)).
 - `-spent <file>`: use a pasted console table instead of fetching your spending. The file holds the console's "usage by model" rows — each line starts with the model ID or display name and ends with its `$cost` (tab- or multi-space-separated; `#` comments allowed).
 - `-ttl <seconds>`: how long live allowance data stays cached (default 600; `0` turns caching off).
+- `-plan-ttl <seconds>`: how long the refreshed plan snapshot stays valid (default one week).
 - `-refresh`: ignore the caches and fetch everything again. With `-offline`, `-offline` wins: a cached copy is served and nothing is fetched.
 - `-offline`: use only what is cached, with no network. `-usage` refuses this, and `-now` then assumes no spending unless you pass `-spent`.
 
@@ -381,7 +382,7 @@ answer too quickly to time reliably.
 | Source | What it provides | Key |
 |---|---|---|
 | [models.dev](https://models.dev) | the model catalog: prices and context sizes | none |
-| [OpenCode Go](https://opencode.ai/v2/docs/console/go/) | plan budgets, cost per request, peak prices, privacy | none (built into the program as a snapshot) |
+| [OpenCode Go](https://opencode.ai/v2/docs/console/go/) | plan budgets, cost per request, peak prices, privacy | none (refreshed from the docs weekly; a built-in snapshot is the fallback) |
 | [Artificial Analysis](https://artificialanalysis.ai) | Intelligence Index and reported speed (free key); per-benchmark scores with a Pro key and `-aa-pro` | free or Pro key |
 | [LiveBench](https://livebench.ai) | agentic and coding scores (pinned release) | none |
 | [SWE-bench Verified](https://www.swebench.com/) | percent of GitHub issues solved | none |
@@ -390,9 +391,14 @@ answer too quickly to time reliably.
 | OpenCode console and usage endpoints | your spending and allowance windows | your OpenCode Go key |
 | Your subscription (probe) | your measured speed and allowance per request | your OpenCode Go key |
 
-The plan data (budgets, peak prices and privacy flags) comes from OpenCode's
-public documentation and is a snapshot, dated by `-doctor`. Check it when
-OpenCode changes its plans.
+The plan data (budgets, per-request token profiles and peak prices) is
+refreshed from OpenCode's public documentation and models endpoint once a week
+(`-plan-ttl` seconds; `-refresh` forces it). Every refresh passes sanity gates
+— prices cross-checked against models.dev, budgets against the docs' own
+request estimates, changes capped against the previous snapshot — and a
+rejected scrape falls back to the snapshot built into the program. `-doctor`
+shows which source is active (`live (date)` or `builtin (date)`). Privacy
+flags stay in the built-in snapshot.
 
 ## Keys and privacy
 
@@ -403,7 +409,7 @@ OpenCode changes its plans.
 ## How it works
 
 - **Catalog and prices** come from models.dev, the same catalog OpenCode uses.
-- **Your plan** comes from OpenCode's public Go plan data, which the program carries as a snapshot.
+- **Your plan** comes from OpenCode's public Go plan data, refreshed weekly and validated before use, with the built-in snapshot as fallback.
 - **Benchmarks** come from the public sources listed above, matched to your models by name. A built-in alias table handles common naming differences, such as `mimo-v2.5` and `mimo-v2-5-0424`.
 - **Caching**: catalog and benchmark data is kept for 24 hours. When a refresh fails, the old copy is used silently, and `-doctor` warns about copies older than 24 hours. Live allowance and spending data is kept for `-ttl` seconds (10 minutes by default); when a refresh fails, the old copy is used with a warning that gives its age.
 - **Trust**: a speed measurement that is too short to time, or implausibly fast, is flagged rather than ranked. Estimates say which method produced them.
@@ -442,5 +448,5 @@ This repository is developed by me, a human hobbyist in my personal time, acting
 
 ## History
 
-Version v0.1.19 2026-10-30.
+Version v0.1.20 2026-10-30.
 See [HISTORY.md](HISTORY.md).

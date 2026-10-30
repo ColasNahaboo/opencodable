@@ -31,7 +31,7 @@ import (
 )
 
 // version is displayed at the bottom of the -h help text.
-var version = "v0.1.19"
+var version = "v0.1.20"
 
 // colList accumulates comma-separated -cols/-excols values. The flag may be
 // repeated and unions with the config-file default; output order always
@@ -84,6 +84,7 @@ var (
 	mainView   *bool
 	nohead     *bool
 	ttlSecs    *int
+	planTTL    *int
 	winEst     *bool
 	doctor     *bool
 	spent      *string
@@ -123,6 +124,7 @@ func registerFlags(fs *flag.FlagSet) {
 	mainView = fs.Bool("main", false, "show the default ranking table (static cost/speed/quality); the default when no view is given")
 	nohead = fs.Bool("nohead", false, "omit the header row (data rows only); no-op in -vertical/-json, which have no header")
 	ttlSecs = fs.Int("ttl", 600, "cache lifetime in seconds for live usage endpoints (console + windows); 0 disables caching")
+	planTTL = fs.Int("plan-ttl", 604800, "cache lifetime in seconds for the live plan snapshot scraped from the OpenCode Go docs (default one week)")
 	winEst = fs.Bool("window-estimate", false, "scale -now/-full 5h/week caps by the account-wide usage percentages (estimate)")
 	doctor = fs.Bool("doctor", false, "audit plan/AA/SWE/probe coverage and exit")
 	spent = fs.String("spent", "", "path to a pasted console 'usage by model' TSV; offline fallback for per-model spend")
@@ -133,7 +135,7 @@ func registerFlags(fs *flag.FlagSet) {
 		"exclude", "include", "max-cost", "min-speed", "min-quality", "missing",
 		"cols", "excols",
 		"peak", "refresh", "offline", "aa-pro", "probe", "probe-model", "probe-max-allowance",
-		"usage", "now", "full", "main", "window-estimate", "doctor", "spent", "vertical", "json", "l", "nohead", "ttl")
+		"usage", "now", "full", "main", "window-estimate", "doctor", "spent", "vertical", "json", "l", "nohead", "ttl", "plan-ttl")
 }
 
 func validateSort(key string, nowView, fullView bool) error {
@@ -281,6 +283,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "no models matched; check -provider %q and cache state\n", *provider)
 		os.Exit(1)
 	}
+	applyLivePlan(*refresh, *offline, models)
 	aas, swe, lb, elo, btr := fetchBenchmarks(*refresh, *offline)
 
 	probes, perr := probeModels(models, flt, *probeAll, *refresh, *offline, *privacy, *probeMax)
@@ -397,7 +400,7 @@ func applyConfig(fs *flag.FlagSet) error {
 		}
 	}
 	ints := map[string]*int{
-		"ttl": ttlSecs,
+		"ttl": ttlSecs, "plan-ttl": planTTL,
 	}
 	for name, p := range ints {
 		if v, ok := config.Option(name); ok && !set[name] {
@@ -645,6 +648,21 @@ func loadOrProbe(modelID, key string, refresh, offline bool) (probe.Result, floa
 func mustJSON(v any) []byte {
 	b, _ := json.Marshal(v)
 	return b
+}
+
+// applyLivePlan refreshes the plan snapshot from the OpenCode Go docs and
+// installs it over the compiled-in table. Any failure (offline, rejected
+// scrape) keeps the built-in snapshot silently, like the 24h catalog caches;
+// -doctor reports which source is active.
+func applyLivePlan(refresh, offline bool, models []modelsdev.Model) {
+	if *provider != "opencode-go" {
+		return
+	}
+	snap, err := goplan.Fetch(refresh, offline, time.Duration(*planTTL)*time.Second, models)
+	if err != nil {
+		return
+	}
+	goplan.Use(snap)
 }
 
 // fetchBenchmarks loads the AA scores, SWE-bench, LiveBench, Arena Elo and
@@ -1257,6 +1275,7 @@ func runNow(planName string, spentFile map[string]float64, spentGiven, paid, pri
 	if err != nil {
 		return err
 	}
+	applyLivePlan(refresh, offline, models)
 	byID := make(map[string]modelsdev.Model, len(models))
 	for _, m := range models {
 		byID[m.ID] = m
@@ -1448,6 +1467,7 @@ func runFull(planName string, spentFile map[string]float64, spentGiven, paid, pr
 	if err != nil {
 		return err
 	}
+	applyLivePlan(refresh, offline, models)
 	byID := make(map[string]modelsdev.Model, len(models))
 	for _, m := range models {
 		byID[m.ID] = m

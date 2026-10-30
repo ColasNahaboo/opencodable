@@ -175,6 +175,7 @@ func runDoctor(refresh, offline, aaPro, jsonOut, withLegend, nohead bool) error 
 	if err != nil {
 		return err
 	}
+	applyLivePlan(refresh, offline, models)
 	aas, aerr := aa.Fetch(refresh, offline, aaPro)
 	if aerr != nil {
 		aas = nil
@@ -210,11 +211,12 @@ func runDoctor(refresh, offline, aaPro, jsonOut, withLegend, nohead bool) error 
 
 	report := doctorReport{
 		Version:      version,
-		PlanSnapshot: goplan.SnapshotDate,
+		PlanSnapshot: goplan.Source(),
 		PlanEntries:  goplan.Count(),
 		Models:       len(rows),
 		Caches: map[string]string{
 			"models.dev": cacheAgeLabel("modelsdev-opencode-go.json"),
+			"plan":       cacheAgeLabel("goplan-live.json"),
 			"aa":         cacheAgeLabel(aa.CacheKey(aaPro)),
 			"swe-bench":  cacheAgeLabel("swebench.json"),
 			"livebench":  cacheAgeLabel(bench.LiveBenchCacheKey()),

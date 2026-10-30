@@ -26,7 +26,9 @@ cmd/opencodable/       flags and view orchestration (-main, -now, -full, -usage,
                        -window-estimate; doctor.go: coverage audit
 internal/modelsdev/    models.dev catalog: prices, limits (authoritative)
 internal/goplan/       OpenCode Go plan SNAPSHOT: allowances, token profiles,
-                       peak prices, privacy flags — update when plans change
+                       peak prices, privacy flags — built-in fallback plus
+                       live.go/validate.go weekly docs+endpoint refresh with
+                       sanity gates (live.Use overlays the table)
 internal/aa/           Artificial Analysis V2 data API client (Free/Pro, paginated)
 internal/bench/        external feeds: SWE-bench Verified, LiveBench 2.0,
                        Arena Elo (third-party snapshot), Arena BTR (official)
@@ -138,7 +140,13 @@ internal/config/       opencodable.conf (key=value: API keys + option
   them (see Spend ledger); it is an estimate, never per-model window spend.
 - **goplan snapshot**: allowances, profiles and privacy flags are hardcoded
   from the public docs; new OpenCode models need new entries (unknown models
-  fall back to a generic profile). `goplan.Privacy` is tri-state
+  fall back to a generic profile). A live refresh (`goplan.Fetch`, weekly via
+  `-plan-ttl`) scrapes the docs page + Go models endpoint and overlays the
+  table via `goplan.Use` — only after `Validate` passes every gate (domains,
+  models.dev price agreement, requests arithmetic ±33%, drift caps, peak
+  factor); any failure keeps the built-in table silently. Privacy flags are
+  never scraped. Tests use the HTML/JSON fixtures in `testdata/`.
+  `goplan.Privacy` is tri-state
   (`safe`/`trains`/`unknown`); `-privacy` fails closed, hiding both training
   and unknown models. Free variants missing from the snapshot are inferred
   from zero prices (`modelsdev.Model.Free`).
