@@ -19,8 +19,14 @@ func writeConf(t *testing.T, body string) {
 }
 
 func TestParse(t *testing.T) {
-	writeConf(t, "# comment\n\n OPENCODE_API_KEY = sk-abc123 \nAA_API_KEY=\"aa-q\"\nNOEQUALS\nEMPTY=\nCRLF=1\r\n")
-	for k, want := range map[string]string{"OPENCODE_API_KEY": "sk-abc123", "AA_API_KEY": "aa-q", "CRLF": "1"} {
+	writeConf(t, "# comment\n\n OPENCODE_API_KEY = sk-abc123 \nAA_API_KEY=\"aa-q\"\nINLINE=yes   # trailing comment\nQUOTED=\"a # b\"\nNOEQUALS\nEMPTY=\nCRLF=1\r\n")
+	for k, want := range map[string]string{
+		"OPENCODE_API_KEY": "sk-abc123",
+		"AA_API_KEY":       "aa-q",
+		"INLINE":           "yes",
+		"QUOTED":           "a # b",
+		"CRLF":             "1",
+	} {
 		if got, ok := Value(k); !ok || got != want {
 			t.Errorf("Value(%s) = %q, %v; want %q", k, got, ok, want)
 		}

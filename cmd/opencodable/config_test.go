@@ -27,51 +27,38 @@ func writeConf(t *testing.T, body string) {
 func registerOptions(t *testing.T) *flag.FlagSet {
 	t.Helper()
 	fs := flag.NewFlagSet("test", flag.ContinueOnError)
-	provider = fs.String("provider", "opencode-go", "")
-	plan = fs.String("plan", "go", "")
-	sortKey = fs.String("sort", "quality", "")
-	pareto = fs.Bool("pareto", false, "")
-	paid = fs.Bool("paid", false, "")
-	privacy = fs.Bool("privacy", false, "")
-	exclude = fs.String("exclude", "", "")
-	include = fs.String("include", "", "")
-	maxCost = fs.Float64("max-cost", 0, "")
-	minSpeed = fs.Float64("min-speed", 0, "")
-	minQuality = fs.String("min-quality", "", "")
-	missing = fs.String("missing", "keep", "")
-	colsFlag = nil
-	excolsFlag = nil
-	fs.Var(&colsFlag, "cols", "")
-	fs.Var(&excolsFlag, "excols", "")
-	peak = fs.Bool("peak", false, "")
-	refresh = fs.Bool("refresh", false, "")
-	offline = fs.Bool("offline", false, "")
-	aaPro = fs.Bool("aa-pro", false, "")
-	probeAll = fs.Bool("probe", false, "")
-	probeOne = fs.String("probe-model", "", "")
-	probeMax = fs.Float64("probe-max-allowance", 0, "")
-	showUse = fs.Bool("usage", false, "")
-	now = fs.Bool("now", false, "")
-	fullView = fs.Bool("full", false, "")
-	mainView = fs.Bool("main", false, "")
-	winEst = fs.Bool("window-estimate", false, "")
-	doctor = fs.Bool("doctor", false, "")
-	spent = fs.String("spent", "", "")
-	vertical = fs.Bool("vertical", false, "")
-	jsonOut = fs.Bool("json", false, "")
-	nohead = fs.Bool("nohead", false, "")
-	ttlSecs = fs.Int("ttl", 600, "")
+	registerFlags(fs)
 	return fs
 }
 
 func TestApplyConfig(t *testing.T) {
-	writeConf(t, "plan=go-plus\npaid=yes\naa-pro=yes\nprobe-max-allowance=0.5\nsort=name\n")
+	writeConf(t, "plan=go-plus\npaid=yes\naa-pro=yes\nl=yes\nprobe-max-allowance=0.5\nsort=name\n")
 	fs := registerOptions(t)
 	if err := applyConfig(fs); err != nil {
 		t.Fatal(err)
 	}
-	if *plan != "go-plus" || !*paid || !*aaPro || *probeMax != 0.5 || *sortKey != "name" {
-		t.Errorf("config not applied: plan=%q paid=%v aa-pro=%v max=%v sort=%q", *plan, *paid, *aaPro, *probeMax, *sortKey)
+	if *plan != "go-plus" || !*paid || !*aaPro || !*showLegend || *probeMax != 0.5 || *sortKey != "name" {
+		t.Errorf("config not applied: plan=%q paid=%v aa-pro=%v l=%v max=%v sort=%q", *plan, *paid, *aaPro, *showLegend, *probeMax, *sortKey)
+	}
+}
+
+func TestValidateSort(t *testing.T) {
+	for _, key := range []string{"name", "price", "speed", "quality", "reqs"} {
+		if err := validateSort(key, false, false); err != nil {
+			t.Errorf("validateSort(%q) = %v, want nil", key, err)
+		}
+	}
+	if err := validateSort("usable", false, false); err == nil {
+		t.Error("-sort usable on main table must fail")
+	}
+	if err := validateSort("usable", true, false); err != nil {
+		t.Errorf("-sort usable on -now = %v, want nil", err)
+	}
+	if err := validateSort("usable", false, true); err != nil {
+		t.Errorf("-sort usable on -full = %v, want nil", err)
+	}
+	if err := validateSort("bogus", false, false); err == nil {
+		t.Error("-sort bogus must fail")
 	}
 }
 

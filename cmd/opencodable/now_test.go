@@ -6,6 +6,7 @@ import (
 
 	"github.com/ColasNahaboo/opencodable/internal/cost"
 	"github.com/ColasNahaboo/opencodable/internal/modelsdev"
+	"github.com/ColasNahaboo/opencodable/internal/probe"
 	"github.com/ColasNahaboo/opencodable/internal/table"
 )
 
@@ -246,3 +247,86 @@ func TestBuildNowRowsPeakTwins(t *testing.T) {
 		t.Errorf("-max-cost must keep base and drop twin: %v", got)
 	}
 }
+
+func TestResolveModelID(t *testing.T) {
+	byID := map[string]modelsdev.Model{
+		"kimi-k3.1-pro":       {ID: "kimi-k3.1-pro", Name: "Kimi K3.1 Pro"},
+		"deepseek-v4.1-flash": {ID: "deepseek-v4.1-flash", Name: "DeepSeek V4.1 Flash"},
+	}
+	if got := resolveModelID("kimi-k3.1-pro", byID); got != "kimi-k3.1-pro" {
+		t.Errorf("exact ID = %q", got)
+	}
+	if got := resolveModelID("Kimi K3.1 Pro", byID); got != "kimi-k3.1-pro" {
+		t.Errorf("display name = %q, want kimi-k3.1-pro", got)
+	}
+	if got := resolveModelID("DEEPSEEK V4.1 FLASH", byID); got != "deepseek-v4.1-flash" {
+		t.Errorf("case-insensitive display name = %q, want deepseek-v4.1-flash", got)
+	}
+	if got := resolveModelID("unknown-model", byID); got != "unknown-model" {
+		t.Errorf("unknown = %q, want unknown-model", got)
+	}
+}
+
+func TestSortNowRows(t *testing.T) {
+	rows := []nowRow{
+		{id: "b", name: "Beta", costTask: 0.02, probeTokS: 50, month: 100, usable: 20, known: true},
+		{id: "a", name: "Alpha", costTask: 0.005, probeTokS: 120, month: 500, usable: 100, known: true},
+		{id: "free", name: "Free", unlimited: true, known: true},
+	}
+	sortNowRows(rows, "price")
+	if rows[0].id != "free" || rows[1].id != "a" || rows[2].id != "b" {
+		t.Errorf("price sort = %s %s %s", rows[0].id, rows[1].id, rows[2].id)
+	}
+	sortNowRows(rows, "speed")
+	if rows[0].id != "a" || rows[1].id != "b" {
+		t.Errorf("speed sort = %s %s", rows[0].id, rows[1].id)
+	}
+	sortNowRows(rows, "reqs")
+	if rows[0].id != "free" || rows[1].id != "a" || rows[2].id != "b" {
+		t.Errorf("reqs sort = %s %s %s", rows[0].id, rows[1].id, rows[2].id)
+	}
+	sortNowRows(rows, "name")
+	if rows[0].id != "a" || rows[1].id != "b" || rows[2].id != "free" {
+		t.Errorf("name sort = %s %s %s", rows[0].id, rows[1].id, rows[2].id)
+	}
+}
+
+func TestLoadOrProbeTracksBurnAndCachesOnlyTrusted(t *testing.T) {
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	oldRun, oldLong := probeRun, probeRunLong
+	t.Cleanup(func() { probeRun, probeRunLong = oldRun, oldLong })
+
+	calls := 0
+	probeRun = func(modelID, key string, maxTokens int64) (probe.Result, error) {
+		calls++
+		if modelID == "thinker" && maxTokens == DefaultMaxTokens {
+			// Thinking ate the default budget: billed $0.005, no content.
+			return probe.Result{ModelID: modelID, Allowance: 0.005}, probeErr("no content received")
+		}
+		return probe.Result{
+			ModelID: modelID, TokPerSec: 80, TTFTSeconds: 1.2,
+			WindowSeconds: 4.0, OutputTok: 320, Allowance: 0.015,
+		}, nil
+	}
+
+	// First-try success reports its allowance burn.
+	r, burned := loadOrProbe("fast-m", "k", false, false)
+	if !r.Trusted() || math.Abs(burned-0.015) > 1e-12 {
+		t.Errorf("first-try probe = %+v, burned=%v; want trusted, burned=0.015", r, burned)
+	}
+	// Cache hit within 24h burns 0 and makes no live call.
+	callsBefore := calls
+	_, burned2 := loadOrProbe("fast-m", "k", false, false)
+	if burned2 != 0 || calls != callsBefore {
+		t.Errorf("cached probe burned=%v calls=%d, want 0 and %d", burned2, calls, callsBefore)
+	}
+	// Escalated thinking model sums burn across both attempts (0.005 + 0.015 = 0.020).
+	rt, burnedT := loadOrProbe("thinker", "k", false, false)
+	if !rt.Trusted() || math.Abs(burnedT-0.020) > 1e-12 {
+		t.Errorf("escalated probe = %+v, burned=%v; want trusted, burned=0.020", rt, burnedT)
+	}
+}
+
+type probeErr string
+
+func (e probeErr) Error() string { return string(e) }

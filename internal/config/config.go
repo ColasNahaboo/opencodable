@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"time"
 )
 
 // envKeys are the environment-style settings opencodable understands.
@@ -31,10 +32,20 @@ var optionNames = map[string]bool{}
 // file is the config file in use; empty means the per-user default.
 var file string
 
+// cached holds the last parsed config file so repeated Option/Value calls
+// during startup do not re-read and re-parse the file dozens of times.
+var (
+	cachedPath  string
+	cachedMTime time.Time
+	cachedSize  int64
+	cachedVals  map[string]string
+)
+
 // SetPath reads settings from p instead of the per-user opencodable.conf.
 // An empty path restores the default. An explicit path must exist, so a typo
 // is reported rather than silently yielding an empty configuration.
 func SetPath(p string) error {
+	cachedPath = ""
 	if p == "" {
 		file = ""
 		return nil
@@ -71,15 +82,22 @@ func AddOptions(names ...string) {
 }
 
 func read() map[string]string {
-	vals := map[string]string{}
 	p := path()
 	if p == "" {
-		return vals
+		return map[string]string{}
+	}
+	fi, err := os.Stat(p)
+	if err != nil {
+		return map[string]string{}
+	}
+	if p == cachedPath && fi.ModTime().Equal(cachedMTime) && fi.Size() == cachedSize && cachedVals != nil {
+		return cachedVals
 	}
 	b, err := os.ReadFile(p)
 	if err != nil {
-		return vals
+		return map[string]string{}
 	}
+	vals := map[string]string{}
 	for _, line := range strings.Split(string(b), "\n") {
 		line = strings.TrimSpace(strings.TrimSuffix(line, "\r"))
 		if line == "" || strings.HasPrefix(line, "#") {
@@ -89,10 +107,27 @@ func read() map[string]string {
 		if !ok {
 			continue // malformed lines are ignored; never echo secret-bearing lines
 		}
-		k, v = strings.TrimSpace(k), strings.Trim(strings.TrimSpace(v), `"'`)
+		k, v = strings.TrimSpace(k), cleanValue(v)
 		vals[k] = v
 	}
+	cachedPath, cachedMTime, cachedSize, cachedVals = p, fi.ModTime(), fi.Size(), vals
 	return vals
+}
+
+// cleanValue trims surrounding whitespace and quotes; for unquoted values it
+// also strips trailing inline "# ..." comments preceded by whitespace.
+func cleanValue(v string) string {
+	v = strings.TrimSpace(v)
+	if len(v) >= 2 && ((v[0] == '"' && v[len(v)-1] == '"') || (v[0] == '\'' && v[len(v)-1] == '\'')) {
+		return v[1 : len(v)-1]
+	}
+	for i := 0; i+1 < len(v); i++ {
+		if (v[i] == ' ' || v[i] == '\t') && v[i+1] == '#' {
+			v = strings.TrimSpace(v[:i])
+			break
+		}
+	}
+	return strings.Trim(v, `"'`)
 }
 
 // Value returns the setting for name: environment first, then the config

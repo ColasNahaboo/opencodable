@@ -38,6 +38,25 @@ func SWEBench(refresh, offline bool) (map[string]float64, error) {
 	return parseSWEBench(b), nil
 }
 
+// LookupSWE resolves a model's SWE-bench Verified score by checking the
+// plan-stripped models.dev ID, full ID, display name, and matched AA slug.
+// Keeping the ID/name lookup independent of AA ensures SWE-bench scores still
+// resolve when AA_API_KEY is absent or when AA uses a dated snapshot slug.
+func LookupSWE(swe map[string]float64, id, name, aaSlug string) float64 {
+	if len(swe) == 0 {
+		return 0
+	}
+	for _, s := range []string{stripPlan(id), id, name, aaSlug} {
+		if s == "" {
+			continue
+		}
+		if v := swe[normalize.Key(s)]; v > 0 {
+			return v
+		}
+	}
+	return 0
+}
+
 // parseSWEBench extracts best-per-model Verified scores from the raw JSON.
 func parseSWEBench(b []byte) map[string]float64 {
 	var board sweBoard

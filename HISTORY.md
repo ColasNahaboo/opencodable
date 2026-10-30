@@ -1,5 +1,16 @@
 # History
 
+- v0.1.19 2026-10-30 Review fixes: `-probe` now counts first-try probe burns
+  toward `-probe-max-allowance` and the total burned summary, escalates
+  thinking models that exhaust the default token budget in reasoning without
+  emitting content, and avoids caching failed probes; `swe_b` resolves by
+  model ID/name independently of Artificial Analysis (`AA_API_KEY` optional,
+  dated AA slugs no longer mask SWE-bench); `-spent` resolves pasted model
+  display names to catalog IDs; `-window-estimate` snapshots off-peak base USD
+  so toggling `-peak` does not forge ledger deltas; `-doctor` audits LiveBench
+  cache age and coverage; `-sort` validates its key upfront and works in `-now`
+  too; `opencodable.conf` strips unquoted inline `#` comments and caches the
+  parsed file; `btr` docs state the Bradley–Terry log-odds scale (~±0.2).
 - v0.1.18 2026-10-29 `-now` peak twins now scale a measured `burn_req` by the
   official peak/base price ratio, so a `[peak]` row never looks cheaper per
   request than its base. Before this, the twin used the official peak profile

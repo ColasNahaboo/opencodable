@@ -48,7 +48,7 @@ Piped header: `#name	cost_tok	cost_task	allowance	r_quota	tok_s	ttft_s	p_tok_s	p
 | 23 | `lb_agent` | LiveBench 2.0 Long Agentic score, 0–100 (single run) |
 | 24 | `lb_code` | LiveBench 2.0 Coding score, 0–100 (single run) |
 | 25 | `elo` | Arena Elo, daily snapshot of the arena.ai text leaderboard (third-party mirror; integer, missing = not in snapshot) |
-| 26 | `btr` | Arena Bradley–Terry rating on the Elo scale, text with style control, overall category (official mirror, fresh; missing = no match) |
+| 26 | `btr` | Arena Bradley–Terry rating (log-odds scale, ~±0.2; 0 is average, >0 above average), text with style control, overall category (official mirror, fresh; missing = no match) |
 
 On a terminal: same columns, padded for readability, missing values shown as
 `-`. Models with peak-hours pricing add a `Name [peak]` twin row (ID

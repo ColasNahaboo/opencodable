@@ -225,16 +225,12 @@ func runPrompt(modelID, key, prompt string, maxTokens int64) (Result, error) {
 	if err := sc.Err(); err != nil {
 		return res, err
 	}
-	if firstGen.IsZero() || res.OutputTok == 0 {
+	if firstContent.IsZero() || res.OutputTok == 0 {
 		return res, fmt.Errorf("no content received")
-	}
-	genStart := firstGen
-	if firstContent.IsZero() {
-		firstContent = firstGen
 	}
 	res.TTFTSeconds = firstContent.Sub(start).Seconds()
 	res.E2ESeconds = last.Sub(start).Seconds()
-	res.WindowSeconds = last.Sub(genStart).Seconds()
+	res.WindowSeconds = last.Sub(firstGen).Seconds()
 	if res.WindowSeconds <= 0 {
 		return res, fmt.Errorf("zero-length generation window")
 	}

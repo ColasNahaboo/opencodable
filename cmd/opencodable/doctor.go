@@ -31,6 +31,7 @@ type doctorRow struct {
 	OutK     float64  `json:"out_k"`
 	Probe    string   `json:"probe"` // - | ok <age> | suspect | untrusted | error
 	ProbeOK  bool     `json:"probe_ok"`
+	LBMatch  bool     `json:"lb_match"`
 	EloMatch bool     `json:"elo_match"`
 	BTRMatch bool     `json:"btr_match"`
 	Warnings []string `json:"warnings,omitempty"`
@@ -46,6 +47,7 @@ type doctorReport struct {
 	FreeNotInPlan int               `json:"free_not_in_plan"`
 	MissingAA     int               `json:"missing_aa"`
 	MissingSWE    int               `json:"missing_swe"`
+	MissingLB     int               `json:"missing_lb"`
 	MissingElo    int               `json:"missing_elo"`
 	MissingBTR    int               `json:"missing_btr"`
 	TrustedProbes int               `json:"trusted_probes"`
@@ -54,6 +56,7 @@ type doctorReport struct {
 	ConfigUnknown []string          `json:"config_unknown,omitempty"`
 	AAError       string            `json:"aa_error,omitempty"`
 	SWEError      string            `json:"swe_error,omitempty"`
+	LBError       string            `json:"lb_error,omitempty"`
 	EloError      string            `json:"elo_error,omitempty"`
 	BTRError      string            `json:"btr_error,omitempty"`
 	CacheWarnings []string          `json:"cache_warnings,omitempty"`
@@ -61,7 +64,7 @@ type doctorReport struct {
 }
 
 // buildDoctorRows is the testable core of -doctor.
-func buildDoctorRows(models []modelsdev.Model, aas []aa.Model, swe map[string]float64, elo bench.Elo, btr bench.BTR, probes map[string]probe.Result, probeAges map[string]time.Duration) []doctorRow {
+func buildDoctorRows(models []modelsdev.Model, aas []aa.Model, swe map[string]float64, lb bench.LB, elo bench.Elo, btr bench.BTR, probes map[string]probe.Result, probeAges map[string]time.Duration) []doctorRow {
 	aaSlugs := map[string]bool{}
 	for _, a := range aas {
 		aaSlugs[a.Slug] = true
@@ -83,11 +86,15 @@ func buildDoctorRows(models []modelsdev.Model, aas []aa.Model, swe map[string]fl
 			r.Plan = "missing"
 			r.Warnings = append(r.Warnings, "no plan entry")
 		}
-		if slug := normalize.Match(m.ID, aaSlugs); slug != "" {
+		slug := normalize.Match(m.ID, aaSlugs)
+		if slug != "" {
 			r.AA = slug
-			r.SWE = swe[normalize.Key(slug)]
 		} else {
 			r.Warnings = append(r.Warnings, "no AA match")
+		}
+		r.SWE = bench.LookupSWE(swe, m.ID, m.Name, slug)
+		if _, ok := lb.Lookup(m.ID); ok {
+			r.LBMatch = true
 		}
 		if _, ok := elo.Lookup(m.ID); ok {
 			r.EloMatch = true
@@ -176,6 +183,10 @@ func runDoctor(refresh, offline, aaPro, jsonOut, withLegend, nohead bool) error 
 	if serr != nil {
 		swe = nil
 	}
+	lb, lerr := bench.LiveBench(refresh, offline)
+	if lerr != nil {
+		lb = nil
+	}
 	elo, eerr := bench.FetchElo(refresh, offline)
 	if eerr != nil {
 		elo = nil
@@ -195,7 +206,7 @@ func runDoctor(refresh, offline, aaPro, jsonOut, withLegend, nohead bool) error 
 			}
 		}
 	}
-	rows := buildDoctorRows(models, aas, swe, elo, btr, probes, ages)
+	rows := buildDoctorRows(models, aas, swe, lb, elo, btr, probes, ages)
 
 	report := doctorReport{
 		Version:      version,
@@ -206,6 +217,7 @@ func runDoctor(refresh, offline, aaPro, jsonOut, withLegend, nohead bool) error 
 			"models.dev": cacheAgeLabel("modelsdev-opencode-go.json"),
 			"aa":         cacheAgeLabel(aa.CacheKey(aaPro)),
 			"swe-bench":  cacheAgeLabel("swebench.json"),
+			"livebench":  cacheAgeLabel(bench.LiveBenchCacheKey()),
 			"elo":        cacheAgeLabel("lmarena-elo.json"),
 			"btr":        cacheAgeLabel("lmarena-btr.json"),
 		},
@@ -226,8 +238,11 @@ func runDoctor(refresh, offline, aaPro, jsonOut, withLegend, nohead bool) error 
 		if r.AA == "" {
 			report.MissingAA++
 		}
-		if r.AA != "" && r.SWE == 0 {
+		if r.SWE == 0 {
 			report.MissingSWE++
+		}
+		if !r.LBMatch {
+			report.MissingLB++
 		}
 		if !r.EloMatch {
 			report.MissingElo++
@@ -245,6 +260,9 @@ func runDoctor(refresh, offline, aaPro, jsonOut, withLegend, nohead bool) error 
 	if serr != nil {
 		report.SWEError = serr.Error()
 	}
+	if lerr != nil {
+		report.LBError = lerr.Error()
+	}
 	if eerr != nil {
 		report.EloError = eerr.Error()
 	}
@@ -261,9 +279,9 @@ func runDoctor(refresh, offline, aaPro, jsonOut, withLegend, nohead bool) error 
 
 	fmt.Fprintf(os.Stderr, "opencodable doctor %s — plan snapshot %s (%d entries)\n",
 		report.Version, report.PlanSnapshot, report.PlanEntries)
-	fmt.Fprintf(os.Stderr, "caches: models.dev %s | AA %s | SWE-bench %s | Elo %s | BTR %s | trusted probes %d\n",
+	fmt.Fprintf(os.Stderr, "caches: models.dev %s | AA %s | SWE-bench %s | LiveBench %s | Elo %s | BTR %s | trusted probes %d\n",
 		report.Caches["models.dev"], report.Caches["aa"], report.Caches["swe-bench"],
-		report.Caches["elo"], report.Caches["btr"], report.TrustedProbes)
+		report.Caches["livebench"], report.Caches["elo"], report.Caches["btr"], report.TrustedProbes)
 	for _, w := range report.CacheWarnings {
 		fmt.Fprintf(os.Stderr, "warning: %s\n", w)
 	}
@@ -272,14 +290,17 @@ func runDoctor(refresh, offline, aaPro, jsonOut, withLegend, nohead bool) error 
 	for _, k := range report.ConfigUnknown {
 		fmt.Fprintf(os.Stderr, "warning: opencodable.conf has unknown key %q (typo?)\n", k)
 	}
-	fmt.Fprintf(os.Stderr, "coverage: %d models | plan missing %d | free not in plan %d | AA missing %d | SWE missing %d | Elo missing %d | BTR missing %d\n",
+	fmt.Fprintf(os.Stderr, "coverage: %d models | plan missing %d | free not in plan %d | AA missing %d | SWE missing %d | LiveBench missing %d | Elo missing %d | BTR missing %d\n",
 		report.Models, report.MissingPlan, report.FreeNotInPlan, report.MissingAA, report.MissingSWE,
-		report.MissingElo, report.MissingBTR)
+		report.MissingLB, report.MissingElo, report.MissingBTR)
 	if report.AAError != "" {
 		fmt.Fprintf(os.Stderr, "warning: AA: %s\n", report.AAError)
 	}
 	if report.SWEError != "" {
 		fmt.Fprintf(os.Stderr, "warning: SWE-bench: %s\n", report.SWEError)
+	}
+	if report.LBError != "" {
+		fmt.Fprintf(os.Stderr, "warning: LiveBench: %s\n", report.LBError)
 	}
 	if report.EloError != "" {
 		fmt.Fprintf(os.Stderr, "warning: Elo: %s\n", report.EloError)
@@ -298,6 +319,7 @@ func catalogCaches(aaPro bool) []struct{ label, file string } {
 		{"models.dev", "modelsdev-opencode-go.json"},
 		{"aa", aa.CacheKey(aaPro)},
 		{"swe-bench", "swebench.json"},
+		{"livebench", bench.LiveBenchCacheKey()},
 		{"elo", "lmarena-elo.json"},
 		{"btr", "lmarena-btr.json"},
 	}

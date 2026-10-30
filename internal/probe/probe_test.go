@@ -90,6 +90,25 @@ func TestRunRejectsNoContent(t *testing.T) {
 	}
 }
 
+func TestRunRejectsReasoningOnlyNoContent(t *testing.T) {
+	srv := sseServer(t, []string{
+		"W200", reasoningChunk("think"), "W200", reasoningChunk(" still thinking"),
+		usageChunk(1024, 1024),
+	})
+	t.Cleanup(srv.Close)
+	old := endpoint
+	endpoint = srv.URL
+	defer func() { endpoint = old }()
+
+	res, err := Run("m", "k", 1024)
+	if err == nil || !strings.Contains(err.Error(), "no content received") {
+		t.Errorf("want no content received error when thinking exhausts budget, got %v", err)
+	}
+	if res.Allowance != 0.002 {
+		t.Errorf("allowance burned on failed thinking attempt = %v, want 0.002 preserved", res.Allowance)
+	}
+}
+
 func TestNewSessionID(t *testing.T) {
 	a, b := newSessionID(), newSessionID()
 	if a == b {

@@ -86,7 +86,7 @@ func saveLedger(led spendLedger) {
 func recordSnapshot(led spendLedger, spend map[string]spendInfo, now time.Time) spendLedger {
 	snap := &ledgerSnapshot{TS: now.UTC().Format(time.RFC3339), Models: map[string]ledgerModel{}}
 	for id, si := range spend {
-		snap.Models[id] = ledgerModel{USD: si.usd, Reqs: si.reqs}
+		snap.Models[id] = ledgerModel{USD: si.ledgerUSD(), Reqs: si.reqs}
 	}
 	led.Prev = snap
 	led.Probes = pruneProbes(led.Probes, now)
@@ -181,7 +181,7 @@ func attributeLedger(led spendLedger, cur map[string]spendInfo, now, reset5h, re
 	}
 	for id, si := range cur {
 		prev := led.Prev.Models[id].USD // absent = $0 then (console rows exist iff spend exists)
-		if d := si.usd - prev; d > 0 {
+		if d := si.ledgerUSD() - prev; d > 0 {
 			add(id, d*f5, d*fW)
 		}
 	}
@@ -233,8 +233,9 @@ func estimateWindowSpend(models []modelsdev.Model, spend map[string]spendInfo, s
 	for id := range universe {
 		si := spend[id]
 		if si.known || spendKnown {
-			weights[id] = si.usd
-			totalWeight += si.usd
+			w := si.ledgerUSD()
+			weights[id] = w
+			totalWeight += w
 		}
 	}
 	remFive, remWeek := impliedFive, impliedWeek

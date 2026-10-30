@@ -113,7 +113,7 @@ look at first; the [Columns](#columns) section lists them all.
 - **Window**: a model's budget also comes in a 5-hour window (20% of its monthly budget) and a weekly window (50%). A burst of work can use up a window before the month runs out.
 - **Probe**: a short test request, sent through your subscription, that measures real speed. It costs about one cent per model.
 - **Peak hours**: DeepSeek V4.1 Flash and V4 Pro cost double on weekdays from 01:00–04:00 and 06:00–10:00 UTC (all other hours, including weekends, are off-peak). The table shows a second row for them, named `[peak]`, unless you use `-peak`.
-- **Arena (`elo`, `btr`)**: the public Arena leaderboard (formerly LMArena), where people compare answers without knowing which model wrote them. A higher rating means people preferred that model more often. Typical values are 1400 to 1550.
+- **Arena (`elo`, `btr`)**: the public Arena leaderboard (formerly LMArena), where people compare answers without knowing which model wrote them. A higher rating means people preferred that model more often. Typical `elo` values are 1400 to 1550; `btr` uses the Bradley–Terry log-odds scale (around -0.2 to +0.2, where 0 is average).
 
 ## Your allowance
 
@@ -240,7 +240,7 @@ Pick one at a time; combining two is an error. Without a view, the main table is
 
 ### What to show, and in what order
 
-- `-sort <key>`: `quality` (the default: the AA Intelligence Index; models without one sort last), `price` (cheapest request first), `speed` (measured speed when available, otherwise the reported one), `reqs` (most requests a month first), `usable` (most usable right now, for `-full`), or `name`.
+- `-sort <key>`: `quality` (the default: the AA Intelligence Index; models without one sort last), `price` (cheapest request first), `speed` (measured speed when available, otherwise the reported one), `reqs` (most requests a month first), `usable` (most usable right now, for `-now` and `-full`), or `name`.
 - `-pareto`: keep only the models that no other visible model beats on cost, speed and quality together.
 - `-paid`: hide free models.
 - `-privacy`: hide models that may train on your prompts, and models whose status is unknown.
@@ -276,7 +276,7 @@ it ignores the quality bounds and says so on stderr.
 ### Allowance flags
 
 - `-window-estimate`: estimate what you have used in the current windows (see [Your allowance](#your-allowance)).
-- `-spent <file>`: use a pasted console table instead of fetching your spending. The file holds the console's "usage by model" rows — each line starts with the model ID and ends with its `$cost` (tab- or multi-space-separated; `#` comments allowed).
+- `-spent <file>`: use a pasted console table instead of fetching your spending. The file holds the console's "usage by model" rows — each line starts with the model ID or display name and ends with its `$cost` (tab- or multi-space-separated; `#` comments allowed).
 - `-ttl <seconds>`: how long live allowance data stays cached (default 600; `0` turns caching off).
 - `-refresh`: ignore the caches and fetch everything again. With `-offline`, `-offline` wins: a cached copy is served and nothing is fetched.
 - `-offline`: use only what is cached, with no network. `-usage` refuses this, and `-now` then assumes no spending unless you pass `-spent`.
@@ -442,5 +442,5 @@ This repository is developed by me, a human hobbyist in my personal time, acting
 
 ## History
 
-Version v0.1.18 2026-10-29.
+Version v0.1.19 2026-10-30.
 See [HISTORY.md](HISTORY.md).

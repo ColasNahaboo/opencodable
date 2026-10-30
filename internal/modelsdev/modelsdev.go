@@ -13,7 +13,7 @@ import (
 	"github.com/ColasNahaboo/opencodable/internal/cache"
 )
 
-const catalogURL = "https://models.dev/api.json"
+var catalogURL = "https://models.dev/api.json"
 
 // Cost is USD per 1M tokens.
 type Cost struct {

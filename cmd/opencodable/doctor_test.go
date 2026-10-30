@@ -27,6 +27,7 @@ func TestBuildDoctorRows(t *testing.T) {
 		[]modelsdev.Model{glm, space, free},
 		[]aa.Model{{Slug: "glm-5-3"}},
 		map[string]float64{"glm53": 70.0},
+		bench.LB{"glm53": {Agentic: 50, Coding: 80}},
 		nil, nil,
 		map[string]probe.Result{
 			"glm-5.3":     {ModelID: "glm-5.3", TokPerSec: 100, WindowSeconds: 3},
@@ -43,7 +44,7 @@ func TestBuildDoctorRows(t *testing.T) {
 	}
 
 	g := byID["glm-5.3"]
-	if g.Plan != "yes" || g.AA != "glm-5-3" || g.SWE != 70 || g.Probe != "ok 2h" || len(g.Warnings) != 0 {
+	if g.Plan != "yes" || g.AA != "glm-5-3" || g.SWE != 70 || !g.LBMatch || g.Probe != "ok 2h" || len(g.Warnings) != 0 {
 		t.Errorf("glm row = %+v", g)
 	}
 	if !g.ProbeOK {
@@ -151,7 +152,7 @@ func TestDoctorArenaMatching(t *testing.T) {
 	glm := modelsdev.Model{ID: "glm-5.3-flash", Name: "GLM-5.3-Flash"}
 	kimi := modelsdev.Model{ID: "kimi-k3", Name: "Kimi K3"}
 	rows := buildDoctorRows(
-		[]modelsdev.Model{glm, kimi}, nil, nil,
+		[]modelsdev.Model{glm, kimi}, nil, nil, nil,
 		bench.Elo{"kimik3": 1500}, bench.BTR{"glm53": 1480}, nil, nil,
 	)
 	if rows[0].EloMatch || rows[0].BTRMatch {
@@ -174,6 +175,7 @@ func TestStaleCacheWarnings(t *testing.T) {
 	got := staleCacheWarnings(map[string]time.Duration{
 		"models.dev": 3 * time.Hour,
 		"aa":         30 * time.Hour,
+		"livebench":  time.Hour,
 		"elo":        time.Hour,
 		"btr":        time.Hour,
 	}, false)
@@ -183,7 +185,7 @@ func TestStaleCacheWarnings(t *testing.T) {
 	if !strings.Contains(got[0], "aa cache is") || !strings.Contains(got[1], "swe-bench cache missing") {
 		t.Errorf("warnings = %v", got)
 	}
-	fresh := map[string]time.Duration{"models.dev": time.Hour, "aa": time.Hour, "swe-bench": 23 * time.Hour, "elo": time.Hour, "btr": time.Hour}
+	fresh := map[string]time.Duration{"models.dev": time.Hour, "aa": time.Hour, "swe-bench": 23 * time.Hour, "livebench": time.Hour, "elo": time.Hour, "btr": time.Hour}
 	if w := staleCacheWarnings(fresh, false); len(w) != 0 {
 		t.Errorf("fresh caches must stay silent: %v", w)
 	}

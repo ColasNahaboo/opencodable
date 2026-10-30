@@ -174,3 +174,21 @@ func TestLedgerRoundtripAndPrune(t *testing.T) {
 		t.Errorf("corrupt ledger must read empty: %+v", got)
 	}
 }
+
+func TestLedgerUsesRegimeIndependentBaseUSD(t *testing.T) {
+	now := time.Date(2026, 10, 29, 12, 0, 0, 0, time.UTC)
+	reset5h := now.Add(time.Hour)
+	resetWk := now.Add(24 * time.Hour)
+	// First run without -peak: usd=10, baseUSD=10.
+	led := recordSnapshot(spendLedger{}, map[string]spendInfo{
+		"deepseek-v4.1-flash": {usd: 10, baseUSD: 10, reqs: 100, known: true},
+	}, now.Add(-30*time.Minute))
+	// Second run with -peak on the exact same console tokens: usd=20 (peak), baseUSD=10 (off-peak).
+	cur := map[string]spendInfo{
+		"deepseek-v4.1-flash": {usd: 20, baseUSD: 10, reqs: 100, known: true},
+	}
+	got := attributeLedger(led, cur, now, reset5h, resetWk)
+	if got["deepseek-v4.1-flash"] != (windowSpend{}) {
+		t.Errorf("toggling -peak must not create a phantom ledger delta, got %+v", got["deepseek-v4.1-flash"])
+	}
+}

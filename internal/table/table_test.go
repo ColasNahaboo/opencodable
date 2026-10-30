@@ -348,3 +348,12 @@ func TestWithPeakTwins(t *testing.T) {
 		t.Errorf("empty in must stay empty: %v", got)
 	}
 }
+
+func TestBuildSWEBenchWithoutAA(t *testing.T) {
+	rows := Build([]modelsdev.Model{
+		{ID: "glm-5.3", Name: "GLM-5.3"},
+	}, nil, nil, map[string]float64{"glm53": 70.0}, nil, nil, nil, "go", false)
+	if len(rows) != 1 || rows[0].SWEBench != 70.0 {
+		t.Errorf("SWEBench without AA = %+v, want 70.0", rows)
+	}
+}

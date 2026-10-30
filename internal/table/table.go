@@ -106,7 +106,9 @@ func Build(models []modelsdev.Model, aas []aa.Model, probes map[string]probe.Res
 		if v, ok := btr.Lookup(m.ID); ok {
 			r.BTRating = v
 		}
-		if slug := normalize.Match(m.ID, slugs); slug != "" {
+		slug := normalize.Match(m.ID, slugs)
+		r.SWEBench = bench.LookupSWE(swe, m.ID, m.Name, slug)
+		if slug != "" {
 			a := bySlug[slug]
 			r.TokPerSec = speeds[slug]
 			r.TTFTSeconds = a.Performance.TTFTSeconds
@@ -121,7 +123,6 @@ func Build(models []modelsdev.Model, aas []aa.Model, probes map[string]probe.Res
 			}
 			r.IFBench = f(a.Evaluations.IFBench) * 100
 			r.LCR = f(a.Evaluations.LCR) * 100
-			r.SWEBench = swe[normalize.Key(a.Slug)]
 			if suf, t := normalize.VariantWithSpeed(slug, speeds); suf != "" {
 				r.TokPerSec = t
 				r.Src = "aa:" + suf[1:]
@@ -508,7 +509,7 @@ var legend = []string{
 	"# lb_agent    LiveBench 2.0 Long Agentic score (single run, 0-100)",
 	"# lb_code     LiveBench 2.0 Coding score (single run, 0-100)",
 	"# elo         Arena Elo, daily snapshot of the arena.ai text leaderboard (third-party mirror; top-20, can lag; missing = not in snapshot)",
-	"# btr         Arena Bradley-Terry rating on the Elo scale, text with style control, overall category (official mirror, fresh; missing = no match)",
+	"# btr         Arena Bradley-Terry rating (log-odds scale, ~±0.2; >0 above average), text with style control, overall category (official mirror, fresh; missing = no match)",
 }
 
 // MainLegend returns the main-table legend lines, one #-prefixed line per

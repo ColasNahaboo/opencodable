@@ -24,13 +24,14 @@ import (
 	"github.com/ColasNahaboo/opencodable/internal/cost"
 	"github.com/ColasNahaboo/opencodable/internal/goplan"
 	"github.com/ColasNahaboo/opencodable/internal/modelsdev"
+	"github.com/ColasNahaboo/opencodable/internal/normalize"
 	"github.com/ColasNahaboo/opencodable/internal/probe"
 	"github.com/ColasNahaboo/opencodable/internal/table"
 	"github.com/ColasNahaboo/opencodable/internal/usage"
 )
 
 // version is displayed at the bottom of the -h help text.
-var version = "v0.1.18"
+var version = "v0.1.19"
 
 // colList accumulates comma-separated -cols/-excols values. The flag may be
 // repeated and unions with the config-file default; output order always
@@ -91,6 +92,64 @@ var (
 	showLegend *bool
 )
 
+func registerFlags(fs *flag.FlagSet) {
+	configPath = fs.String("config", "", "read settings and option defaults from this file instead of the per-user opencodable.conf")
+	provider = fs.String("provider", "opencode-go", "models.dev provider to rank")
+	plan = fs.String("plan", "go", "subscription plan: go|go-plus (allowances)")
+	sortKey = fs.String("sort", "quality", "sort: name|price|speed|quality|reqs|usable (usable ranks -now/-full by affordable requests)")
+	pareto = fs.Bool("pareto", false, "only Pareto-optimal rows")
+	paid = fs.Bool("paid", false, "hide free models (cost_task = 0)")
+	privacy = fs.Bool("privacy", false, "hide models that train on request data or have unknown privacy status")
+	exclude = fs.String("exclude", "", "hide models whose ID or name matches any comma-separated pattern ('*' and '?' are wildcards)")
+	include = fs.String("include", "", "show only models whose ID or name matches any comma-separated pattern ('*' and '?' are wildcards)")
+	maxCost = fs.Float64("max-cost", 0, "hide models whose cost per task (cost_task, USD) exceeds this value")
+	minSpeed = fs.Float64("min-speed", 0, "hide models slower than this many output tokens/s (measured probe when available, else AA)")
+	minQuality = fs.String("min-quality", "", "hide models below 'metric=value' pairs (aa_int, swe_b, term_b, if_b, aa_lcr, lb_agent, lb_code, elo, btr; aa_code/aa_math/code_b are no longer published); a bare value means composite quality")
+	missing = fs.String("missing", "keep", "numeric filters: keep or drop models with no value for the metric (keep|drop)")
+	colsFlag = nil
+	excolsFlag = nil
+	fs.Var(&colsFlag, "cols", "show only these columns (comma-separated titles, repeatable; name is always shown)")
+	fs.Var(&excolsFlag, "excols", "hide these columns (comma-separated titles, repeatable; name is always shown)")
+	peak = fs.Bool("peak", false, "use peak-hours prices (DeepSeek); the whole table is peak-priced, so no [peak] twins are added")
+	refresh = fs.Bool("refresh", false, "bypass the 24h cache and refetch")
+	offline = fs.Bool("offline", false, "cache only for catalog/benchmarks/probes; -usage still needs network")
+	aaPro = fs.Bool("aa-pro", false, "use the Artificial Analysis Pro endpoint (per-benchmark scores; requires a Pro key)")
+	probeAll = fs.Bool("probe", false, "measure live speed of every model (paid requests, cached 24h)")
+	probeOne = fs.String("probe-model", "", "measure live speed of one model ID and print the result")
+	probeMax = fs.Float64("probe-max-allowance", 0, "stop -probe after this many allowance dollars (0 = no limit)")
+	showUse = fs.Bool("usage", false, "show remaining Go allowance for the 5h/week/month windows")
+	now = fs.Bool("now", false, "per model: requests affordable in each Go window, using the model's own monthly limit")
+	fullView = fs.Bool("full", false, "join the main table and -now: static cost/speed/quality plus affordable requests per model")
+	mainView = fs.Bool("main", false, "show the default ranking table (static cost/speed/quality); the default when no view is given")
+	nohead = fs.Bool("nohead", false, "omit the header row (data rows only); no-op in -vertical/-json, which have no header")
+	ttlSecs = fs.Int("ttl", 600, "cache lifetime in seconds for live usage endpoints (console + windows); 0 disables caching")
+	winEst = fs.Bool("window-estimate", false, "scale -now/-full 5h/week caps by the account-wide usage percentages (estimate)")
+	doctor = fs.Bool("doctor", false, "audit plan/AA/SWE/probe coverage and exit")
+	spent = fs.String("spent", "", "path to a pasted console 'usage by model' TSV; offline fallback for per-model spend")
+	vertical = fs.Bool("vertical", false, "one model per block of 'field: value' lines (screen-reader friendly); applies to the table and -now")
+	jsonOut = fs.Bool("json", false, "JSON output instead of TSV")
+	showLegend = fs.Bool("l", false, "print the legend block explaining each column")
+	config.AddOptions("provider", "plan", "sort", "pareto", "paid", "privacy",
+		"exclude", "include", "max-cost", "min-speed", "min-quality", "missing",
+		"cols", "excols",
+		"peak", "refresh", "offline", "aa-pro", "probe", "probe-model", "probe-max-allowance",
+		"usage", "now", "full", "main", "window-estimate", "doctor", "spent", "vertical", "json", "l", "nohead", "ttl")
+}
+
+func validateSort(key string, nowView, fullView bool) error {
+	switch key {
+	case "name", "price", "speed", "quality", "reqs":
+		return nil
+	case "usable":
+		if !nowView && !fullView {
+			return fmt.Errorf("-sort usable requires -now or -full (use -sort reqs for the main table)")
+		}
+		return nil
+	default:
+		return fmt.Errorf("invalid -sort %q: want quality, price, speed, reqs, usable or name", key)
+	}
+}
+
 func main() {
 	// The probe uses its own longer client; all catalog/benchmark/usage
 	// fetches share this timeout.
@@ -104,45 +163,7 @@ func main() {
 		fmt.Fprintln(out, "\nBoolean options also accept -name=false (for example -paid=false) to override a value from opencodable.conf.")
 		fmt.Fprintf(out, "\nopencodable %s — https://github.com/ColasNahaboo/opencodable\n", version)
 	}
-	configPath = flag.String("config", "", "read settings and option defaults from this file instead of the per-user opencodable.conf")
-	provider = flag.String("provider", "opencode-go", "models.dev provider to rank")
-	plan = flag.String("plan", "go", "subscription plan: go|go-plus (allowances)")
-	sortKey = flag.String("sort", "quality", "sort: name|price|speed|quality|reqs|usable (usable ranks -full by affordable requests)")
-	pareto = flag.Bool("pareto", false, "only Pareto-optimal rows")
-	paid = flag.Bool("paid", false, "hide free models (cost_task = 0)")
-	privacy = flag.Bool("privacy", false, "hide models that train on request data or have unknown privacy status")
-	exclude = flag.String("exclude", "", "hide models whose ID or name matches any comma-separated pattern ('*' and '?' are wildcards)")
-	include = flag.String("include", "", "show only models whose ID or name matches any comma-separated pattern ('*' and '?' are wildcards)")
-	maxCost = flag.Float64("max-cost", 0, "hide models whose cost per task (cost_task, USD) exceeds this value")
-	minSpeed = flag.Float64("min-speed", 0, "hide models slower than this many output tokens/s (measured probe when available, else AA)")
-	minQuality = flag.String("min-quality", "", "hide models below 'metric=value' pairs (aa_int, swe_b, term_b, if_b, aa_lcr, lb_agent, lb_code, elo, btr; aa_code/aa_math/code_b are no longer published); a bare value means composite quality")
-	missing = flag.String("missing", "keep", "numeric filters: keep or drop models with no value for the metric (keep|drop)")
-	flag.Var(&colsFlag, "cols", "show only these columns (comma-separated titles, repeatable; name is always shown)")
-	flag.Var(&excolsFlag, "excols", "hide these columns (comma-separated titles, repeatable; name is always shown)")
-	peak = flag.Bool("peak", false, "use peak-hours prices (DeepSeek); the whole table is peak-priced, so no [peak] twins are added")
-	refresh = flag.Bool("refresh", false, "bypass the 24h cache and refetch")
-	offline = flag.Bool("offline", false, "cache only for catalog/benchmarks/probes; -usage still needs network")
-	aaPro = flag.Bool("aa-pro", false, "use the Artificial Analysis Pro endpoint (per-benchmark scores; requires a Pro key)")
-	probeAll = flag.Bool("probe", false, "measure live speed of every model (paid requests, cached 24h)")
-	probeOne = flag.String("probe-model", "", "measure live speed of one model ID and print the result")
-	probeMax = flag.Float64("probe-max-allowance", 0, "stop -probe after this many allowance dollars (0 = no limit)")
-	showUse = flag.Bool("usage", false, "show remaining Go allowance for the 5h/week/month windows")
-	now = flag.Bool("now", false, "per model: requests affordable in each Go window, using the model's own monthly limit")
-	fullView = flag.Bool("full", false, "join the main table and -now: static cost/speed/quality plus affordable requests per model")
-	mainView = flag.Bool("main", false, "show the default ranking table (static cost/speed/quality); the default when no view is given")
-	nohead = flag.Bool("nohead", false, "omit the header row (data rows only); no-op in -vertical/-json, which have no header")
-	ttlSecs = flag.Int("ttl", 600, "cache lifetime in seconds for live usage endpoints (console + windows); 0 disables caching")
-	winEst = flag.Bool("window-estimate", false, "scale -now/-full 5h/week caps by the account-wide usage percentages (estimate)")
-	doctor = flag.Bool("doctor", false, "audit plan/AA/SWE/probe coverage and exit")
-	spent = flag.String("spent", "", "path to a pasted console 'usage by model' TSV; offline fallback for per-model spend")
-	vertical = flag.Bool("vertical", false, "one model per block of 'field: value' lines (screen-reader friendly); applies to the table and -now")
-	jsonOut = flag.Bool("json", false, "JSON output instead of TSV")
-	showLegend = flag.Bool("l", false, "print the legend block explaining each column")
-	config.AddOptions("provider", "plan", "sort", "pareto", "paid", "privacy",
-		"exclude", "include", "max-cost", "min-speed", "min-quality", "missing",
-		"cols", "excols",
-		"peak", "refresh", "offline", "aa-pro", "probe", "probe-model", "probe-max-allowance",
-		"usage", "now", "full", "main", "window-estimate", "doctor", "spent", "vertical", "json", "l", "nohead", "ttl")
+	registerFlags(flag.CommandLine)
 	flag.Parse()
 	// The config path itself cannot come from the config file: it is needed
 	// to read it. Hence it is not registered with config.AddOptions.
@@ -172,6 +193,12 @@ func main() {
 	if *plan != "go" && *plan != "go-plus" {
 		fmt.Fprintf(os.Stderr, "invalid -plan %q: want go or go-plus\n", *plan)
 		os.Exit(2)
+	}
+	if !*showUse && !*doctor && *probeOne == "" {
+		if err := validateSort(*sortKey, *now, *fullView); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(2)
+		}
 	}
 	if *ttlSecs < 0 {
 		fmt.Fprintf(os.Stderr, "invalid -ttl %d: want >= 0 seconds\n", *ttlSecs)
@@ -248,6 +275,10 @@ func main() {
 	models, err := modelsdev.Fetch(*provider, *refresh, *offline)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "models.dev:", err)
+		os.Exit(1)
+	}
+	if len(models) == 0 {
+		fmt.Fprintf(os.Stderr, "no models matched; check -provider %q and cache state\n", *provider)
 		os.Exit(1)
 	}
 	aas, swe, lb, elo, btr := fetchBenchmarks(*refresh, *offline)
@@ -537,53 +568,62 @@ const (
 	RetryMaxTokens   int64 = 4096
 )
 
+// probeRun and probeRunLong are vars so tests can stub live probe calls.
+var (
+	probeRun     = probe.Run
+	probeRunLong = probe.RunLong
+)
+
 // cachedProbe reads a stored measurement without any network or probing.
+// Cached error entries (written by pre-v0.1.19 runs) are ignored.
 func cachedProbe(modelID string) (probe.Result, bool) {
 	var r probe.Result
 	b, ok := cache.Peek("probe-" + modelID + ".json")
-	if !ok || json.Unmarshal(b, &r) != nil || r.ModelID == "" {
+	if !ok || json.Unmarshal(b, &r) != nil || r.ModelID == "" || r.Error != "" {
 		return probe.Result{}, false
 	}
 	r.Normalize() // old cache entries predate the current thresholds
 	return r, true
 }
 
-// loadOrProbe returns the cached measurement or runs a fresh one. Escalation:
+// loadOrProbe returns the cached measurement or runs a fresh one, along with
+// the allowance dollars burned by live requests during this call. Escalation:
 // thinking models that never reach content get a bigger budget; fast models
 // with a too-short window get the long prompt.
-func loadOrProbe(modelID, key string, refresh, offline bool) (probe.Result, bool) {
+func loadOrProbe(modelID, key string, refresh, offline bool) (probe.Result, float64) {
 	if offline {
 		if r, ok := cachedProbe(modelID); ok {
-			return r, false
+			return r, 0
 		}
-		return probe.Result{ModelID: modelID, Error: "offline and no cached measurement"}, false
+		return probe.Result{ModelID: modelID, Error: "offline and no cached measurement"}, 0
 	}
-	fresh := false
+	if !refresh {
+		if age, ok := cache.Age("probe-" + modelID + ".json"); ok && age < 24*time.Hour {
+			if r, ok := cachedProbe(modelID); ok && r.Trusted() {
+				return r, 0
+			}
+		}
+	}
+	burned := 0.0
 	run := func(long bool, maxTokens int64) probe.Result {
-		runOne := probe.Run
+		runOne := probeRun
 		if long {
-			runOne = probe.RunLong
+			runOne = probeRunLong
 		}
-		fresh = true
 		r, err := runOne(modelID, key, maxTokens)
-		if err != nil {
-			return probe.Result{ModelID: modelID, Error: err.Error()}
+		if r.Allowance > 0 {
+			burned += r.Allowance
+			// Ledger: a live probe burned real allowance. Cached reads never
+			// reach here, and even failed thinking attempts that billed
+			// reasoning tokens are recorded.
+			saveLedger(recordProbeBurn(loadLedger(), modelID, r.Allowance, time.Now()))
 		}
-		// Ledger: a successful live probe burned real allowance. Cached
-		// reads never reach here, failures carry no burn to record.
-		saveLedger(recordProbeBurn(loadLedger(), modelID, r.Allowance, time.Now()))
+		if err != nil {
+			return probe.Result{ModelID: modelID, Allowance: r.Allowance, Error: err.Error()}
+		}
 		return r
 	}
-	var cached probe.Result
-	if b, err := cache.Load("probe-"+modelID+".json", 24*time.Hour, refresh, false,
-		func() ([]byte, error) { return json.Marshal(run(false, DefaultMaxTokens)) }); err == nil {
-		_ = json.Unmarshal(b, &cached)
-		cached.Normalize()
-	}
-	if cached.Trusted() {
-		return cached, false
-	}
-	r := cached
+	r := run(false, DefaultMaxTokens)
 	if r.Error != "" {
 		// Failure (often "no content": thinking ate the budget) → retry
 		// with a much bigger budget before giving up for this run.
@@ -599,7 +639,7 @@ func loadOrProbe(modelID, key string, refresh, offline bool) (probe.Result, bool
 	if r.Error == "" {
 		_ = cache.Store("probe-"+modelID+".json", mustJSON(r))
 	}
-	return r, fresh
+	return r, burned
 }
 
 func mustJSON(v any) []byte {
@@ -667,7 +707,7 @@ func probeModels(models []modelsdev.Model, flt table.Filter, doProbe, doRefresh,
 		if flt.Excluded(m.ID, m.Name) || !flt.Included(m.ID, m.Name) {
 			continue
 		}
-		r, fresh := loadOrProbe(m.ID, key, doRefresh, doOffline)
+		r, b := loadOrProbe(m.ID, key, doRefresh, doOffline)
 		probes[m.ID] = r
 		suspect := ""
 		if r.Suspect {
@@ -675,9 +715,7 @@ func probeModels(models []modelsdev.Model, flt table.Filter, doProbe, doRefresh,
 		}
 		fmt.Fprintf(os.Stderr, "probe %-32s tok/s=%-7.1f ttft=%-6.2fs allowance=$%.6f%s %s\n",
 			m.ID, r.TokPerSec, r.TTFTSeconds, r.Allowance, suspect, r.Error)
-		if fresh {
-			burned += r.Allowance
-		}
+		burned += b
 		if probeMax > 0 && burned >= probeMax {
 			fmt.Fprintf(os.Stderr, "probe: stopping after $%.6f allowance burned (limit $%.6f)\n", burned, probeMax)
 			break
@@ -706,11 +744,45 @@ func staleWarn(what string, age, ttl time.Duration) {
 	}
 }
 
+// resolveModelID maps a model ID or display name from a -spent paste file to
+// its canonical catalog ID.
+func resolveModelID(raw string, byID map[string]modelsdev.Model) string {
+	if _, ok := byID[raw]; ok {
+		return raw
+	}
+	best := ""
+	for id, m := range byID {
+		if strings.EqualFold(id, raw) || strings.EqualFold(m.Name, raw) {
+			if best == "" || id < best {
+				best = id
+			}
+		}
+	}
+	if best != "" {
+		return best
+	}
+	k := normalize.Key(raw)
+	if k == "" {
+		return raw
+	}
+	for id, m := range byID {
+		if normalize.Key(id) == k || normalize.Key(m.Name) == k {
+			if best == "" || id < best {
+				best = id
+			}
+		}
+	}
+	if best != "" {
+		return best
+	}
+	return raw
+}
+
 // fetchSpend returns per-model period spend in allowance dollars, straight
 // from the console API with the same key (the -spent paste file overrides
 // when given). Live fetches are TTL-cached; stale fallbacks are reported,
 // never silent. Spend sources and assumptions print on stderr, never stdout.
-func fetchSpend(byID map[string]modelsdev.Model, spentFile map[string]float64, spentGiven, peak, offline bool, ttl time.Duration, refresh bool) (map[string]spendInfo, bool) {
+func fetchSpend(byID map[string]modelsdev.Model, spentFile map[string]float64, spentGiven, peak, windowEstimate, offline bool, ttl time.Duration, refresh bool) (map[string]spendInfo, bool) {
 	spend := map[string]spendInfo{}
 	spendKnown := false
 	src := "unavailable: assuming $0 spent"
@@ -719,8 +791,13 @@ func fetchSpend(byID map[string]modelsdev.Model, spentFile map[string]float64, s
 	case spentGiven:
 		spendKnown = true
 		src = "-spent file"
-		for id, usd := range spentFile {
-			spend[id] = spendInfo{usd: usd, known: true}
+		for raw, usd := range spentFile {
+			id := resolveModelID(raw, byID)
+			prev := spend[id]
+			prev.usd += usd
+			prev.baseUSD += usd
+			prev.known = true
+			spend[id] = prev
 		}
 	case offline:
 		src = "offline: assuming $0 spent"
@@ -743,15 +820,18 @@ func fetchSpend(byID map[string]modelsdev.Model, spentFile map[string]float64, s
 				continue // pay-as-you-go rows are not Go allowance spend
 			}
 			usd := s.CostUSD
+			baseUSD := s.CostUSD
 			m, known := byID[s.Model]
 			tokens := s.InputTokens + s.OutputTokens + s.CacheReadTokens + s.CacheWriteTokens()
 			if known && tokens > 0 {
 				usd = cost.FromTokens(m, s.InputTokens, s.CacheReadTokens, s.OutputTokens, s.CacheWriteTokens(), peak)
+				baseUSD = cost.FromTokens(m, s.InputTokens, s.CacheReadTokens, s.OutputTokens, s.CacheWriteTokens(), false)
 			} else {
 				listCostRows++ // console list cost, not necessarily allowance cost
 			}
 			prev := spend[s.Model]
 			prev.usd += usd
+			prev.baseUSD += baseUSD
 			prev.reqs += s.Requests
 			prev.known = true
 			spend[s.Model] = prev
@@ -759,7 +839,11 @@ func fetchSpend(byID map[string]modelsdev.Model, spentFile map[string]float64, s
 	}
 
 	fmt.Fprintf(os.Stderr, "# per-model spend: %s\n", src)
-	fmt.Fprintln(os.Stderr, "# per-model Go limits: 5h=20%, week=50%, month=100% of each model's monthly limit; reqs_5h/reqs_wk are fresh-window caps")
+	if windowEstimate {
+		fmt.Fprintln(os.Stderr, "# per-model Go limits: 5h=20%, week=50%, month=100% of each model's monthly limit")
+	} else {
+		fmt.Fprintln(os.Stderr, "# per-model Go limits: 5h=20%, week=50%, month=100% of each model's monthly limit; reqs_5h/reqs_wk are fresh-window caps")
+	}
 	if listCostRows > 0 {
 		fmt.Fprintf(os.Stderr, "# warning: %d console rows priced at their reported list cost (no catalog entry or no token counts); allowance cost may differ\n", listCostRows)
 	}
@@ -927,10 +1011,20 @@ func resetIn(from, at time.Time) string {
 const minActualRequests = 50
 
 // spendInfo is one model's console/period spend in allowance dollars.
+// baseUSD holds the off-peak equivalent so ledger snapshots stay invariant
+// when -peak is toggled between runs.
 type spendInfo struct {
-	usd   float64
-	reqs  int64
-	known bool
+	usd     float64
+	baseUSD float64
+	reqs    int64
+	known   bool
+}
+
+func (s spendInfo) ledgerUSD() float64 {
+	if s.baseUSD > 0 {
+		return s.baseUSD
+	}
+	return s.usd
 }
 
 // nowRow is one line of the -now table: what this model affords in each
@@ -1090,6 +1184,70 @@ func nowRank(r nowRow) int {
 	return 2
 }
 
+// sortNowRows orders -now rows according to key (usable|price|speed|reqs|name).
+// By default (or for usable/quality), it keeps buildNowRows's usable-first order.
+func sortNowRows(rows []nowRow, key string) {
+	var cmp func(a, b nowRow) int
+	switch key {
+	case "price":
+		cmp = func(a, b nowRow) int {
+			switch {
+			case a.costTask < b.costTask:
+				return -1
+			case a.costTask > b.costTask:
+				return 1
+			default:
+				return 0
+			}
+		}
+	case "speed":
+		cmp = func(a, b nowRow) int {
+			switch {
+			case a.probeTokS > b.probeTokS:
+				return -1
+			case a.probeTokS < b.probeTokS:
+				return 1
+			default:
+				return 0
+			}
+		}
+	case "reqs":
+		cmp = func(a, b nowRow) int {
+			if a.unlimited != b.unlimited {
+				if a.unlimited {
+					return -1
+				}
+				return 1
+			}
+			if a.known != b.known {
+				if a.known {
+					return -1
+				}
+				return 1
+			}
+			return b.month - a.month
+		}
+	case "name":
+		cmp = func(a, b nowRow) int { return strings.Compare(a.name, b.name) }
+	default: // "usable", "quality", ""
+		cmp = func(a, b nowRow) int {
+			if ra, rb := nowRank(a), nowRank(b); ra != rb {
+				return ra - rb
+			}
+			return b.usable - a.usable
+		}
+	}
+	slices.SortStableFunc(rows, func(a, b nowRow) int {
+		if c := cmp(a, b); c != 0 {
+			return c
+		}
+		if a.name != b.name {
+			return strings.Compare(a.name, b.name)
+		}
+		return strings.Compare(a.id, b.id)
+	})
+}
+
 // runNow answers "which model can I use right now": for each model, how many
 // requests fit in its own Go 5h/weekly/monthly windows. There is no shared
 // pot: the docs define the windows as percentages of each model's monthly
@@ -1104,14 +1262,27 @@ func runNow(planName string, spentFile map[string]float64, spentGiven, paid, pri
 		byID[m.ID] = m
 	}
 
-	spend, spendKnown := fetchSpend(byID, spentFile, spentGiven, peak, offline, ttl, refresh)
+	spend, spendKnown := fetchSpend(byID, spentFile, spentGiven, peak, windowEstimate, offline, ttl, refresh)
 	win := resolveWindowSpend(windowEstimate, offline, models, spend, spendKnown, planName, ttl, refresh)
 
 	speeds := cachedProbeSpeeds(models)
 	rows := buildNowRows(models, spend, spendKnown, planName, peak, paid, privacy, win.spend, speeds)
 	rows = filterNowRows(rows, flt)
+	if optionSet(flag.CommandLine, "sort") {
+		if *sortKey == "quality" {
+			fmt.Fprintln(os.Stderr, "# warning: -sort quality is ignored by -now (this view loads no AA quality data)")
+		} else {
+			sortNowRows(rows, *sortKey)
+		}
+	}
 	if len(flt.MinQuality) > 0 {
 		fmt.Fprintln(os.Stderr, "# warning: -min-quality is ignored by -now (this view loads no AA quality data)")
+	}
+	if len(rows) == 0 {
+		return fmt.Errorf("no models matched; check -plan, filters and cache state")
+	}
+	if vertical && jsonOut {
+		fmt.Fprintln(os.Stderr, "warning: -vertical is ignored with -json")
 	}
 
 	fullHead := table.NowTitles()
@@ -1164,7 +1335,9 @@ func runNow(planName string, spentFile map[string]float64, spentGiven, paid, pri
 			}
 			out = append(out, m)
 		}
-		return json.NewEncoder(os.Stdout).Encode(out)
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		return enc.Encode(out)
 	}
 	if withLegend {
 		for _, l := range table.FilterLegend(nowLegend, head) {
@@ -1305,7 +1478,7 @@ func runFull(planName string, spentFile map[string]float64, spentGiven, paid, pr
 	// Pareto is relative to the set the user actually sees.
 	table.MarkPareto(mrows)
 
-	spend, spendKnown := fetchSpend(byID, spentFile, spentGiven, peak, offline, ttl, refresh)
+	spend, spendKnown := fetchSpend(byID, spentFile, spentGiven, peak, windowEstimate, offline, ttl, refresh)
 	win := resolveWindowSpend(windowEstimate, offline, models, spend, spendKnown, planName, ttl, refresh)
 	speeds := cachedProbeSpeeds(models)
 	nrows := buildNowRows(models, spend, spendKnown, planName, peak, paid, privacy, win.spend, speeds)

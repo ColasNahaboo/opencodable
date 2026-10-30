@@ -52,11 +52,16 @@ func (lb LB) Lookup(id string) (Score, bool) {
 	return Score{}, false
 }
 
+// LiveBenchCacheKey names the disk cache entry for the pinned LiveBench release.
+func LiveBenchCacheKey() string {
+	return "livebench-" + LiveBenchRelease + ".json"
+}
+
 // LiveBench fetches the pinned LiveBench 2.0 table (static CSV, no key) with
 // a 24h disk cache. The CSV is parsed once and the scores are cached as JSON,
 // because cache entries are JSON envelopes.
 func LiveBench(refresh, offline bool) (LB, error) {
-	b, err := cache.Load("livebench-"+LiveBenchRelease+".json", 24*time.Hour, refresh, offline, func() ([]byte, error) {
+	b, err := cache.Load(LiveBenchCacheKey(), 24*time.Hour, refresh, offline, func() ([]byte, error) {
 		raw, err := get(livebenchURL)
 		if err != nil {
 			return nil, err
