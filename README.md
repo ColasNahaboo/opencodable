@@ -12,9 +12,13 @@ OpenCode subscription — right now, in your terminal.**
 ## What it does
 
 An OpenCode Go subscription does not work like a pay-per-token account. Each
-model gets its own **monthly dollar budget**, and every request spends part of
-it. The cheapest-looking model is therefore not always the one that lets you get
+model gets its own **monthly budget**, and every request spends part of it.
+The cheapest-looking model is therefore not always the one that lets you get
 the most done.
+
+Every `$` figure in this tool (and below) is an **OpenCode Go credit**: the
+plan's internal allowance unit, priced at Go rates. Your subscription buys a
+fixed credit budget; the real money behind it never enters any computation.
 
 `opencodable` puts the numbers side by side, in one table:
 
@@ -109,7 +113,7 @@ look at first; the [Columns](#columns) section lists them all.
 ### Key words
 
 - **Token**: a chunk of text that a model reads or writes, roughly a word or part of one. Prices are quoted per million tokens; `cost_tok` is the retail output price.
-- **Allowance**: your monthly dollar budget for one model. Each request uses part of it.
+- **Allowance**: your monthly budget (in credits) for one model. Each request uses part of it.
 - **Window**: a model's budget also comes in a 5-hour window (20% of its monthly budget) and a weekly window (50%). A burst of work can use up a window before the month runs out.
 - **Probe**: a short test request, sent through your subscription, that measures real speed. It costs about one cent per model.
 - **Peak hours**: DeepSeek V4.1 Flash and V4 Pro cost double on weekdays from 01:00–04:00 and 06:00–10:00 UTC (all other hours, including weekends, are off-peak). The table shows a second row for them, named `[peak]`, unless you use `-peak`.
@@ -125,7 +129,7 @@ across models.
 Four views help:
 
 - **`-now`**: for each model, how many requests fit in each window, given what you have already spent this month. Spending is fetched with your OpenCode key.
-- **`-usage`**: the account-wide percentages OpenCode reports for the 5-hour, weekly and monthly windows, their reset times, and the estimated dollars left in each window (`remaining_usd`).
+- **`-usage`**: the account-wide percentages OpenCode reports for the 5-hour, weekly and monthly windows, with their reset times.
 - **`-full`**: the main table and `-now` in one wide table.
 - **`-window-estimate`**: also takes out what you have probably used in the current 5-hour and weekly windows. OpenCode only reports the account total, so this is an estimate; the method appears on stderr and, in JSON, as `window_method`. Without this flag, the 5-hour and weekly counts assume fresh windows, which gives an upper bound.
 
@@ -156,15 +160,11 @@ per-request cost is used.
 minutes by default. `-ttl <seconds>` changes that (`0` turns the cache off), and
 `-refresh` forces an update.
 
-`remaining_usd` turns the percentage into dollars: the remaining share of the
-summed window caps across your capped models (an account-wide estimate — the
-endpoint reports one aggregate set, not per-model spend).
-
 ```
-#window  status  used_pct  remaining_pct  resets_at                  resets_in   remaining_usd
-5h       ok      35        65             2026-11-02T14:00:00+01:00  2h 10m 0s   $133.90
-week     ok      40        60             2026-11-04T09:00:00+01:00  45h 20m 0s  $309.00
-month    ok      21        79             2026-11-07T14:00:00+01:00  212h 30m 0s $813.70
+#window  status  used_pct  remaining_pct  resets_at                  resets_in
+5h       ok      35        65             2026-11-02T14:00:00+01:00  2h 10m 0s
+week     ok      40        60             2026-11-04T09:00:00+01:00  45h 20m 0s
+month    ok      21        79             2026-11-07T14:00:00+01:00  212h 30m 0s
 ```
 
 ## Configuration
@@ -312,7 +312,7 @@ become 0. The exact contract is in [TITLES.md](TITLES.md).
 | `#name` | model name |
 | `cost_tok` | retail price per million output tokens |
 | `cost_task` | estimated cost of one typical coding-agent request |
-| `allowance` | your monthly dollar budget for the model (`unlimited` for free models) |
+| `allowance` | your monthly credit budget for the model (`unlimited` for free models) |
 | `r_quota` | roughly how many requests that budget covers each month |
 | `tok_s`, `ttft_s` | output speed (tokens per second) and wait before the first word, as reported by Artificial Analysis for other hosts |
 | `p_tok_s`, `p_ttft_s` | the same two, measured on your own subscription with `-probe` |
@@ -452,5 +452,5 @@ This repository is developed by me, a human hobbyist in my personal time, acting
 
 ## History
 
-Version v0.1.21 2026-10-30.
+Version v0.1.22 2026-10-30.
 See [HISTORY.md](HISTORY.md).

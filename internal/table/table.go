@@ -485,9 +485,10 @@ func allowanceOr(r Row, missing string) string {
 var legend = []string{
 	"# opencodable — OpenCode Go models ranked by cost / speed / quality",
 	"# name        model display name (models.dev catalog; [peak] = peak-hours twin of the same model)",
+	"# note        all $ figures are OpenCode Go credits: the plan's internal allowance unit, priced at Go rates — not purchasable dollars",
 	"# cost_tok    retail USD per 1M output tokens",
 	"# cost_task   estimated USD per coding-agent request (OpenCode official token profile, base tier)",
-	"# allowance   monthly usage budget of this model in the plan (unlimited = free models)",
+	"# allowance   monthly credit budget of this model in the plan (unlimited = free models)",
 	"# r_quota     monthly request quota: allowance / cost_task, approx. requests per month",
 	"# tok_s       Artificial Analysis median output tok/s (reported, other hosts)",
 	"# ttft_s      AA median seconds to first token, thinking included (same)",

@@ -1,8 +1,13 @@
 # History
 
-- v0.1.21 2026-10-30 `-usage` gains `remaining_usd`: estimated dollars left in
-  each window before it resets (remaining percent × summed window caps over
-  capped models; account-wide estimate, 0 when plan budgets are unavailable).
+- v0.1.22 2026-10-30 Revert v0.1.21: `-usage` `remaining_usd` was fiction —
+  the endpoint's aggregate percent is not a share of any dollar pot (it
+  tracks an average of per-model burn ratios), so no honest base exists;
+  per-model credit math stays in `-now`. All `$` figures are now documented
+  as **OpenCode Go credits** (the plan's internal allowance unit priced at
+  Go rates, not purchasable dollars): TITLES.md preamble, README intro and
+  the `-l` legends.
+- v0.1.21 2026-10-30 `-usage` gained `remaining_usd` (reverted in v0.1.22).
 - v0.1.20 2026-10-30 Live plan snapshots: allowances, token profiles and peak
   prices are now refreshed from the OpenCode Go docs page and models endpoint
   (weekly by default, `-plan-ttl`, forced by `-refresh`) and layered over the
