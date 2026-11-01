@@ -16,6 +16,8 @@ model gets its own **monthly budget**, and every request spends part of it.
 The cheapest-looking model is therefore not always the one that lets you get
 the most done.
 
+Also, how Opencode Go plan work is opaque, ambiguous, and changes are not obvious, see for instance [the changes in V2](docs/OPENCODE_GO_MODEL_V2.md). 
+
 Every `$` figure in this tool (and below) is an **OpenCode Go credit**: the
 plan's internal allowance unit, priced at Go rates. Your subscription buys a
 fixed credit budget; the real money behind it never enters any computation.

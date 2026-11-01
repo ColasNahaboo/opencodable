@@ -32,10 +32,10 @@ The complete normative text of the "Usage limits" section is three sentences
 > Usage limits are defined as monthly dollar amounts. The table below shows the
 > monthly limit for each plan and the token costs for each model. Token pricing is
 > the same for Go, Go Plus, and Go Teams.
->
+> 
 > Each model has the following usage limits: 5-hour — 20% of the monthly limit;
 > weekly — 50%; and monthly — 100%.
->
+> 
 > Each model's monthly limit below determines how its usage counts toward those
 > allowances. Each response reports how much the request counted, as
 > [`opencode.allowance`](/console/api/inference#cost).
@@ -43,19 +43,19 @@ The complete normative text of the "Usage limits" section is three sentences
 The table that follows has one `Monthly limit` per model, for each plan. Values
 relevant to this note:
 
-| Model | Go | Go Plus | Go Teams |
-|---|---|---|---|
-| Claude Haiku 5.5 (≤ 100K tokens) | $15 | $60 | $20 |
-| DeepSeek V4.1 Flash (Off-Peak) | $100 | $200 | $105 |
-| DeepSeek V4.1 Flash (Peak) | $100 | $200 | $105 |
-| DeepSeek V4 Pro | $15 | $60 | $20 |
-| GPT 6 Luna | $15 | $60 | $20 |
-| GLM-5.3-Flash | $60 | $180 | $65 |
-| GLM-5.3 | $15 | $120 | $20 |
-| LongCat-2.0 | $60 | $240 | $65 |
-| MiMo-V2.6-Flash | $60 | $120 | $65 |
-| MiniMax M3.1 Flash | $20 | $80 | $25 |
-| Qwen3.8 Flash | $30 | $90 | $35 |
+| Model                            | Go   | Go Plus | Go Teams |
+| -------------------------------- | ---- | ------- | -------- |
+| Claude Haiku 5.5 (≤ 100K tokens) | $15  | $60     | $20      |
+| DeepSeek V4.1 Flash (Off-Peak)   | $100 | $200    | $105     |
+| DeepSeek V4.1 Flash (Peak)       | $100 | $200    | $105     |
+| DeepSeek V4 Pro                  | $15  | $60     | $20      |
+| GPT 6 Luna                       | $15  | $60     | $20      |
+| GLM-5.3-Flash                    | $60  | $180    | $65      |
+| GLM-5.3                          | $15  | $120    | $20      |
+| LongCat-2.0                      | $60  | $240    | $65      |
+| MiMo-V2.6-Flash                  | $60  | $120    | $65      |
+| MiniMax M3.1 Flash               | $20  | $80     | $25      |
+| Qwen3.8 Flash                    | $30  | $90     | $35      |
 
 Three structural observations that are easy to check on the live page:
 
@@ -120,11 +120,11 @@ File at `083ed266e~1`, section "Usage limits" (verbatim):
 
 > For example, if a model has a $60 monthly limit on Go and a $120 monthly limit
 > on Go Plus, you can spend up to:
->
+> 
 > - **5-hour limit** — $12 on Go or $24 on Go Plus
 > - **Weekly limit** — $30 on Go or $60 on Go Plus
 > - **Monthly limit** — $60 on Go or $120 on Go Plus
->
+> 
 > Across models, Go has $12 five-hour, $30 weekly, and $60 monthly allowances;
 > Go Plus has $48 five-hour, $120 weekly, and $240 monthly allowances. Each
 > model's monthly limit below determines how its usage counts toward those
@@ -194,10 +194,10 @@ added. The current page therefore **cannot be cited** to prove either scheme.
 
 Rate model used to recompute costs from tokens (Go prices, from the docs):
 
-| Model | Input | Output | Reasoning | Cache read | Cache write |
-|---|---|---|---|---|---|
-| Claude Haiku 5.5, > 100K tokens tier | $0.50/M | $2.50/M | $2.50/M | $0.05/M | $0.625/M |
-| DeepSeek V4.1 Flash, off-peak | $0.15/M | $0.60/M | $0.60/M | $0.003/M | — |
+| Model                                | Input   | Output  | Reasoning | Cache read | Cache write |
+| ------------------------------------ | ------- | ------- | --------- | ---------- | ----------- |
+| Claude Haiku 5.5, > 100K tokens tier | $0.50/M | $2.50/M | $2.50/M   | $0.05/M    | $0.625/M    |
+| DeepSeek V4.1 Flash, off-peak        | $0.15/M | $0.60/M | $0.60/M   | $0.003/M   | —           |
 
 Verification that the recorded `cost` field uses exactly these rates: a
 least-squares fit of the 34 priced Claude messages against
@@ -210,18 +210,18 @@ different accounting unit.
 
 ### 4.2 What happened, minute by minute
 
-| Local time | Model | Events |
-|---|---|---|
-| 07:12–14:25 | Muse Spark 1.3 Contributor | 388 responses earlier in the day, 25 of them between 14:21 and 14:25, i.e. inside the window below |
-| 13:53:28 | Claude Haiku 5.5 | first response of the block (session switched from Muse at 13:53:28) |
-| 13:53–14:49 | Claude | 38 responses, recomputed cost **$2.9871**, no `cost` recorded |
-| **14:49:21** | Claude | cumulative cost **crosses $3.00** ($2.9871 → $3.0260); from this response on, `cost` is recorded |
-| 14:49–15:25 | Claude | 34 responses, recorded cost **$3.0111** |
-| 15:25:34 | Claude | last response; day total **$5.9982** |
-| **15:37:00** | **DeepSeek V4.1 Flash** | first response after the switch — 11m26s after the last Claude response, 47m39s after the $3 crossing |
-| 15:37–18:50 | DeepSeek | **239 responses, $0.4114** recomputed at off-peak rates, provider `opencode-go`, **no errors** |
-| 18:53:28 | — | end of the 5-hour window that opened with the 13:53:28 response |
-| 18:54–22:32 | DeepSeek | 148 further responses, $0.3816, no errors |
+| Local time   | Model                      | Events                                                                                                |
+| ------------ | -------------------------- | ----------------------------------------------------------------------------------------------------- |
+| 07:12–14:25  | Muse Spark 1.3 Contributor | 388 responses earlier in the day, 25 of them between 14:21 and 14:25, i.e. inside the window below    |
+| 13:53:28     | Claude Haiku 5.5           | first response of the block (session switched from Muse at 13:53:28)                                  |
+| 13:53–14:49  | Claude                     | 38 responses, recomputed cost **$2.9871**, no `cost` recorded                                         |
+| **14:49:21** | Claude                     | cumulative cost **crosses $3.00** ($2.9871 → $3.0260); from this response on, `cost` is recorded      |
+| 14:49–15:25  | Claude                     | 34 responses, recorded cost **$3.0111**                                                               |
+| 15:25:34     | Claude                     | last response; day total **$5.9982**                                                                  |
+| **15:37:00** | **DeepSeek V4.1 Flash**    | first response after the switch — 11m26s after the last Claude response, 47m39s after the $3 crossing |
+| 15:37–18:50  | DeepSeek                   | **239 responses, $0.4114** recomputed at off-peak rates, provider `opencode-go`, **no errors**        |
+| 18:53:28     | —                          | end of the 5-hour window that opened with the 13:53:28 response                                       |
+| 18:54–22:32  | DeepSeek                   | 148 further responses, $0.3816, no errors                                                             |
 
 Allowance arithmetic (docs rule, 20% of the monthly limit):
 
@@ -279,17 +279,17 @@ Source: the tool's own cache of `console.opencode.ai/api/usage/models`
 Rows are per model and provider; the API has no time slicing, so it corroborates
 totals only, not windows.
 
-| Provider | Model | Requests | CostUSD |
-|---|---|---|---|
-| opencode-go | DeepSeek V4.1 Flash | 7,892 | $19.90 |
-| opencode-go | GLM-5.3-Flash | 2,173 | $12.86 |
-| opencode-go | GLM-5.2 | 192 | $10.26 |
-| opencode-go | GPT 5.6 Luna | 719 | $7.43 |
-| opencode-go | Claude Haiku 5.5 | 75 | $6.00 |
-| opencode-go | Gemini 4 Argon | 41 | $3.61 |
-| opencode-go | DeepSeek V4 Flash | 1,426 | $3.58 |
-| opencode | GPT 5.6 Luna (pay-as-you-go) | 124 | $5.04 |
-| opencode | free models (several) | — | $0.00 |
+| Provider    | Model                        | Requests | CostUSD |
+| ----------- | ---------------------------- | -------- | ------- |
+| opencode-go | DeepSeek V4.1 Flash          | 7,892    | $19.90  |
+| opencode-go | GLM-5.3-Flash                | 2,173    | $12.86  |
+| opencode-go | GLM-5.2                      | 192      | $10.26  |
+| opencode-go | GPT 5.6 Luna                 | 719      | $7.43   |
+| opencode-go | Claude Haiku 5.5             | 75       | $6.00   |
+| opencode-go | Gemini 4 Argon               | 41       | $3.61   |
+| opencode-go | DeepSeek V4 Flash            | 1,426    | $3.58   |
+| opencode    | GPT 5.6 Luna (pay-as-you-go) | 124      | $5.04   |
+| opencode    | free models (several)        | —        | $0.00   |
 
 Two useful facts: (a) the Claude row's $6.00 equals the token-recomputed total
 for the 2026-10-29 session, which validates the rate table; (b) the only
@@ -301,12 +301,12 @@ this experiment either way.
 
 ## 6. Claims in circulation, and their status
 
-| Claim | Source | Status |
-|---|---|---|
-| "You only have one quota; once you finish a model, you are finished for all models in the period." | r/opencode discussion, Oct 2026 | Matches the **pre-2026-09-28 docs** (§3.1); contradicted by the 2026-10-29 record for the current regime |
-| "You have a total to spend across all models, with multipliers depending on the model." | same thread | Literal description of the V1 working; the V1 wording supported it |
-| Windows are per model, "not a shared $12/$30/$60 for every model" | Medium guide, Sep 2026 | Correct in direction; its request figures are stale (V4.1 Flash 6,500/5h vs 43,330 in the current docs), so cite it for direction only |
-| Per-model allowance table, "Do not sum across models" | StackReplay plan summary, checked 2026-09-29 | Consistent with per-model; third party, not authoritative |
+| Claim                                                                                              | Source                                       | Status                                                                                                                                 |
+| -------------------------------------------------------------------------------------------------- | -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| "You only have one quota; once you finish a model, you are finished for all models in the period." | r/opencode discussion, Oct 2026              | Matches the **pre-2026-09-28 docs** (§3.1); contradicted by the 2026-10-29 record for the current regime                               |
+| "You have a total to spend across all models, with multipliers depending on the model."            | same thread                                  | Literal description of the V1 working; the V1 wording supported it                                                                     |
+| Windows are per model, "not a shared $12/$30/$60 for every model"                                  | Medium guide, Sep 2026                       | Correct in direction; its request figures are stale (V4.1 Flash 6,500/5h vs 43,330 in the current docs), so cite it for direction only |
+| Per-model allowance table, "Do not sum across models"                                              | StackReplay plan summary, checked 2026-09-29 | Consistent with per-model; third party, not authoritative                                                                              |
 
 The recurring confusion has a concrete cause: the current page and the
 pre-September page carry the **same three-sentence core**, and only the pool
