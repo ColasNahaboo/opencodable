@@ -84,7 +84,7 @@ Piped header: `#name	cost_task	burn_req	spent_mo	reqs_5h	reqs_wk	reqs_mo	usable	
 | 1 | `#name` | model display name (models.dev catalog) |
 | 2 | `cost_task` | official allowance cost per coding-agent request (OpenCode token profile, base tier) |
 | 3 | `burn_req` | allowance dollars one request burns: measured from console tokens when the model has at least 50 requests this period, otherwise `cost_task`; `[peak]` twins scale the measured burn by the official peak/base price ratio |
-| 4 | `spent_mo` | allowance dollars spent this period (console tokens priced at Go rates, or `-spent`), subtracted from the model's monthly limit; blank when spend is unknown |
+| 4 | `spent_mo` | allowance dollars spent this period (console tokens priced at Go rates, or `-spent`), subtracted from the model's monthly limit; blank when spend is unknown. With extra usage enabled, console spend can include balance-billed traffic, so this is an upper bound on allowance consumed |
 | 5 | `reqs_5h` | requests in the model's 5h cap (20% of its monthly limit) after estimated window spend |
 | 6 | `reqs_wk` | requests in the model's weekly cap (50% of its monthly limit) after estimated window spend |
 | 7 | `reqs_mo` | requests left in the model's monthly limit after `spent_mo` |
@@ -95,8 +95,11 @@ Piped header: `#name	cost_task	burn_req	spent_mo	reqs_5h	reqs_wk	reqs_mo	usable	
 `-now` assumptions (printed on stderr, never in the piped stream): Go usage
 limits are **per model**. Each model's monthly limit is the dollar allowance
 in `internal/goplan`; its 5h and weekly caps are 20% and 50% of that limit.
-There is no shared pot. The usage endpoint reports one aggregate set of
-percentages. `reqs_5h` and `reqs_wk` assume fresh windows unless
+There is no shared pot: a logged run (2026-10-29) shows one model's 5-hour
+allowance exhausted while another model kept serving inside the same window;
+older docs described an "across models" pool
+(see `docs/OPENCODE_GO_MODEL_V2.md`). The usage endpoint reports one aggregate
+set of percentages. `reqs_5h` and `reqs_wk` assume fresh windows unless
 `-window-estimate` attributes spend: ledger-recorded dollars first
 (console deltas between runs, fresh probe burns), the implied remainder
 split monthly-proportionally (`full`/`proportional`/`ledger` in

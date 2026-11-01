@@ -333,7 +333,9 @@ monthly allowance, weekly = 50% (`internal/goplan` × `internal/usage`). The
 
 Because the docs alone are ambiguous (§2), the README sentence "Budgets are not
 pooled across models" should be read as "per the current docs and the logged
-2026-10-29 test", not as a quotation of the docs.
+2026-10-29 test", not as a quotation of the docs. README and TITLES.md now point
+here for that evidence, and README notes that console spend (`spent_mo`) can
+include extra-usage traffic when the pay-as-you-go fallback is enabled.
 
 The console's `CostUSD` matched the local token-based total for Claude to 0.03%,
 which confirms that pricing console tokens at Go rates (as `-now` does) is the

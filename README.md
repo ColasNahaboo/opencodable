@@ -123,20 +123,27 @@ look at first; the [Columns](#columns) section lists them all.
 
 OpenCode Go budgets are **per model**. Each model has its own monthly budget
 (for example $15 for Kimi K3.1 Pro on the Go plan, $60 for GLM-5.3-Flash), and
-its 5-hour and weekly windows are shares of that budget. Budgets are not pooled
-across models.
+its 5-hour and weekly windows are shares of that budget (20% and 50%).
+
+The current docs define the limits per model but no longer say whether the
+windows are pooled; the older wording, removed on 2026-09-28, described a single
+"across models" allowance. A logged run on 2026-10-29 settles it for the current
+regime: one model's 5-hour allowance was exhausted while another model kept
+serving requests inside the same 5-hour window, so budgets are not pooled. The
+evidence, console cross-check and reproduction steps are in
+[docs/OPENCODE_GO_MODEL_V2.md](docs/OPENCODE_GO_MODEL_V2.md).
 
 Four views help:
 
 - **`-now`**: for each model, how many requests fit in each window, given what you have already spent this month. Spending is fetched with your OpenCode key.
 - **`-usage`**: the account-wide percentages OpenCode reports for the 5-hour, weekly and monthly windows, with their reset times.
 - **`-full`**: the main table and `-now` in one wide table.
-- **`-window-estimate`**: also takes out what you have probably used in the current 5-hour and weekly windows. OpenCode only reports the account total, so this is an estimate; the method appears on stderr and, in JSON, as `window_method`. Without this flag, the 5-hour and weekly counts assume fresh windows, which gives an upper bound.
+- **`-window-estimate`**: also takes out what you have probably used in the current 5-hour and weekly windows. OpenCode reports one aggregate percentage (an average of the per-model burn ratios), not per-model window spend, so the split across models is a heuristic; the method appears on stderr and, in JSON, as `window_method`. Without this flag, the 5-hour and weekly counts assume fresh windows, which gives an upper bound.
 
 The `-now` columns:
 
 - **`burn_req`**: dollars one request really uses. Measured from your own usage once a model has at least 50 requests this month; before that, the official `cost_task`. For a `[peak]` twin, the measured figure is scaled by the official peak/base price ratio, because the console does not tag tokens by regime.
-- **`spent_mo`**: dollars spent this month on the model (blank if unknown).
+- **`spent_mo`**: dollars spent this month on the model (blank if unknown). If you turned on extra usage in the console, this figure can include traffic billed to your pay-as-you-go balance, so it is then an upper bound on the allowance consumed.
 - **`reqs_5h`** and **`reqs_wk`**: requests that fit in the model's 5-hour and weekly windows.
 - **`reqs_mo`**: requests left in the month after what you have spent.
 - **`usable`**: the smallest of those three, that is, how many requests you can make right now.
