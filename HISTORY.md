@@ -1,5 +1,6 @@
 # History
 
+- v1.0.0 2026-11-05 Output format freeze (See TITLES.md). No other changes.
 - v0.1.23 2026-11-05 `-news`: reports what changed in the Go plan since the
   previous run — models added/removed, cost per request, both plans' budgets,
   peak premiums, token prices, context/output limits, privacy and the AA

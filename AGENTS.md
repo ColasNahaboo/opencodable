@@ -50,9 +50,9 @@ internal/config/       opencodable.conf (key=value: API keys + option
 
 - **Standard library only.** No external Go dependencies, ever — a Rust port
   of the same pipeline is planned and must stay mechanical.
-- **[TITLES.md](TITLES.md) is the output contract.** New columns are appended
-  at the end only; renames, removals and reorders bump the major version, but
-  titles may change freely until the `v1.0.0` tag (TITLES.md rule 3). Every TSV
+- **[TITLES.md](TITLES.md) is the output contract, frozen since `v1.0.0`.**
+  New columns are appended at the end only; renames, removals and reorders are
+  breaking changes and bump the major version (TITLES.md rules 1–2). Every TSV
   title is a JSON key (`TestJSONKeysMatchTitles`); JSON-only extras (`id`,
   `unlimited`, `window_method`, …) are listed in TITLES.md's JSON section.
 - **Output modes.** tty = padded table, missing = `-`; piped = strict
@@ -71,7 +71,8 @@ internal/config/       opencodable.conf (key=value: API keys + option
   excepted, see gotchas).
 - **Boolean CLI options** can be unset by suffixing them by `=false`
 - **Commit, version and push each change** once it builds and passes the checks
-  in Build & test: bump the last number of the version (v0.1.15 → v0.1.16), tag
+  in Build & test: bump the last number of the version (v1.0.0 → v1.0.1), or
+  the major on a TITLES.md-breaking change, tag
   that commit, and push the commit and the tag. Author the commit with the
   auto-commit skill's convention: your active model name, not a model name from
   the catalog data.

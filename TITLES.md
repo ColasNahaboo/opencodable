@@ -12,8 +12,9 @@ real money behind it never enters any computation).
 1. **Column order is fixed.** New columns are always **appended at the end**.
 2. Renaming, removing, or reordering a column is a **breaking change** and
    bumps the **major version**.
-3. Until the **v1.0.0 tag** is pushed, titles may still change freely without
-   notice (pin a commit if you build on it). From v1.0.0 on, rule 2 applies.
+3. Since the **v1.0.0 tag** the contract is **frozen**: titles never change,
+   and rule 2 applies in full. (Before v1.0.0, titles could change freely;
+   pin a pre-v1.0.0 commit if you built on them.)
 4. Values never contain TAB characters. In piped (non-tty) output, every data
    row has exactly one value per column, separated by single TABs; missing
    values are empty strings. Lines starting with `#` are comments or headers.
@@ -210,10 +211,10 @@ which have no header row.
 
 ## Versioning
 
-- Pre-release (until the `v1.0.0` tag): no guarantee, titles may change (see
-  rule 3).
-- From `v1.0.0` on: rules 1–2 apply; bump the major version on any rename,
-  removal, or reorder of the columns above.
+- From the `v1.0.0` tag on the contract is frozen: new columns may be added
+  (appended at the end, rule 1); a rename, removal or reorder is a breaking
+  change and bumps the major version (rule 2).
+- Before `v1.0.0` there was no guarantee; titles changed freely (old rule 3).
 
 ## JSON output (`-json`, all column views)
 

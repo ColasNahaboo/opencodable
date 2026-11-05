@@ -427,7 +427,7 @@ that exists nowhere is an error.
 - **JSON** with `-json`, for example `opencodable -json | jq -r '.[] | select(.pareto) | .name'`. It works in every table view (`-news` is a line log). Flags that read `yes`/empty in the table (`pareto`, `unlimited`, `known`, `spent_known`, `window_estimate`) are JSON booleans, and missing numbers become 0.
 - **Two columns without a header:** `opencodable -pareto -paid -nohead -cols name,r_quota`.
 - **Legends** are added only with `-l`, so parsing stays simple.
-- Until the `v1.0.0` release, column titles may still change. [TITLES.md](TITLES.md) is the contract that applies after it.
+- Since `v1.0.0` the output contract is frozen: column titles never change; new columns are only ever appended. [TITLES.md](TITLES.md) is the contract.
 
 ## Measured speed (probes)
 
@@ -536,5 +536,5 @@ This repository is developed by me, a human hobbyist in my personal time, acting
 
 ## History
 
-Version v0.1.23 2026-11-05.
+Version v1.0.0 2026-11-05.
 See [HISTORY.md](HISTORY.md).
