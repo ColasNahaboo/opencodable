@@ -17,9 +17,11 @@ real money behind it never enters any computation).
 4. Values never contain TAB characters. In piped (non-tty) output, every data
    row has exactly one value per column, separated by single TABs; missing
    values are empty strings. Lines starting with `#` are comments or headers.
-5. The piped output of every view starts with the `#name` header row,
-   which repeats the column titles below — scripts can thus also read them
-   dynamically from there instead of hardcoding column names.
+5. The piped output of every column view starts with a `#`-prefixed header
+   row (`#name` for the model tables, `#window` for `-usage`, `#id` for
+   `-doctor`), which repeats the column titles below — scripts can thus also
+   read them dynamically from there instead of hardcoding column names. `-news`
+   is a line log, not a column view (see its section).
 
 ## View: main table (`opencodable`, `-main`)
 
@@ -61,6 +63,49 @@ with `-l` (in any output mode). `-vertical` emits one model per block of
 `field: value` lines (same keys, empty fields skipped, blank line between
 records); the field names are the legend, and the prose block again needs
 `-l`.
+
+## View: `-news` (change log)
+
+`-news` is a line log, not a column table: one line per change, no header row,
+and no `-json`/`-vertical`/`-cols` output (`-json` and `-vertical` print a
+warning on stderr and are ignored). The first run records the baseline and
+prints nothing; the baseline lives in the cache directory (`news-state.json`).
+
+Line shape:
+
+```
+KEYWORD <model-id> <key>=<value> ... "<display name>"
+```
+
+Fields are single-space separated and contain no spaces; the display name is
+last and quoted, so `awk` or a split-on-space parser can read everything before
+it positionally. Numeric money fields use the same `$` credit convention as the
+tables. `cost_task` has the main table's meaning (official per-request cost,
+base tier); `cost_tok` is the retail USD price per 1M output tokens;
+`allowance` is a monthly budget; `ctx_k`/`out_k` are token limits in thousands;
+`tier` and `quality` come from the AA Intelligence Index (`frontier` >= 45,
+`high` >= 35, `mid` >= 25, `low` below, `unknown` when AA has no score).
+`plan=go` or `plan=go-plus` names the budget a line refers to.
+
+| Keyword | Fields | Meaning |
+|---|---|---|
+| `MODEL_ADD`, `MODEL_DEL` | `cost_task`, `plan=paid/free/unknown`, `tier`, `quality`, display name | model joined/left the models.dev catalog |
+| `PLAN_ADD`, `PLAN_DEL` | `PLAN_ADD`: `allowance=<go>/<go-plus>`; both: `tier`, `quality`, display name | model joined/left the plan's budget table |
+| `COST_UP`, `COST_DOWN` | `cost_task=<old>-><new>`, `(<±pct>)`, optional `price_out=<old>-><new> (<±pct>)`, display name | official cost per request changed |
+| `PEAK_COST_UP`, `PEAK_COST_DOWN` | `peak_cost_task=<old>-><new>`, `(<±pct>)`, display name | peak-hour cost per request changed |
+| `PEAK_ON`, `PEAK_OFF` | `PEAK_ON`: `peak_cost_task=<new>`; both: display name | the model gained/lost a peak-hours price |
+| `PRICE_UP`, `PRICE_DOWN` | the moved field(s): `cost_tok=`, `price_in=`, `cache_read=`, `cache_write=` (`<old>-><new>`), display name | a base token price moved without changing `cost_task` |
+| `ALLOWANCE_UP`, `ALLOWANCE_DOWN` | `plan=`, `allowance=<old>-><new>`, `(<±pct>)`, display name | a monthly budget changed |
+| `UNLIMITED_ON`, `UNLIMITED_OFF` | `plan=`, `allowance=<old>->unlimited` (or the reverse), display name | the model became/stopped being free |
+| `CONTEXT_UP`, `CONTEXT_DOWN` | `ctx_k=<old>-><new>`, optional `out_k=<old>-><new>`, display name | context window or maximum output changed |
+| `PRIVACY_CHANGE` | `privacy=<old>-><new>`, display name | the privacy verdict changed |
+| `NAME_CHANGE` | `was="<old name>"`, then `tier`, `quality`, `"<new name>"` | display name changed |
+| `TIER_UP`, `TIER_DOWN` | `tier=<old>-><new>`, `quality=<old>-><new>`, display name | AA quality tier moved |
+| `ERROR` | `ERROR <source>: <message>` | a source changed shape, was unreachable, or its refresh failed (an expired cache was used); `-news` does not advance the baseline when the snapshot is unusable |
+
+Common lines end with `tier=<tier> quality=<score-or--> "<display name>"`.
+When `-email` is set, non-empty output is mailed; two consecutive runs made of
+only `ERROR` lines skip the second mail.
 
 ## View: `-usage` (allowance windows)
 
@@ -170,12 +215,13 @@ which have no header row.
 - From `v1.0.0` on: rules 1–2 apply; bump the major version on any rename,
   removal, or reorder of the columns above.
 
-## JSON output (`-json`, all views)
+## JSON output (`-json`, all column views)
 
-`-json` works for every view and emits an array of objects whose keys are
-**the column titles above, without the `#` prefix** — same names, so one
-spec covers both formats. Numbers stay numbers, `pareto` stays boolean, and
-`resets_at`/`resets_in` keep their meanings. JSON-only extras:
+`-json` works for every column view and emits an array of objects whose keys
+are **the column titles above, without the `#` prefix** — same names, so one
+spec covers both formats. (`-news` is a line log and ignores `-json`.) Numbers
+stay numbers, `pareto` stays boolean, and `resets_at`/`resets_in` keep their
+meanings. JSON-only extras:
 
 - main table: `id` (models.dev model ID, e.g. `kimi-k3.1-pro`) and
   `unlimited` (true for free models; their `allowance` reads 0).

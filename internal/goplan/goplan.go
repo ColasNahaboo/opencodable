@@ -87,6 +87,12 @@ func Source() string {
 	return "builtin (" + SnapshotDate + ")"
 }
 
+// IsLive reports whether a live snapshot is installed over the built-in table.
+// -news uses it to avoid diffing live-derived budgets against built-in ones
+// (an -offline run without a cached plan snapshot would otherwise invent
+// allowance changes).
+func IsLive() bool { return live != nil }
+
 // liveRow returns the overlay row for id, if any.
 func liveRow(id string) *LiveRow {
 	if live != nil {

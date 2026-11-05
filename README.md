@@ -98,6 +98,7 @@ publishes the Coding, Math or LiveCodeBench scores, so `aa_code`, `aa_math` and
 | which models do not train on my prompts | `opencodable -privacy` |
 | which models are fast enough for me | `opencodable -min-speed 60` |
 | how fast they really are on my subscription | `opencodable -probe` (about a cent per model) |
+| what changed in the plan since I last checked | `opencodable -news` |
 | the same data, for my own script | `opencodable -json`, or the piped output |
 
 ## Reading the table
@@ -176,6 +177,75 @@ week     ok      40        60             2026-11-04T09:00:00+01:00  45h 20m 0s
 month    ok      21        79             2026-11-07T14:00:00+01:00  212h 30m 0s
 ```
 
+## What's new (`-news`)
+
+The plan is opaque and changes quietly: a model appears or disappears, a price
+moves, a monthly budget grows, a peak-hour premium is added. `opencodable
+-news` compares the plan's public data (catalog, budgets, token profiles, peak
+prices, privacy) with the snapshot taken by the previous `-news` run and prints
+one line per change:
+
+```
+MODEL_ADD glm-5.2 cost_task=$0.01516 plan=paid tier=unknown quality=- "GLM-5.2"
+COST_UP kimi-k3.1-pro cost_task=$0.018->$0.0204 (+13.3%) tier=frontier quality=46.5 "Kimi K3.1 Pro"
+TIER_UP kimi-k3.1-pro tier=high->frontier quality=44.0->46.5 "Kimi K3.1 Pro"
+```
+
+The first run only records the baseline and prints nothing. After the keyword,
+the fields are space-separated `key=value` pairs and the display name comes
+last, quoted, so a script can split on spaces up to the name. `cost_task` is
+the official cost of one coding-agent request (the `cost_task` column).
+`tier` is a coarse quality bucket from the AA Intelligence Index: `frontier`
+(45 and up), `high` (35), `mid` (25), `low` below, or `unknown` when
+Artificial Analysis has no score. Quality tiers are informational; without an
+AA key they stay `unknown`, and previously cached scores are reused.
+
+The changes reported are:
+
+| Keyword | Meaning |
+|---|---|
+| `MODEL_ADD`, `MODEL_DEL` | the model joined or left the models.dev catalog |
+| `PLAN_ADD`, `PLAN_DEL` | the model joined or left the plan's budget table |
+| `COST_UP`, `COST_DOWN` | cost per request changed (with `price_out` when the retail output price moved too) |
+| `PEAK_COST_UP`, `PEAK_COST_DOWN`, `PEAK_ON`, `PEAK_OFF` | peak-hour premium changed, appeared or disappeared |
+| `PRICE_UP`, `PRICE_DOWN` | a token price moved without changing the cost per request |
+| `ALLOWANCE_UP`, `ALLOWANCE_DOWN` | the monthly budget changed, for `plan=go` or `plan=go-plus` |
+| `UNLIMITED_ON`, `UNLIMITED_OFF` | the model became free/unlimited, or stopped being |
+| `CONTEXT_UP`, `CONTEXT_DOWN` | context window or maximum output moved (`ctx_k=old->new`, optional `out_k=old->new`) |
+| `PRIVACY_CHANGE` | the privacy verdict moved (`safe`, `trains`, `unknown`) |
+| `NAME_CHANGE` | the display name changed |
+| `TIER_UP`, `TIER_DOWN` | the AA quality tier moved |
+
+### Running `-news` from cron
+
+```sh
+# crontab: every morning at 08:00; the tool mails, so drop its stdout
+0 8 * * * opencodable -news -email you@example.com,team@example.com >/dev/null
+```
+
+When `-email` is set (or `email=` in the configuration file) and the change
+list is not empty, the lines are mailed through the local transport:
+`sendmail -t` when available, otherwise `mail -s`. The lines are also printed,
+so redirect stdout when cron would otherwise mail it a second time. Nothing is
+mailed when there is nothing to report, and the first run never mails.
+Diagnostic notes on stderr (a missing AA key, a suppressed mail) print only on
+a terminal, so a cron run stays quiet unless something really failed.
+
+A broken source prints `ERROR <source>: <message>` — the sign that a site or
+API changed shape (or that a refresh failed and an expired cache was used) and
+the code needs a tweak. To keep a persistent breakage
+from paging forever, a run whose output is **only** ERROR lines is not mailed
+when the previous run's output was also only ERROR lines. Recovery reports
+every change accumulated since the last successful run.
+
+The baseline lives in the cache directory (`news-state.json`); deleting it
+starts over with a silent first run. `-news` uses the normal caches (24h
+catalog, one-week plan snapshot), so add `-refresh` to the cron entry if you
+want changes detected as soon as they appear. `-json` and `-vertical` do not
+apply: `-news` is a line log. Filters (`-exclude`, `-include`, cost and quality
+bounds), column selection and `-sort` are ignored too: news always covers every
+model and both plans (`-plan` is not used).
+
 ## Configuration
 
 ### Keys
@@ -220,6 +290,9 @@ privacy=on
 probe-max-allowance=1
 # aa-pro=yes          # only with an Artificial Analysis Pro key
 
+# -news by mail (cron): leave empty to print changes only
+#email=you@example.com
+
 # Filters and columns
 exclude=grok*
 max-cost=0.02
@@ -250,6 +323,7 @@ Pick one at a time; combining two is an error. Without a view, the main table is
 - `-full`: the main table and `-now` in one wide table.
 - `-usage`: your remaining allowance in the 5-hour, weekly and monthly windows.
 - `-doctor`: a coverage check: missing data per model, Arena and benchmark coverage counts, a warning for each catalog cache that is missing or older than 24 hours, a hint when a model may have an Arena entry under another name, where keys were found, typos in your configuration file. It runs no probes.
+- `-news`: what changed in the plan since the previous `-news` run — models, costs, budgets, context windows, privacy, quality tier. See [What's new](#whats-new-news).
 
 ### What to show, and in what order
 
@@ -304,6 +378,7 @@ it ignores the quality bounds and says so on stderr.
 ### Settings
 
 - `-config <file>`: use this configuration file for the run.
+- `-email <addresses>`: mail `-news` changes to these comma-separated addresses, through `sendmail` or `mail`. Empty prints only. Nothing is mailed when there is nothing to report.
 - `-name=false`: turn off a default that your configuration file sets to yes.
 
 ## Columns
@@ -349,7 +424,7 @@ that exists nowhere is an error.
 ## Output for scripts
 
 - **In a terminal** you get an aligned table. **Piped or redirected**, you get tab-separated values: one row per model, one tab between fields, an empty field for missing data, and a header line that starts with `#name`.
-- **JSON** with `-json`, for example `opencodable -json | jq -r '.[] | select(.pareto) | .name'`. It works in every view. Flags that read `yes`/empty in the table (`pareto`, `unlimited`, `known`, `spent_known`, `window_estimate`) are JSON booleans, and missing numbers become 0.
+- **JSON** with `-json`, for example `opencodable -json | jq -r '.[] | select(.pareto) | .name'`. It works in every table view (`-news` is a line log). Flags that read `yes`/empty in the table (`pareto`, `unlimited`, `known`, `spent_known`, `window_estimate`) are JSON booleans, and missing numbers become 0.
 - **Two columns without a header:** `opencodable -pareto -paid -nohead -cols name,r_quota`.
 - **Legends** are added only with `-l`, so parsing stays simple.
 - Until the `v1.0.0` release, column titles may still change. [TITLES.md](TITLES.md) is the contract that applies after it.
@@ -461,5 +536,5 @@ This repository is developed by me, a human hobbyist in my personal time, acting
 
 ## History
 
-Version v0.1.22 2026-10-30.
+Version v0.1.23 2026-11-05.
 See [HISTORY.md](HISTORY.md).

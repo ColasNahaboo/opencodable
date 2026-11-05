@@ -31,7 +31,7 @@ import (
 )
 
 // version is displayed at the bottom of the -h help text.
-var version = "v0.1.22"
+var version = "v0.1.23"
 
 // colList accumulates comma-separated -cols/-excols values. The flag may be
 // repeated and unions with the config-file default; output order always
@@ -87,6 +87,8 @@ var (
 	planTTL    *int
 	winEst     *bool
 	doctor     *bool
+	newsView   *bool
+	email      *string
 	spent      *string
 	vertical   *bool
 	jsonOut    *bool
@@ -127,6 +129,8 @@ func registerFlags(fs *flag.FlagSet) {
 	planTTL = fs.Int("plan-ttl", 604800, "cache lifetime in seconds for the live plan snapshot scraped from the OpenCode Go docs (default one week)")
 	winEst = fs.Bool("window-estimate", false, "scale -now/-full 5h/week caps by the account-wide usage percentages (estimate)")
 	doctor = fs.Bool("doctor", false, "audit plan/AA/SWE/probe coverage and exit")
+	newsView = fs.Bool("news", false, "report what changed in the Go plan since the previous -news run")
+	email = fs.String("email", "", "comma-separated addresses to mail -news changes to (empty = print only)")
 	spent = fs.String("spent", "", "path to a pasted console 'usage by model' TSV; offline fallback for per-model spend")
 	vertical = fs.Bool("vertical", false, "one model per block of 'field: value' lines (screen-reader friendly); applies to the table and -now")
 	jsonOut = fs.Bool("json", false, "JSON output instead of TSV")
@@ -135,7 +139,7 @@ func registerFlags(fs *flag.FlagSet) {
 		"exclude", "include", "max-cost", "min-speed", "min-quality", "missing",
 		"cols", "excols",
 		"peak", "refresh", "offline", "aa-pro", "probe", "probe-model", "probe-max-allowance",
-		"usage", "now", "full", "main", "window-estimate", "doctor", "spent", "vertical", "json", "l", "nohead", "ttl", "plan-ttl")
+		"usage", "now", "full", "main", "window-estimate", "doctor", "news", "email", "spent", "vertical", "json", "l", "nohead", "ttl", "plan-ttl")
 }
 
 func validateSort(key string, nowView, fullView bool) error {
@@ -196,7 +200,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "invalid -plan %q: want go or go-plus\n", *plan)
 		os.Exit(2)
 	}
-	if !*showUse && !*doctor && *probeOne == "" {
+	if !*showUse && !*doctor && !*newsView && *probeOne == "" {
 		if err := validateSort(*sortKey, *now, *fullView); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(2)
@@ -210,6 +214,21 @@ func main() {
 
 	if *probeOne != "" {
 		if err := runOneProbe(*probeOne, *refresh, *offline); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
+
+	if *newsView {
+		if *provider != "opencode-go" {
+			fmt.Fprintln(os.Stderr, "-news only supports -provider opencode-go")
+			os.Exit(2)
+		}
+		if (*jsonOut || *vertical) && isTTY(os.Stderr) {
+			fmt.Fprintln(os.Stderr, "warning: -json and -vertical are ignored by -news (one change per line)")
+		}
+		if err := runNews(os.Stdout, *email, *refresh, *offline, *aaPro, time.Duration(*planTTL)*time.Second); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
@@ -360,13 +379,14 @@ func applyConfig(fs *flag.FlagSet) error {
 	fs.Visit(func(f *flag.Flag) { set[f.Name] = true })
 	str := map[string]*string{
 		"provider": provider, "plan": plan, "sort": sortKey,
-		"probe-model": probeOne, "spent": spent,
+		"probe-model": probeOne, "spent": spent, "email": email,
 		"exclude": exclude, "include": include, "min-quality": minQuality, "missing": missing,
 	}
 	boolean := map[string]*bool{
 		"pareto": pareto, "paid": paid, "privacy": privacy, "peak": peak,
 		"refresh": refresh, "offline": offline, "aa-pro": aaPro, "probe": probeAll, "usage": showUse,
 		"now": now, "full": fullView, "main": mainView, "window-estimate": winEst, "doctor": doctor,
+		"news":     newsView,
 		"vertical": vertical, "json": jsonOut, "l": showLegend, "nohead": nohead,
 	}
 	for name, p := range str {
@@ -481,7 +501,8 @@ func buildFilter(fs *flag.FlagSet) (table.Filter, error) {
 }
 
 // selectedViews names the requested output views (-usage, -now, -full,
-// -main, -doctor). At most one may be set; with none the main table runs.
+// -main, -doctor, -news). At most one may be set; with none the main table
+// runs.
 func selectedViews() []string {
 	var out []string
 	if *showUse {
@@ -498,6 +519,9 @@ func selectedViews() []string {
 	}
 	if *doctor {
 		out = append(out, "-doctor")
+	}
+	if *newsView {
+		out = append(out, "-news")
 	}
 	return out
 }

@@ -1,5 +1,16 @@
 # History
 
+- v0.1.23 2026-11-05 `-news`: reports what changed in the Go plan since the
+  previous run — models added/removed, cost per request, both plans' budgets,
+  peak premiums, token prices, context/output limits, privacy and the AA
+  quality tier — as one `KEYWORD model-id field=value… "Display Name"` line
+  per change. The first run only records the baseline in the cache directory
+  (`news-state.json`); failures never advance it, so the recovery run reports
+  everything accumulated since the last good run. `-email` mails non-empty
+  change sets through the local `sendmail`/`mail` transport for cron use, and
+  skips a second mail when two consecutive runs end in ERROR only.
+  `ERROR <source>: <message>` flags a site/API shape change (including a
+  failed refresh that fell back to an expired cache).
 - v0.1.22 2026-10-30 Revert v0.1.21: `-usage` `remaining_usd` was fiction —
   the endpoint's aggregate percent is not a share of any dollar pot (it
   tracks an average of per-model burn ratios), so no honest base exists;

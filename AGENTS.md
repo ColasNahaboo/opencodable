@@ -150,6 +150,15 @@ internal/config/       opencodable.conf (key=value: API keys + option
   (`safe`/`trains`/`unknown`); `-privacy` fails closed, hiding both training
   and unknown models. Free variants missing from the snapshot are inferred
   from zero prices (`modelsdev.Model.Free`).
+- **News baseline** (`news-state.json`, cache dir): one per-model snapshot
+  (cost per request, peak cost, token prices, both allowances, context/output,
+  privacy, AA quality) plus the previous run's output. `-news` diffs the
+  current snapshot against it; failures never advance the baseline (only its
+  output, for ERROR-mail suppression), so the recovery run reports everything
+  since the last good run. Deleting the cache resets it to a silent first run.
+  `-email` mails through the local `sendmail`/`mail` transport; a run whose
+  output is only ERROR lines is not mailed when the previous output was also
+  only ERROR lines.
 - **Cache hardening**: keys are sanitized (no traversal), writes are
   temp-file + rename, permissions are 0700/0600. `cache.Age` feeds `-doctor`.
   `cache.Load` serves a stale entry when a fetch fails. Live usage data reports

@@ -32,13 +32,16 @@ func registerOptions(t *testing.T) *flag.FlagSet {
 }
 
 func TestApplyConfig(t *testing.T) {
-	writeConf(t, "plan=go-plus\npaid=yes\naa-pro=yes\nl=yes\nprobe-max-allowance=0.5\nsort=name\n")
+	writeConf(t, "plan=go-plus\npaid=yes\naa-pro=yes\nl=yes\nprobe-max-allowance=0.5\nsort=name\nnews=yes\nemail=ops@example.com\n")
 	fs := registerOptions(t)
 	if err := applyConfig(fs); err != nil {
 		t.Fatal(err)
 	}
 	if *plan != "go-plus" || !*paid || !*aaPro || !*showLegend || *probeMax != 0.5 || *sortKey != "name" {
 		t.Errorf("config not applied: plan=%q paid=%v aa-pro=%v l=%v max=%v sort=%q", *plan, *paid, *aaPro, *showLegend, *probeMax, *sortKey)
+	}
+	if !*newsView || *email != "ops@example.com" {
+		t.Errorf("news options not applied: news=%v email=%q", *newsView, *email)
 	}
 }
 
