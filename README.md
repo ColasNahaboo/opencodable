@@ -112,6 +112,7 @@ look at first; the [Columns](#columns) section lists them all.
 - **`p_tok_s`**: output speed measured on your own subscription, in tokens per second. Run `-probe` to fill it in. `tok_s` is the speed reported for other hosts.
 - **`pareto`**: `yes` when no other visible model is at least as cheap, as fast and as good, and better in at least one way. These are the strong compromises.
 - **`privacy`**: `safe` (the provider does not train on your requests), `trains` (it may), or `unknown` (not in our data).
+- **`avail`**: `no` when the model refuses to serve your country ("this model is not available in your country") and you marked it with `-unavail`; `yes` otherwise.
 
 ### Key words
 
@@ -198,7 +199,10 @@ the official cost of one coding-agent request (the `cost_task` column).
 `tier` is a coarse quality bucket from the AA Intelligence Index: `frontier`
 (45 and up), `high` (35), `mid` (25), `low` below, or `unknown` when
 Artificial Analysis has no score. Quality tiers are informational; without an
-AA key they stay `unknown`, and previously cached scores are reused.
+AA key they stay `unknown`, and previously cached scores are reused. Every
+line about a model you marked with `-unavail` also carries an `unavail=yes`
+field just before the quoted name, and adding or removing a model from that
+list reports `UNAVAIL_ON` / `UNAVAIL_OFF`.
 
 The changes reported are:
 
@@ -213,6 +217,7 @@ The changes reported are:
 | `UNLIMITED_ON`, `UNLIMITED_OFF` | the model became free/unlimited, or stopped being |
 | `CONTEXT_UP`, `CONTEXT_DOWN` | context window or maximum output moved (`ctx_k=old->new`, optional `out_k=old->new`) |
 | `PRIVACY_CHANGE` | the privacy verdict moved (`safe`, `trains`, `unknown`) |
+| `UNAVAIL_ON`, `UNAVAIL_OFF` | you added the model to, or removed it from, the `-unavail` country-availability list |
 | `NAME_CHANGE` | the display name changed |
 | `TIER_UP`, `TIER_DOWN` | the AA quality tier moved |
 
@@ -295,6 +300,8 @@ probe-max-allowance=1
 
 # Filters and columns
 exclude=grok*
+unavail=crouton-alpha-free     # models that say "not available in your country"
+avail=yes                      # and hide those everywhere
 max-cost=0.02
 min-quality=aa_int=35,lb_code=60
 #cols=cost_task,p_tok_s,aa_int,swe_b
@@ -323,7 +330,7 @@ Pick one at a time; combining two is an error. Without a view, the main table is
 - `-full`: the main table and `-now` in one wide table.
 - `-usage`: your remaining allowance in the 5-hour, weekly and monthly windows.
 - `-doctor`: a coverage check: missing data per model, Arena and benchmark coverage counts, a warning for each catalog cache that is missing or older than 24 hours, a hint when a model may have an Arena entry under another name, where keys were found, typos in your configuration file. It runs no probes.
-- `-news`: what changed in the plan since the previous `-news` run — models, costs, budgets, context windows, privacy, quality tier. See [What's new](#whats-new-news).
+- `-news`: what changed in the plan since the previous `-news` run — models, costs, budgets, context windows, privacy, quality tier, and the country-availability list you maintain with `-unavail`. See [What's new](#whats-new-news).
 
 ### What to show, and in what order
 
@@ -331,6 +338,7 @@ Pick one at a time; combining two is an error. Without a view, the main table is
 - `-pareto`: keep only the models that no other visible model beats on cost, speed and quality together.
 - `-paid`: hide free models.
 - `-privacy`: hide models that may train on your prompts, and models whose status is unknown.
+- `-avail`: hide models you marked as not available in your country (see `-unavail` below).
 - `-plan go|go-plus`: which plan's budgets to use. The default is `go`; Go Plus has larger budgets.
 - `-provider <name>`: the models.dev provider to rank. The default is `opencode-go`, the only provider with plan (budget) data; any other name works only for the main table, and `-now`, `-full` and `-doctor` stop with an error.
 - `-aa-pro`: use the Artificial Analysis Pro endpoint (needs a Pro key); fills `term_b`, `if_b` and `aa_lcr`.
@@ -340,6 +348,7 @@ Pick one at a time; combining two is an error. Without a view, the main table is
 
 - `-exclude <patterns>`: hide models whose ID or name matches. Separate patterns with commas. Matching ignores case; `*` stands for any run of characters and `?` for one character. A plain word matches anywhere, so `-exclude grok` hides every Grok model.
 - `-include <patterns>`: show only the models that match.
+- `-unavail <patterns>`: mark the models that refuse to serve your account — the API answers "this model is not available in your country". Same matching as `-exclude`. Marked models keep showing with `avail=no` until you add `-avail` (which is also a config-file default, so the marker survives cron runs). `-news` reports the marking and its notices carry `unavail=yes`.
 - `-max-cost <usd>`: hide models whose estimated cost per request is higher.
 - `-min-speed <tok/s>`: hide slower models (measured speed when available, otherwise the reported one).
 - `-min-quality <metric>=<score>,...`: hide models below a score, for example `aa_int=40,swe_b=30`; a model must meet every bound. The metric names are column titles; `aa_code`, `aa_math` and `code_b` are no longer published, and `term_b`, `if_b` and `aa_lcr` need a Pro key. A bare number (e.g. `-min-quality 40`) applies to the composite quality score — the AA Intelligence Index (`aa_int`), the same metric `-sort quality` uses by default.
@@ -406,6 +415,7 @@ become 0. The exact contract is in [TITLES.md](TITLES.md).
 | `swe_b` | percent of real GitHub issues solved in SWE-bench Verified (best recorded run) |
 | `lb_agent`, `lb_code` | LiveBench scores, 0 to 100, for long agentic tasks and for coding |
 | `elo`, `btr` | Arena ratings: `elo` from a daily snapshot of the Arena text leaderboard, `btr` from the official Arena dataset. Only models on those leaderboards have a value. |
+| `avail` | `no` = you marked the model as refusing to serve your country (`-unavail`); `-avail` masks those rows. `yes` otherwise. |
 | `pareto` | `yes` when no other visible model beats it on cost, speed and quality together |
 | `src` | `aa:<effort>` when the speed comes from a reasoning-effort variant of the model |
 | `privacy` | `safe`, `trains` or `unknown` (see [Reading the table](#reading-the-table)) |
@@ -413,7 +423,7 @@ become 0. The exact contract is in [TITLES.md](TITLES.md).
 
 `-now` adds `burn_req`, `spent_mo`, `reqs_5h`, `reqs_wk`, `reqs_mo`, `usable`
 and `limit` (see [Your allowance](#your-allowance)). `-full` shows the main
-columns followed by these, 33 in total, so use `-cols` to narrow it down. In
+columns followed by these, 34 in total, so use `-cols` to narrow it down. In
 `-full`, `r_quota` is the full-month figure and `reqs_mo` is what remains.
 
 Choose columns with `-cols` or `-excols` (both repeatable). The order always
@@ -536,5 +546,5 @@ This repository is developed by me, a human hobbyist in my personal time, acting
 
 ## History
 
-Version v1.0.0 2026-11-05.
+Version v1.0.1 2026-11-08.
 See [HISTORY.md](HISTORY.md).

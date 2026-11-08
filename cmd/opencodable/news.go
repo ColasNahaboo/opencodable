@@ -7,7 +7,9 @@ package main
 // a first run and prints nothing. News is deliberately limited to the plan's
 // public data (catalog, budgets, token profiles, peak prices, privacy) plus
 // the AA Intelligence Index as a coarse quality tier; it loads no probes, no
-// console spend and no benchmark feeds.
+// console spend and no benchmark feeds. The user's availability list
+// (-unavail) takes part too: it is markable state, so a change reports and
+// the COMMON lines carry an unavail=yes field when set.
 //
 // Errors are printed as "ERROR <scope>: <message>" lines so a cron wrapper can
 // tell "the site/API changed shape" from an ordinary change. When two runs in
@@ -64,6 +66,7 @@ type newsModel struct {
 	Out           int64   `json:"output"`
 	Privacy       string  `json:"privacy"`
 	Quality       float64 `json:"quality,omitempty"`
+	Unavail       bool    `json:"unavail,omitempty"` // marked 'not available in your country'
 }
 
 // newsState is the persisted baseline: one previous snapshot plus the last
@@ -105,7 +108,8 @@ func saveNewsState(st newsState) error {
 
 // buildNewsSnapshot captures every catalog model's plan-relevant state.
 // aas may be nil (no Artificial Analysis data): tiers then stay unknown.
-func buildNewsSnapshot(models []modelsdev.Model, aas []aa.Model) map[string]newsModel {
+// unavail carries the user's country-availability list (-unavail).
+func buildNewsSnapshot(models []modelsdev.Model, aas []aa.Model, unavail []string) map[string]newsModel {
 	byID := make(map[string]modelsdev.Model, len(models))
 	for _, m := range models {
 		byID[m.ID] = m
@@ -135,6 +139,7 @@ func buildNewsSnapshot(models []modelsdev.Model, aas []aa.Model) map[string]news
 			Out:     m.Limit.Output,
 			Privacy: goplan.PrivacyLabel(r.ID),
 			Quality: r.AAIntel,
+			Unavail: availLabel(unavail, r.ID, r.Name) == "no",
 		}
 		if hasPeak {
 			nm.PeakTask = cost.PerRequest(m, true)
@@ -227,10 +232,15 @@ func newsPlanState(m newsModel) string {
 	}
 }
 
-// newsTag is the common tail of most lines: tier, quality and display name
-// (quoted, so the name may contain spaces and parsers can split on fields).
+// newsTag is the common tail of most lines: tier, quality, the availability
+// marker when set, and the display name (quoted, so the name may contain
+// spaces and parsers can split on fields).
 func newsTag(m newsModel) string {
-	return fmt.Sprintf("tier=%s quality=%s %s", newsTier(m.Quality), newsQuality(m.Quality), strconv.Quote(m.Name))
+	tag := fmt.Sprintf("tier=%s quality=%s", newsTier(m.Quality), newsQuality(m.Quality))
+	if m.Unavail {
+		tag += " unavail=yes"
+	}
+	return tag + " " + strconv.Quote(m.Name)
 }
 
 // newsAllow renders a plan's budget, "unlimited" when the model is free.
@@ -398,6 +408,13 @@ func newsChangeLines(p, c newsModel) []string {
 			c.ID, p.Privacy, c.Privacy, tag))
 	}
 
+	switch {
+	case !p.Unavail && c.Unavail:
+		out = append(out, fmt.Sprintf("UNAVAIL_ON %s %s", c.ID, tag))
+	case p.Unavail && !c.Unavail:
+		out = append(out, fmt.Sprintf("UNAVAIL_OFF %s %s", c.ID, tag))
+	}
+
 	pt, ct := newsTier(p.Quality), newsTier(c.Quality)
 	if p.Quality > 0 && c.Quality > 0 && pt != ct {
 		keyword := "TIER_UP"
@@ -470,7 +487,8 @@ func newsError(scope string, err error) string {
 // runNews computes and prints the changes since the previous successful run,
 // then mails them when -email is set. It writes the change lines to w so a
 // test (or a future caller) can capture them; main passes os.Stdout.
-func runNews(w io.Writer, email string, refresh, offline, aaPro bool, planTTL time.Duration) error {
+// unavail carries the user's country-availability list (-unavail).
+func runNews(w io.Writer, email string, refresh, offline, aaPro bool, planTTL time.Duration, unavail []string) error {
 	prev, found := loadNewsState()
 	var lines []string
 	var cur map[string]newsModel
@@ -518,7 +536,7 @@ func runNews(w io.Writer, email string, refresh, offline, aaPro bool, planTTL ti
 				// Kept off stderr in cron runs: cron mails any output.
 				fmt.Fprintln(os.Stderr, "# warning: AA data unavailable, quality tiers unknown:", aerr)
 			}
-			cur = buildNewsSnapshot(models, aas)
+			cur = buildNewsSnapshot(models, aas, unavail)
 			// An AA outage carries the previous scores forward: a missing
 			// score is not a quality change.
 			for id, m := range cur {

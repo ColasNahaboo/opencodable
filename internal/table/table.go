@@ -53,6 +53,7 @@ type Row struct {
 	LBCoding      float64 `json:"lb_code"`
 	Elo           float64 `json:"elo"`
 	BTRating      float64 `json:"btr"`
+	Avail         string  `json:"avail"`
 }
 
 func f(p *float64) float64 {
@@ -411,6 +412,7 @@ func HeaderCells() []string {
 		"code_b", "term_b", "if_b", "aa_lcr",
 		"swe_b", "pareto", "src", "privacy", "ctx_k", "out_k",
 		"lb_agent", "lb_code", "elo", "btr",
+		"avail",
 	}
 }
 
@@ -438,7 +440,18 @@ func RowCells(r Row, missing string) []string {
 		numOr(r.CtxK, false, missing), numOr(r.OutK, false, missing),
 		numOr(r.LBAgentic, false, missing), numOr(r.LBCoding, false, missing),
 		arenaOr(r.Elo, missing), arenaOr(r.BTRating, missing),
+		availCell(r, missing),
 	}
+}
+
+// availCell renders the avail column: "yes" when the model should serve the
+// user's country, "no" when they marked it unavailable (-unavail). Rows
+// built without a verdict (tests) render the missing marker.
+func availCell(r Row, missing string) string {
+	if r.Avail == "" {
+		return missing
+	}
+	return r.Avail
 }
 
 func numOr(v float64, money bool, missing string) string {
@@ -511,6 +524,7 @@ var legend = []string{
 	"# lb_code     LiveBench 2.0 Coding score (single run, 0-100)",
 	"# elo         Arena Elo, daily snapshot of the arena.ai text leaderboard (third-party mirror; top-20, can lag; missing = not in snapshot)",
 	"# btr         Arena Bradley-Terry rating (log-odds scale, ~±0.2; >0 above average), text with style control, overall category (official mirror, fresh; missing = no match)",
+	"# avail       yes = should serve your country; no = you marked it 'not available in your country' via -unavail or opencodable.conf (-avail hides those rows)",
 }
 
 // MainLegend returns the main-table legend lines, one #-prefixed line per

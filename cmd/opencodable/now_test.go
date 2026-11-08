@@ -23,7 +23,7 @@ func TestBuildNowRowsUsesPerModelLimits(t *testing.T) {
 	deepseek := testModel("deepseek-v4.1-flash", "DeepSeek V4.1 Flash", 0.15, 0.60, 0.003)
 	rows := buildNowRows(
 		[]modelsdev.Model{kimi, deepseek},
-		map[string]spendInfo{}, true, "go", false, false, false, nil, nil,
+		map[string]spendInfo{}, true, "go", false, false, false, false, nil, nil, nil,
 	)
 	if len(rows) != 3 {
 		t.Fatalf("got %d rows, want 3 (kimi, deepseek, deepseek peak twin)", len(rows))
@@ -50,7 +50,7 @@ func TestBuildNowRowsUsesPerModelLimits(t *testing.T) {
 	}
 
 	// Go Plus doubles the monthly limit: 20% of $60 / $0.0204 = 588.
-	plus := buildNowRows([]modelsdev.Model{kimi}, nil, false, "go-plus", false, false, false, nil, nil)
+	plus := buildNowRows([]modelsdev.Model{kimi}, nil, false, "go-plus", false, false, false, false, nil, nil, nil)
 	if plus[0].five != 588 {
 		t.Errorf("Go Plus Kimi 5h = %d, want 588", plus[0].five)
 	}
@@ -72,7 +72,7 @@ func TestBuildNowRowsWindowSpendMap(t *testing.T) {
 	kimi := testModel("kimi-k3.1-pro", "Kimi K3.1 Pro", 2, 10, 0.2)
 	// Half the 5h/week caps already spent: remaining counts halve.
 	wspend := map[string]windowSpend{"kimi-k3.1-pro": {five: 0.2 * 15 * 0.5, week: 0.5 * 15 * 0.5}}
-	rows := buildNowRows([]modelsdev.Model{kimi}, nil, false, "go", false, false, false, wspend, nil)
+	rows := buildNowRows([]modelsdev.Model{kimi}, nil, false, "go", false, false, false, false, nil, wspend, nil)
 	kt := cost.PerRequest(kimi, false)
 	if got, want := rows[0].five, int(0.2*15*0.5/kt+1e-9); got != want {
 		t.Errorf("spent 5h = %d, want %d", got, want)
@@ -82,7 +82,7 @@ func TestBuildNowRowsWindowSpendMap(t *testing.T) {
 	}
 	// Over-spent budgets clamp to zero, never negative.
 	wspend = map[string]windowSpend{"kimi-k3.1-pro": {five: 1000, week: 1000}}
-	rows = buildNowRows([]modelsdev.Model{kimi}, nil, false, "go", false, false, false, wspend, nil)
+	rows = buildNowRows([]modelsdev.Model{kimi}, nil, false, "go", false, false, false, false, nil, wspend, nil)
 	if rows[0].five != 0 || rows[0].week != 0 || rows[0].usable != 0 {
 		t.Errorf("over-spent counts = %d/%d/%d, want zeros", rows[0].five, rows[0].week, rows[0].usable)
 	}
@@ -93,7 +93,7 @@ func TestBuildNowRowsUsesMeasuredBurn(t *testing.T) {
 	spend := map[string]spendInfo{
 		"deepseek-v4.1-flash": {usd: 0.50, reqs: 100, known: true},
 	}
-	rows := buildNowRows([]modelsdev.Model{deepseek}, spend, true, "go", false, false, false, nil, nil)
+	rows := buildNowRows([]modelsdev.Model{deepseek}, spend, true, "go", false, false, false, false, nil, nil, nil)
 	if len(rows) != 2 {
 		t.Fatalf("got %d rows, want base + peak twin", len(rows))
 	}
@@ -129,7 +129,7 @@ func TestBuildNowRowsFallsBackToOfficialBurn(t *testing.T) {
 	spend := map[string]spendInfo{
 		"deepseek-v4.1-flash": {usd: 0.50, reqs: 10, known: true}, // too few requests
 	}
-	rows := buildNowRows([]modelsdev.Model{deepseek}, spend, true, "go", false, false, false, nil, nil)
+	rows := buildNowRows([]modelsdev.Model{deepseek}, spend, true, "go", false, false, false, false, nil, nil, nil)
 	want := cost.PerRequest(deepseek, false)
 	if math.Abs(rows[0].burn-want) > 1e-12 {
 		t.Errorf("burn = %v, want official %v", rows[0].burn, want)
@@ -142,7 +142,7 @@ func TestBuildNowRowsUnknownAndUnlimited(t *testing.T) {
 	freeUnknown := testModel("cat-jam-free", "Cat Jam Free", 0, 0, 0)
 	rows := buildNowRows(
 		[]modelsdev.Model{unknown, free, freeUnknown},
-		map[string]spendInfo{}, false, "go", false, false, false, nil, nil,
+		map[string]spendInfo{}, false, "go", false, false, false, false, nil, nil, nil,
 	)
 	if len(rows) != 3 {
 		t.Fatalf("got %d rows, want 3", len(rows))
@@ -165,10 +165,10 @@ func TestBuildNowRowsFilters(t *testing.T) {
 	muse := testModel("muse-spark-1.3-contributor", "Muse Spark", 0.10, 0.20, 0.002)
 	unknown := testModel("space-bunny", "Space Bunny", 1, 2, 0.1)
 	free := testModel("beam-free", "Beam Free", 0, 0, 0)
-	if rows := buildNowRows([]modelsdev.Model{muse, unknown}, nil, false, "go", false, false, true, nil, nil); len(rows) != 0 {
+	if rows := buildNowRows([]modelsdev.Model{muse, unknown}, nil, false, "go", false, false, true, false, nil, nil, nil); len(rows) != 0 {
 		t.Errorf("-privacy kept %d rows with trains/unknown status", len(rows))
 	}
-	if rows := buildNowRows([]modelsdev.Model{free}, nil, false, "go", false, true, false, nil, nil); len(rows) != 0 {
+	if rows := buildNowRows([]modelsdev.Model{free}, nil, false, "go", false, true, false, false, nil, nil, nil); len(rows) != 0 {
 		t.Errorf("-paid kept %d free rows", len(rows))
 	}
 }
@@ -219,7 +219,7 @@ func TestBuildNowRowsPeakTwins(t *testing.T) {
 	if on <= off {
 		t.Fatalf("fixture needs a peak premium, got %v/%v", off, on)
 	}
-	rows := buildNowRows([]modelsdev.Model{ds}, map[string]spendInfo{}, false, "go", false, false, false, nil, nil)
+	rows := buildNowRows([]modelsdev.Model{ds}, map[string]spendInfo{}, false, "go", false, false, false, false, nil, nil, nil)
 	if len(rows) != 2 {
 		t.Fatalf("got %d rows, want base + twin", len(rows))
 	}
@@ -237,7 +237,7 @@ func TestBuildNowRowsPeakTwins(t *testing.T) {
 		t.Errorf("twin must be known with fewer usable requests: %+v vs %+v", twin, base)
 	}
 	// Peak regime already: no twins.
-	if rows := buildNowRows([]modelsdev.Model{ds}, map[string]spendInfo{}, false, "go", true, false, false, nil, nil); len(rows) != 1 {
+	if rows := buildNowRows([]modelsdev.Model{ds}, map[string]spendInfo{}, false, "go", true, false, false, false, nil, nil, nil); len(rows) != 1 {
 		t.Errorf("-peak must suppress twins, got %d rows", len(rows))
 	}
 	// Value filters judge the twin on its peak cost.
@@ -245,6 +245,59 @@ func TestBuildNowRowsPeakTwins(t *testing.T) {
 	got := filterNowRows(rows, table.Filter{MaxCost: &mc})
 	if len(got) != 1 || got[0].id != ds.ID {
 		t.Errorf("-max-cost must keep base and drop twin: %v", got)
+	}
+}
+
+func TestAvailLabel(t *testing.T) {
+	list := []string{"crouton-alpha-free"}
+	if got := availLabel(list, "crouton-alpha-free", "Crouton Alpha Free"); got != "no" {
+		t.Errorf("marked ID = %q, want no", got)
+	}
+	// [peak] twins inherit the verdict through their base ID with the suffix.
+	if got := availLabel(list, "crouton-alpha-free-peak", "Crouton Alpha Free [peak]"); got != "no" {
+		t.Errorf("twin ID = %q, want no", got)
+	}
+	if got := availLabel(list, "kimi-k3.1-pro", "Kimi K3.1 Pro"); got != "yes" {
+		t.Errorf("unmarked ID = %q, want yes", got)
+	}
+	if got := availLabel(nil, "crouton-alpha-free", "Crouton Alpha Free"); got != "yes" {
+		t.Errorf("empty list = %q, want yes", got)
+	}
+	if got := availLabel([]string{"cat*"}, "cat-jam", "Cat Jam"); got != "no" {
+		t.Errorf("glob pattern = %q, want no", got)
+	}
+}
+
+func TestBuildNowRowsAvailColumn(t *testing.T) {
+	kimi := testModel("kimi-k3.1-pro", "Kimi K3.1 Pro", 2, 10, 0.2)
+	cruton := testModel("crouton-alpha-free", "Crouton Alpha Free", 0, 0, 0)
+	unavailList := []string{"crouton-alpha"}
+
+	rows := buildNowRows([]modelsdev.Model{kimi, cruton}, map[string]spendInfo{},
+		false, "go", false, false, false, false, unavailList, nil, nil)
+	byID := map[string]nowRow{}
+	for _, r := range rows {
+		byID[r.id] = r
+	}
+	if k := byID["kimi-k3.1-pro"]; k.avail != "yes" {
+		t.Errorf("unmarked model avail = %q, want yes", k.avail)
+	}
+	if c := byID["crouton-alpha-free"]; c.avail != "no" {
+		t.Errorf("marked model avail = %q, want no", c.avail)
+	}
+
+	// -avail hides the marked rows only.
+	rows = buildNowRows([]modelsdev.Model{kimi, cruton}, map[string]spendInfo{},
+		false, "go", false, false, false, true, unavailList, nil, nil)
+	if len(rows) != 1 || rows[0].id != kimi.ID {
+		t.Fatalf("-avail kept %d rows (%v), want just kimi", len(rows), rows)
+	}
+
+	// No list: everything reads yes.
+	rows = buildNowRows([]modelsdev.Model{cruton}, map[string]spendInfo{},
+		false, "go", false, false, false, false, nil, nil, nil)
+	if len(rows) != 1 || rows[0].avail != "yes" {
+		t.Fatalf("empty list avail = %q, want yes", rows[0].avail)
 	}
 }
 

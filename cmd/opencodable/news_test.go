@@ -29,7 +29,7 @@ func TestBuildNewsSnapshotFreeInference(t *testing.T) {
 	t.Cleanup(func() { goplan.Use(nil) })
 	free := testModel("cat-jam-free", "Cat Jam Free", 0, 0, 0)
 	paid := testModel("space-bunny", "Space Bunny", 1, 2, 0.1)
-	snap := buildNewsSnapshot([]modelsdev.Model{free, paid}, nil)
+	snap := buildNewsSnapshot([]modelsdev.Model{free, paid}, nil, nil)
 
 	f := snap["cat-jam-free"]
 	if !f.GoUnlimited || !f.PlusUnlimited || f.Known {
@@ -44,6 +44,51 @@ func TestBuildNewsSnapshotFreeInference(t *testing.T) {
 	}
 	if got := newsPlanState(u); got != "unknown" {
 		t.Errorf("unknown plan state = %q, want unknown", got)
+	}
+}
+
+func TestNewsUnavailTag(t *testing.T) {
+	m := newsTestModel("crouton-alpha-free", "Crouton Alpha Free", 0)
+	if i := strings.Index(newsTag(m), "unavail"); i != -1 {
+		t.Errorf("unmarked tag carries unavail: %q", newsTag(m))
+	}
+	m.Unavail = true
+	tag := newsTag(m)
+	if !strings.HasSuffix(tag, `quality=- unavail=yes "Crouton Alpha Free"`) {
+		t.Errorf("tag = %q, want unavail=yes before the quoted name", tag)
+	}
+}
+
+func TestDiffNewsUnavailTransitions(t *testing.T) {
+	prev := map[string]newsModel{"m": newsTestModel("m", "M", 0.01)}
+	cur := map[string]newsModel{"m": newsTestModel("m", "M", 0.01)}
+	if lines := diffNews(prev, cur); len(lines) != 0 {
+		t.Errorf("unchanged state = %d lines, want 0: %v", len(lines), lines)
+	}
+	on := newsTestModel("m", "M", 0.01)
+	on.Unavail = true
+	cur["m"] = on
+	lines := diffNews(prev, cur)
+	if len(lines) != 1 || !strings.HasPrefix(lines[0], "UNAVAIL_ON m ") {
+		t.Errorf("marking = %v, want one UNAVAIL_ON line", lines)
+	}
+	lines = diffNews(cur, prev)
+	if len(lines) != 1 || !strings.HasPrefix(lines[0], "UNAVAIL_OFF m ") {
+		t.Errorf("unmarking = %v, want one UNAVAIL_OFF line", lines)
+	}
+}
+
+func TestBuildNewsSnapshotUnavail(t *testing.T) {
+	goplan.Use(nil)
+	t.Cleanup(func() { goplan.Use(nil) })
+	m := testModel("crouton-alpha-free", "Crouton Alpha Free", 0, 0, 0)
+	snap := buildNewsSnapshot([]modelsdev.Model{m}, nil, []string{"crouton-*"})
+	if !snap[m.ID].Unavail {
+		t.Errorf("glob-marked model = %+v, want Unavail", snap[m.ID])
+	}
+	snap = buildNewsSnapshot([]modelsdev.Model{m}, nil, nil)
+	if snap[m.ID].Unavail {
+		t.Errorf("unmarked model = %+v, want not Unavail", snap[m.ID])
 	}
 }
 
@@ -359,7 +404,7 @@ func TestRunNewsBaselineThenChanges(t *testing.T) {
 
 	run := func() string {
 		var buf bytes.Buffer
-		if err := runNews(&buf, "", false, true, false, time.Hour); err != nil {
+		if err := runNews(&buf, "", false, true, false, time.Hour, nil); err != nil {
 			t.Fatal(err)
 		}
 		return buf.String()
@@ -408,7 +453,7 @@ func TestRunNewsMailsAndSuppressesRepeatedErrors(t *testing.T) {
 
 	run := func() string {
 		var buf bytes.Buffer
-		if err := runNews(&buf, "ops@example.com", false, true, false, time.Hour); err != nil {
+		if err := runNews(&buf, "ops@example.com", false, true, false, time.Hour, nil); err != nil {
 			t.Fatal(err)
 		}
 		return buf.String()
@@ -466,7 +511,7 @@ func TestRunNewsKeepsLiveBaselineWhenOffline(t *testing.T) {
 	newsAA(t)
 
 	var buf bytes.Buffer
-	if err := runNews(&buf, "", false, true, false, time.Hour); err != nil {
+	if err := runNews(&buf, "", false, true, false, time.Hour, nil); err != nil {
 		t.Fatal(err)
 	}
 	st, ok := loadNewsState()
@@ -484,7 +529,7 @@ func TestRunNewsKeepsLiveBaselineWhenOffline(t *testing.T) {
 	// built-in table: comparing would invent budget/profile changes.
 	newsCatalog(t, 12)
 	buf.Reset()
-	if err := runNews(&buf, "", false, true, false, time.Hour); err != nil {
+	if err := runNews(&buf, "", false, true, false, time.Hour, nil); err != nil {
 		t.Fatal(err)
 	}
 	if buf.Len() != 0 {

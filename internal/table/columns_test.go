@@ -215,16 +215,29 @@ func TestWriteTSVSelected(t *testing.T) {
 	}
 }
 
+func TestRowCellsAvail(t *testing.T) {
+	availIdx := len(HeaderCells()) - 1
+	if got := RowCells(Row{}, "-")[availIdx]; got != "-" {
+		t.Errorf("verdict-less row avail = %q, want missing marker", got)
+	}
+	if got := RowCells(Row{Avail: "no"}, "")[availIdx]; got != "no" {
+		t.Errorf("marked row avail = %q, want no", got)
+	}
+	if got := RowCells(Row{Avail: "yes"}, "-")[availIdx]; got != "yes" {
+		t.Errorf("clear row avail = %q, want yes", got)
+	}
+}
+
 func TestMainTitlesEndWithArena(t *testing.T) {
 	main := HeaderCells()
-	tail := main[len(main)-2:]
-	if tail[0] != "elo" || tail[1] != "btr" {
-		t.Errorf("main titles must end with elo, btr: %v", tail)
+	tail := main[len(main)-3:]
+	if tail[0] != "elo" || tail[1] != "btr" || tail[2] != "avail" {
+		t.Errorf("main titles must end with elo, btr, avail: %v", tail)
 	}
 	// -full inherits both through the main block, in order.
 	full := FullTitles()
-	if !slices.Equal(full[len(main)-2:len(main)], []string{"elo", "btr"}) {
-		t.Errorf("full titles must carry elo, btr in the main block")
+	if !slices.Equal(full[len(main)-3:len(main)], []string{"elo", "btr", "avail"}) {
+		t.Errorf("full titles must carry elo, btr, avail in the main block")
 	}
 }
 

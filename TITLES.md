@@ -26,7 +26,7 @@ real money behind it never enters any computation).
 
 ## View: main table (`opencodable`, `-main`)
 
-Piped header: `#name	cost_tok	cost_task	allowance	r_quota	tok_s	ttft_s	p_tok_s	p_ttft_s	aa_int	aa_code	aa_math	code_b	term_b	if_b	aa_lcr	swe_b	pareto	src	privacy	ctx_k	out_k	lb_agent	lb_code	elo	btr`
+Piped header: `#name	cost_tok	cost_task	allowance	r_quota	tok_s	ttft_s	p_tok_s	p_ttft_s	aa_int	aa_code	aa_math	code_b	term_b	if_b	aa_lcr	swe_b	pareto	src	privacy	ctx_k	out_k	lb_agent	lb_code	elo	btr	avail`
 
 | # | Column | Meaning |
 |---|---|---|
@@ -47,7 +47,7 @@ Piped header: `#name	cost_tok	cost_task	allowance	r_quota	tok_s	ttft_s	p_tok_s	p
 | 15 | `if_b` | IFBench instruction-following pass rate % (Pro key with `-aa-pro`) |
 | 16 | `aa_lcr` | AA Long-Context Reasoning pass rate % (Pro key with `-aa-pro`) |
 | 17 | `swe_b` | SWE-bench Verified % resolved, best recorded agent run |
-| 18 | `pareto` | `yes` when no other visible model is cheaper-or-equal, faster-or-equal AND better-or-equal; empty otherwise. Flags are computed after every row filter (`-exclude`, `-include`, `-max-cost`, `-min-speed`, `-min-quality`, `-paid`, `-privacy`), so a hidden model never dominates a visible one. |
+| 18 | `pareto` | `yes` when no other visible model is cheaper-or-equal, faster-or-equal AND better-or-equal; empty otherwise. Flags are computed after every row filter (`-exclude`, `-include`, `-max-cost`, `-min-speed`, `-min-quality`, `-paid`, `-privacy`, `-avail`), so a hidden model never dominates a visible one. |
 | 19 | `src` | `aa:<effort>` when the speed came from that AA reasoning-effort variant |
 | 20 | `privacy` | `safe` (no training on request data), `trains` (contributor), or `unknown` (no plan-snapshot verdict) |
 | 21 | `ctx_k` | context window in thousands of tokens (models.dev) |
@@ -56,6 +56,7 @@ Piped header: `#name	cost_tok	cost_task	allowance	r_quota	tok_s	ttft_s	p_tok_s	p
 | 24 | `lb_code` | LiveBench 2.0 Coding score, 0–100 (single run) |
 | 25 | `elo` | Arena Elo, daily snapshot of the arena.ai text leaderboard (third-party mirror; integer, missing = not in snapshot) |
 | 26 | `btr` | Arena Bradley–Terry rating (log-odds scale, ~±0.2; 0 is average, >0 above average), text with style control, overall category (official mirror, fresh; missing = no match) |
+| 27 | `avail` | `no` when the user marked the model as not available in their country (`-unavail` option or the config's `unavail` key; the API answered "this model is not available in your country"); `yes` otherwise. `-avail` masks the `no` rows. This is user-maintained state, never scraped. |
 
 On a terminal: same columns, padded for readability, missing values shown as
 `-`. Models with peak-hours pricing add a `Name [peak]` twin row (ID
@@ -88,9 +89,15 @@ base tier); `cost_tok` is the retail USD price per 1M output tokens;
 `high` >= 35, `mid` >= 25, `low` below, `unknown` when AA has no score).
 `plan=go` or `plan=go-plus` names the budget a line refers to.
 
+The common tail ends with `tier=<tier> quality=<score-or--> "<display name>"`;
+lines about a model the user has marked unavailable in their country (`-unavail`)
+carry an extra `unavail=yes` field between `quality=` and the quoted name, so a
+marked `MODEL_ADD` reads `MODEL_ADD crouton-alpha-free cost_task=$0 plan=free
+unavail=yes tier=unknown quality=- "Crouton Alpha Free"`.
+
 | Keyword | Fields | Meaning |
 |---|---|---|
-| `MODEL_ADD`, `MODEL_DEL` | `cost_task`, `plan=paid/free/unknown`, `tier`, `quality`, display name | model joined/left the models.dev catalog |
+| `MODEL_ADD`, `MODEL_DEL` | `cost_task`, `plan=paid/free/unknown`, `tier`, `quality`, optional `unavail=yes`, display name | model joined/left the models.dev catalog |
 | `PLAN_ADD`, `PLAN_DEL` | `PLAN_ADD`: `allowance=<go>/<go-plus>`; both: `tier`, `quality`, display name | model joined/left the plan's budget table |
 | `COST_UP`, `COST_DOWN` | `cost_task=<old>-><new>`, `(<±pct>)`, optional `price_out=<old>-><new> (<±pct>)`, display name | official cost per request changed |
 | `PEAK_COST_UP`, `PEAK_COST_DOWN` | `peak_cost_task=<old>-><new>`, `(<±pct>)`, display name | peak-hour cost per request changed |
@@ -100,11 +107,13 @@ base tier); `cost_tok` is the retail USD price per 1M output tokens;
 | `UNLIMITED_ON`, `UNLIMITED_OFF` | `plan=`, `allowance=<old>->unlimited` (or the reverse), display name | the model became/stopped being free |
 | `CONTEXT_UP`, `CONTEXT_DOWN` | `ctx_k=<old>-><new>`, optional `out_k=<old>-><new>`, display name | context window or maximum output changed |
 | `PRIVACY_CHANGE` | `privacy=<old>-><new>`, display name | the privacy verdict changed |
+| `UNAVAIL_ON`, `UNAVAIL_OFF` | `UNAVAIL_ON` carries `unavail=yes`; both: display name | the user added the model to (or removed it from) the `-unavail` country-availability list |
 | `NAME_CHANGE` | `was="<old name>"`, then `tier`, `quality`, `"<new name>"` | display name changed |
 | `TIER_UP`, `TIER_DOWN` | `tier=<old>-><new>`, `quality=<old>-><new>`, display name | AA quality tier moved |
 | `ERROR` | `ERROR <source>: <message>` | a source changed shape, was unreachable, or its refresh failed (an expired cache was used); `-news` does not advance the baseline when the snapshot is unusable |
 
-Common lines end with `tier=<tier> quality=<score-or--> "<display name>"`.
+Common lines end with `tier=<tier> quality=<score-or--> "<display name>"` (plus
+an optional `unavail=yes` field behind `quality=`, see above).
 When `-email` is set, non-empty output is mailed; two consecutive runs made of
 only `ERROR` lines skip the second mail.
 
@@ -123,11 +132,11 @@ Piped header: `#window	status	used_pct	remaining_pct	resets_at	resets_in`
 
 ## View: `-now` (what is affordable right now)
 
-Piped header: `#name	cost_task	burn_req	spent_mo	reqs_5h	reqs_wk	reqs_mo	usable	limit	p_tok_s`
+Piped header: `#name	cost_task	burn_req	spent_mo	reqs_5h	reqs_wk	reqs_mo	usable	limit	p_tok_s	avail`
 
 | # | Column | Meaning |
 |---|---|---|
-| 1 | `#name` | model display name (models.dev catalog) |
+| 1 | `#name` | model display name (models.dev catalog); `[peak]` suffix marks the peak-hours twin row |
 | 2 | `cost_task` | official allowance cost per coding-agent request (OpenCode token profile, base tier) |
 | 3 | `burn_req` | allowance dollars one request burns: measured from console tokens when the model has at least 50 requests this period, otherwise `cost_task`; `[peak]` twins scale the measured burn by the official peak/base price ratio |
 | 4 | `spent_mo` | allowance dollars spent this period (console tokens priced at Go rates, or `-spent`), subtracted from the model's monthly limit; blank when spend is unknown. With extra usage enabled, console spend can include balance-billed traffic, so this is an upper bound on allowance consumed |
@@ -137,6 +146,7 @@ Piped header: `#name	cost_task	burn_req	spent_mo	reqs_5h	reqs_wk	reqs_mo	usable	
 | 8 | `usable` | min of `reqs_5h` / `reqs_wk` / `reqs_mo` — what you can use now |
 | 9 | `limit` | binding constraint: `5h` \| `week` \| `month` \| `unlimited` \| `unknown` |
 | 10 | `p_tok_s` | **measured** output tok/s on your subscription (from `-probe`) |
+| 11 | `avail` | as in the main table: `no` when the user marked the model unavailable in their country (`-unavail`), `yes` otherwise; `-avail` masks the `no` rows before sorting |
 
 `-now` assumptions (printed on stderr, never in the piped stream): Go usage
 limits are **per model**. Each model's monthly limit is the dollar allowance
@@ -162,7 +172,7 @@ ratio; the console does not tag tokens by regime).
 
 ## View: `-full` (static quality plus affordable requests)
 
-Piped header: `#name	cost_tok	cost_task	allowance	r_quota	tok_s	ttft_s	p_tok_s	p_ttft_s	aa_int	aa_code	aa_math	code_b	term_b	if_b	aa_lcr	swe_b	pareto	src	privacy	ctx_k	out_k	lb_agent	lb_code	elo	btr	burn_req	spent_mo	reqs_5h	reqs_wk	reqs_mo	usable	limit`
+Piped header: `#name	cost_tok	cost_task	allowance	r_quota	tok_s	ttft_s	p_tok_s	p_ttft_s	aa_int	aa_code	aa_math	code_b	term_b	if_b	aa_lcr	swe_b	pareto	src	privacy	ctx_k	out_k	lb_agent	lb_code	elo	btr	avail	burn_req	spent_mo	reqs_5h	reqs_wk	reqs_mo	usable	limit`
 
 Column order is the main order first, then the `-now`-only columns in `-now`
 order. Shared titles (`name`, `cost_task`, `p_tok_s`) carry the same value in
@@ -171,14 +181,14 @@ monthly count is `r_quota` (main), the remaining count is `reqs_mo` (`-now`).
 
 | # | Column | Meaning |
 |---|---|---|
-| 1–24 | main columns, in main order | identical values and meanings to the main table above |
-| 25 | `burn_req` | as in `-now` |
-| 26 | `spent_mo` | as in `-now` |
-| 27 | `reqs_5h` | as in `-now` |
-| 28 | `reqs_wk` | as in `-now` |
-| 29 | `reqs_mo` | as in `-now`: requests left in the monthly limit after `spent_mo` |
-| 30 | `usable` | as in `-now` |
-| 31 | `limit` | as in `-now` |
+| 1–25 | main columns, in main order | identical values and meanings to the main table above |
+| 26 | `burn_req` | as in `-now` |
+| 27 | `spent_mo` | as in `-now` |
+| 28 | `reqs_5h` | as in `-now` |
+| 29 | `reqs_wk` | as in `-now` |
+| 30 | `reqs_mo` | as in `-now`: requests left in the monthly limit after `spent_mo` |
+| 31 | `usable` | as in `-now` |
+| 32 | `limit` | as in `-now` |
 
 `-full` is live like `-now` (console spend, aggregate windows) and loads AA
 scores like the main table, so every row filter applies — including

@@ -1,5 +1,14 @@
 # History
 
+- v1.0.1 2026-11-08 Country availability: you can mark the models that
+  refuse to serve your account ("this model is not available in your
+  country") with `-unavail` (also the config key `unavail`; same
+  pattern matching as `-exclude`). A new `avail` column (`yes|no`),
+  appended to the main, `-now` and `-full` views, carries the marker, and
+  `-avail` hides the marked models everywhere — before Pareto marking, so
+  a hidden model never dominates — and skips their paid probes. `-news`
+  reports a marking or unmarking as `UNAVAIL_ON` / `UNAVAIL_OFF` lines, and
+  every line about a marked model carries an `unavail=yes` field.
 - v1.0.0 2026-11-05 Output format freeze (See TITLES.md). No other changes.
 - v0.1.23 2026-11-05 `-news`: reports what changed in the Go plan since the
   previous run — models added/removed, cost per request, both plans' budgets,

@@ -31,7 +31,7 @@ import (
 )
 
 // version is displayed at the bottom of the -h help text.
-var version = "v1.0.0"
+var version = "v1.0.1"
 
 // colList accumulates comma-separated -cols/-excols values. The flag may be
 // repeated and unions with the config-file default; output order always
@@ -63,6 +63,8 @@ var (
 	pareto     *bool
 	paid       *bool
 	privacy    *bool
+	avail      *bool
+	unavail    *string
 	exclude    *string
 	include    *string
 	maxCost    *float64
@@ -103,6 +105,8 @@ func registerFlags(fs *flag.FlagSet) {
 	pareto = fs.Bool("pareto", false, "only Pareto-optimal rows")
 	paid = fs.Bool("paid", false, "hide free models (cost_task = 0)")
 	privacy = fs.Bool("privacy", false, "hide models that train on request data or have unknown privacy status")
+	avail = fs.Bool("avail", false, "hide models marked as not available in your country (see -unavail)")
+	unavail = fs.String("unavail", "", "comma-separated model IDs or name patterns that refuse to serve your account ('this model is not available in your country'); you maintain this list, the avail column marks them and -avail hides them")
 	exclude = fs.String("exclude", "", "hide models whose ID or name matches any comma-separated pattern ('*' and '?' are wildcards)")
 	include = fs.String("include", "", "show only models whose ID or name matches any comma-separated pattern ('*' and '?' are wildcards)")
 	maxCost = fs.Float64("max-cost", 0, "hide models whose cost per task (cost_task, USD) exceeds this value")
@@ -136,6 +140,7 @@ func registerFlags(fs *flag.FlagSet) {
 	jsonOut = fs.Bool("json", false, "JSON output instead of TSV")
 	showLegend = fs.Bool("l", false, "print the legend block explaining each column")
 	config.AddOptions("provider", "plan", "sort", "pareto", "paid", "privacy",
+		"avail", "unavail",
 		"exclude", "include", "max-cost", "min-speed", "min-quality", "missing",
 		"cols", "excols",
 		"peak", "refresh", "offline", "aa-pro", "probe", "probe-model", "probe-max-allowance",
@@ -191,6 +196,9 @@ func main() {
 		fmt.Fprintln(os.Stderr, cerr)
 		os.Exit(2)
 	}
+	// Availability state: the models the user marked as refusing to serve
+	// their country (-unavail option or config key). Shared by every view.
+	unavailable := splitList(*unavail)
 	if vs := selectedViews(); len(vs) > 1 {
 		fmt.Fprintf(os.Stderr, "only one view at a time: %s\n", strings.Join(vs, ", "))
 		os.Exit(2)
@@ -228,7 +236,7 @@ func main() {
 		if (*jsonOut || *vertical) && isTTY(os.Stderr) {
 			fmt.Fprintln(os.Stderr, "warning: -json and -vertical are ignored by -news (one change per line)")
 		}
-		if err := runNews(os.Stdout, *email, *refresh, *offline, *aaPro, time.Duration(*planTTL)*time.Second); err != nil {
+		if err := runNews(os.Stdout, *email, *refresh, *offline, *aaPro, time.Duration(*planTTL)*time.Second, unavailable); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
@@ -257,7 +265,7 @@ func main() {
 			fmt.Fprintln(os.Stderr, "spent file:", err)
 			os.Exit(1)
 		}
-		if err := runNow(*plan, spentByModel, *spent != "", *paid, *privacy, flt, *peak, *winEst, *vertical, *jsonOut, *showLegend, *refresh, *offline, isTTY(os.Stdout), csel, *nohead, ttl); err != nil {
+		if err := runNow(*plan, spentByModel, *spent != "", *paid, *privacy, *avail, unavailable, flt, *peak, *winEst, *vertical, *jsonOut, *showLegend, *refresh, *offline, isTTY(os.Stdout), csel, *nohead, ttl); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
@@ -274,7 +282,7 @@ func main() {
 			fmt.Fprintln(os.Stderr, "spent file:", err)
 			os.Exit(1)
 		}
-		if err := runFull(*plan, spentByModel, *spent != "", *paid, *privacy, flt, *peak, *winEst, *vertical, *jsonOut, *showLegend, *refresh, *offline, isTTY(os.Stdout), csel, *nohead, ttl); err != nil {
+		if err := runFull(*plan, spentByModel, *spent != "", *paid, *privacy, *avail, unavailable, flt, *peak, *winEst, *vertical, *jsonOut, *showLegend, *refresh, *offline, isTTY(os.Stdout), csel, *nohead, ttl); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
@@ -305,13 +313,15 @@ func main() {
 	applyLivePlan(*refresh, *offline, models)
 	aas, swe, lb, elo, btr := fetchBenchmarks(*refresh, *offline)
 
-	probes, perr := probeModels(models, flt, *probeAll, *refresh, *offline, *privacy, *probeMax)
+	probes, perr := probeModels(models, flt, *probeAll, *refresh, *offline, *privacy, *avail, unavailable, *probeMax)
 	if perr != nil {
 		fmt.Fprintln(os.Stderr, "probe:", perr)
 		os.Exit(1)
 	}
 
 	rows := table.Build(models, aas, probes, swe, lb, elo, btr, *plan, *peak)
+	// The avail column is decided before pruning, so [peak] twins inherit it.
+	setAvail(rows, unavailable)
 	if *paid {
 		rows = slices.DeleteFunc(rows, func(r table.Row) bool { return r.CostTask == 0 })
 	}
@@ -319,6 +329,9 @@ func main() {
 		rows = slices.DeleteFunc(rows, func(r table.Row) bool {
 			return goplan.ExcludedByPrivacy(r.ID)
 		})
+	}
+	if *avail {
+		rows = slices.DeleteFunc(rows, func(r table.Row) bool { return r.Avail == "no" })
 	}
 	if !*peak {
 		// Peak twins inherit the paid/privacy verdicts above; their peak
@@ -380,10 +393,11 @@ func applyConfig(fs *flag.FlagSet) error {
 	str := map[string]*string{
 		"provider": provider, "plan": plan, "sort": sortKey,
 		"probe-model": probeOne, "spent": spent, "email": email,
+		"unavail": unavail,
 		"exclude": exclude, "include": include, "min-quality": minQuality, "missing": missing,
 	}
 	boolean := map[string]*bool{
-		"pareto": pareto, "paid": paid, "privacy": privacy, "peak": peak,
+		"pareto": pareto, "paid": paid, "privacy": privacy, "avail": avail, "peak": peak,
 		"refresh": refresh, "offline": offline, "aa-pro": aaPro, "probe": probeAll, "usage": showUse,
 		"now": now, "full": fullView, "main": mainView, "window-estimate": winEst, "doctor": doctor,
 		"news":     newsView,
@@ -721,10 +735,29 @@ func fetchBenchmarks(refresh, offline bool) (aas []aa.Model, swe map[string]floa
 	return aas, swe, lb, elo, btr
 }
 
+// availLabel renders the avail column: "no" when -unavail (or the
+// opencodable.conf unavail option) marks the model as refusing to serve the
+// user's country, "yes" otherwise. Matching follows -exclude: case-ignoring
+// globs or plain words against the ID or display name.
+func availLabel(unavail []string, id, name string) string {
+	if len(unavail) > 0 && (table.Filter{Exclude: unavail}).Excluded(id, name) {
+		return "no"
+	}
+	return "yes"
+}
+
+// setAvail fills the avail column of main rows before any pruning, so peak
+// twins and every downstream render carry the verdict.
+func setAvail(rows []table.Row, unavail []string) {
+	for i := range rows {
+		rows[i].Avail = availLabel(unavail, rows[i].ID, rows[i].Name)
+	}
+}
+
 // probeModels returns cached probe measurements, running fresh paid probes
-// when asked. Hidden models (-privacy, -exclude, or missing -include) are
-// skipped: hidden rows are not worth paid probe requests.
-func probeModels(models []modelsdev.Model, flt table.Filter, doProbe, doRefresh, doOffline, doPrivacy bool, probeMax float64) (map[string]probe.Result, error) {
+// when asked. Hidden models (-privacy, -avail, -exclude, or missing
+// -include) are skipped: hidden rows are not worth paid probe requests.
+func probeModels(models []modelsdev.Model, flt table.Filter, doProbe, doRefresh, doOffline, doPrivacy, doAvail bool, unavail []string, probeMax float64) (map[string]probe.Result, error) {
 	probes := map[string]probe.Result{}
 	for _, m := range models {
 		if r, ok := cachedProbe(m.ID); ok {
@@ -744,6 +777,9 @@ func probeModels(models []modelsdev.Model, flt table.Filter, doProbe, doRefresh,
 	burned := 0.0
 	for _, m := range models {
 		if doPrivacy && goplan.ExcludedByPrivacy(m.ID) {
+			continue
+		}
+		if doAvail && availLabel(unavail, m.ID, m.Name) == "no" {
 			continue
 		}
 		if flt.Excluded(m.ID, m.Name) || !flt.Included(m.ID, m.Name) {
@@ -1086,6 +1122,7 @@ type nowRow struct {
 	unlimited bool // free model: no per-model cap
 	known     bool // plan snapshot knows this model
 	probeTokS float64
+	avail     string // yes | no
 }
 
 // nowLegend documents the -now columns; printed only with -l.
@@ -1102,6 +1139,7 @@ var nowLegend = []string{
 	"# usable     min of reqs_5h / reqs_wk / reqs_mo — what you can use now",
 	"# limit      binding constraint: 5h | week | month | unlimited | unknown",
 	"# p_tok_s    measured output tok/s on your subscription (trusted probe windows only)",
+	"# avail      no = you marked it 'not available in your country' (-unavail); -avail masks those models",
 }
 
 // buildNowRows is the testable core of -now. Go limits are per model: the
@@ -1109,10 +1147,16 @@ var nowLegend = []string{
 // the monthly window is what remains of it. Spend is in allowance dollars.
 // wspend carries estimated window spend per model (nil = fresh caps);
 // over-spent budgets clamp to zero inside usage.Requests.
-func buildNowRows(models []modelsdev.Model, spend map[string]spendInfo, spendKnown bool, planName string, peak, paid, privacy bool, wspend map[string]windowSpend, speeds map[string]float64) []nowRow {
+func buildNowRows(models []modelsdev.Model, spend map[string]spendInfo, spendKnown bool, planName string, peak, paid, privacy, avail bool, unavail []string, wspend map[string]windowSpend, speeds map[string]float64) []nowRow {
 	var rows []nowRow
 	for _, m := range models {
 		if privacy && goplan.ExcludedByPrivacy(m.ID) {
+			continue
+		}
+		// Availability is set before the -avail prune, so the twin below
+		// inherits it.
+		rAvail := availLabel(unavail, m.ID, m.Name)
+		if avail && rAvail == "no" {
 			continue
 		}
 		costTask := cost.PerRequest(m, peak)
@@ -1129,6 +1173,7 @@ func buildNowRows(models []modelsdev.Model, spend map[string]spendInfo, spendKno
 					id: m.ID, name: m.Name, costTask: costTask, burn: costTask,
 					spentMo: spend[m.ID].usd, spentOK: spend[m.ID].known || spendKnown,
 					binding: "unknown", known: false, probeTokS: speeds[m.ID],
+					avail: rAvail,
 				})
 				continue
 			}
@@ -1137,7 +1182,7 @@ func buildNowRows(models []modelsdev.Model, spend map[string]spendInfo, spendKno
 			rows = append(rows, nowRow{
 				id: m.ID, name: m.Name, costTask: costTask,
 				binding: "unlimited", unlimited: true, known: planKnown,
-				probeTokS: speeds[m.ID],
+				probeTokS: speeds[m.ID], avail: rAvail,
 			})
 			continue
 		}
@@ -1170,6 +1215,7 @@ func buildNowRows(models []modelsdev.Model, spend map[string]spendInfo, spendKno
 			spentMo: spent, spentOK: si.known,
 			five: five, week: week, month: month, usable: usable,
 			binding: binding, known: true, probeTokS: speeds[m.ID],
+			avail: rAvail,
 		})
 		if !peak {
 			// Peak twin: same spend dollars, peak burn. With a measured
@@ -1189,6 +1235,7 @@ func buildNowRows(models []modelsdev.Model, spend map[string]spendInfo, spendKno
 					spentMo: spent, spentOK: si.known,
 					five: tfive, week: tweek, month: tmonth, usable: tusable,
 					binding: tbinding, known: true, probeTokS: speeds[m.ID],
+					avail: rAvail,
 				})
 			}
 		}
@@ -1295,7 +1342,7 @@ func sortNowRows(rows []nowRow, key string) {
 // requests fit in its own Go 5h/weekly/monthly windows. There is no shared
 // pot: the docs define the windows as percentages of each model's monthly
 // limit. Per-model spend is measured from console token counts at Go prices.
-func runNow(planName string, spentFile map[string]float64, spentGiven, paid, privacy bool, flt table.Filter, peak, windowEstimate, vertical, jsonOut, withLegend, refresh, offline, tty bool, sel colSel, nohead bool, ttl time.Duration) error {
+func runNow(planName string, spentFile map[string]float64, spentGiven, paid, privacy, avail bool, unavail []string, flt table.Filter, peak, windowEstimate, vertical, jsonOut, withLegend, refresh, offline, tty bool, sel colSel, nohead bool, ttl time.Duration) error {
 	models, err := modelsdev.Fetch("opencode-go", refresh, offline)
 	if err != nil {
 		return err
@@ -1310,7 +1357,7 @@ func runNow(planName string, spentFile map[string]float64, spentGiven, paid, pri
 	win := resolveWindowSpend(windowEstimate, offline, models, spend, spendKnown, planName, ttl, refresh)
 
 	speeds := cachedProbeSpeeds(models)
-	rows := buildNowRows(models, spend, spendKnown, planName, peak, paid, privacy, win.spend, speeds)
+	rows := buildNowRows(models, spend, spendKnown, planName, peak, paid, privacy, avail, unavail, win.spend, speeds)
 	rows = filterNowRows(rows, flt)
 	if optionSet(flag.CommandLine, "sort") {
 		if *sortKey == "quality" {
@@ -1337,14 +1384,14 @@ func runNow(planName string, spentFile map[string]float64, spentGiven, paid, pri
 	fullCells := func(r nowRow) []string {
 		switch {
 		case r.unlimited:
-			return []string{r.name, "", "", "", "", "", "", "", "unlimited", table.Num(r.probeTokS, false)}
+			return []string{r.name, "", "", "", "", "", "", "", "unlimited", table.Num(r.probeTokS, false), r.avail}
 		case !r.known:
-			return []string{r.name, table.Num(r.costTask, true), table.Num(r.burn, true), table.SpentCell(r.spentMo, r.spentOK, ""), "", "", "", "", "unknown", table.Num(r.probeTokS, false)}
+			return []string{r.name, table.Num(r.costTask, true), table.Num(r.burn, true), table.SpentCell(r.spentMo, r.spentOK, ""), "", "", "", "", "unknown", table.Num(r.probeTokS, false), r.avail}
 		default:
 			return []string{
 				r.name, table.Num(r.costTask, true), table.Num(r.burn, true), table.SpentCell(r.spentMo, r.spentOK, ""),
 				strconv.Itoa(r.five), strconv.Itoa(r.week), strconv.Itoa(r.month),
-				strconv.Itoa(r.usable), r.binding, table.Num(r.probeTokS, false),
+				strconv.Itoa(r.usable), r.binding, table.Num(r.probeTokS, false), r.avail,
 			}
 		}
 	}
@@ -1371,6 +1418,7 @@ func runNow(planName string, spentFile map[string]float64, spentGiven, paid, pri
 				"unlimited": r.unlimited, "known": r.known,
 				"window_estimate": windowEstimate, "window_method": win.method,
 				"p_tok_s": r.probeTokS,
+				"avail":   r.avail,
 			}
 			for k := range m {
 				if !keep[k] {
@@ -1487,7 +1535,7 @@ func joinFull(mrows []table.Row, nrows []nowRow, windowEstimate bool) []table.Fu
 // then the -now-only columns. Like -now it needs a key and is live; unlike
 // -now, quality filters apply because AA scores are loaded. Speed filtering
 // uses the effective speed (measured probe when available, else AA).
-func runFull(planName string, spentFile map[string]float64, spentGiven, paid, privacy bool, flt table.Filter, peak, windowEstimate, vertical, jsonOut, withLegend, refresh, offline, tty bool, sel colSel, nohead bool, ttl time.Duration) error {
+func runFull(planName string, spentFile map[string]float64, spentGiven, paid, privacy, avail bool, unavail []string, flt table.Filter, peak, windowEstimate, vertical, jsonOut, withLegend, refresh, offline, tty bool, sel colSel, nohead bool, ttl time.Duration) error {
 	models, err := modelsdev.Fetch("opencode-go", refresh, offline)
 	if err != nil {
 		return err
@@ -1498,12 +1546,15 @@ func runFull(planName string, spentFile map[string]float64, spentGiven, paid, pr
 		byID[m.ID] = m
 	}
 	aas, swe, lb, elo, btr := fetchBenchmarks(refresh, offline)
-	probes, perr := probeModels(models, flt, *probeAll, refresh, offline, privacy, *probeMax)
+	probes, perr := probeModels(models, flt, *probeAll, refresh, offline, privacy, avail, unavail, *probeMax)
 	if perr != nil {
 		return fmt.Errorf("probe: %w", perr)
 	}
 
 	mrows := table.Build(models, aas, probes, swe, lb, elo, btr, planName, peak)
+	// Same order as the main flow: the avail column is decided before pruning,
+	// so [peak] twins inherit it.
+	setAvail(mrows, unavail)
 	if paid {
 		mrows = slices.DeleteFunc(mrows, func(r table.Row) bool { return r.CostTask == 0 })
 	}
@@ -1511,6 +1562,9 @@ func runFull(planName string, spentFile map[string]float64, spentGiven, paid, pr
 		mrows = slices.DeleteFunc(mrows, func(r table.Row) bool {
 			return goplan.ExcludedByPrivacy(r.ID)
 		})
+	}
+	if avail {
+		mrows = slices.DeleteFunc(mrows, func(r table.Row) bool { return r.Avail == "no" })
 	}
 	if !peak {
 		// Same order as the main flow: twins inherit paid/privacy, then
@@ -1526,7 +1580,7 @@ func runFull(planName string, spentFile map[string]float64, spentGiven, paid, pr
 	spend, spendKnown := fetchSpend(byID, spentFile, spentGiven, peak, windowEstimate, offline, ttl, refresh)
 	win := resolveWindowSpend(windowEstimate, offline, models, spend, spendKnown, planName, ttl, refresh)
 	speeds := cachedProbeSpeeds(models)
-	nrows := buildNowRows(models, spend, spendKnown, planName, peak, paid, privacy, win.spend, speeds)
+	nrows := buildNowRows(models, spend, spendKnown, planName, peak, paid, privacy, avail, unavail, win.spend, speeds)
 
 	rows := joinFull(mrows, nrows, windowEstimate)
 	for i := range rows {

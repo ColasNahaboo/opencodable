@@ -13,6 +13,7 @@ func NowTitles() []string {
 	return []string{
 		"#name", "cost_task", "burn_req", "spent_mo", "reqs_5h",
 		"reqs_wk", "reqs_mo", "usable", "limit", "p_tok_s",
+		"avail",
 	}
 }
 
