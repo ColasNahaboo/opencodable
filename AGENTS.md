@@ -101,6 +101,12 @@ internal/config/       opencodable.conf (key=value: API keys + option
   `aa_code`, `aa_math` and `code_b` stay empty. Free and Pro use separate cache
   keys (`aa-models-v2-free.json` / `aa-models-v2-pro.json`); the Free tier
   allows 100 requests per 24h, so a full refresh costs 4.
+- **AA performance v3**: from 2026-12-10 the legacy `performance` block on
+  the models endpoints returns `null`; `performance_v3` replaces it and
+  reports **means** over a trailing 5-day window, not medians. `aa.Model.Speed`
+  prefers v3 and falls back to the legacy medians, so stale caches and models
+  not yet v3-measured stay readable through the transition. The Free shape
+  carries the three headline means; `time_per_task_seconds` is Pro-only.
 - **AA slug matching**: `normalize.Match` resolves a models.dev ID by exact
   slug, then the alias table in `internal/normalize` (`mimo-v2.5` →
   `mimo-v2-5-0424`, `step-5-preview` → `step-5`, …), then dots-as-dashes

@@ -1,6 +1,7 @@
 package aa
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -15,7 +16,9 @@ const freePage1 = `{"tier":"free","pagination":{"page":1,"page_size":200,"total_
 	"evaluations":{"artificial_analysis_intelligence_index":42.5,"artificial_analysis_coding_index":null},
 	"pricing":{"price_1m_input_tokens":1.4,"price_1m_output_tokens":4.4,"price_1m_cache_hit_tokens":0.26},
 	"performance":{"median_output_tokens_per_second":80.07,"median_time_to_first_token_seconds":2.22,
-		"median_time_to_first_answer_token_seconds":27.19,"median_end_to_end_response_time_seconds":33.44}
+		"median_time_to_first_answer_token_seconds":27.19,"median_end_to_end_response_time_seconds":33.44},
+	"performance_v3":{"mean_output_tokens_per_second":74.1,"mean_time_to_first_token_seconds":2.5,
+		"mean_time_to_first_answer_token_seconds":2.5}
 }]}`
 
 const freePage2 = `{"tier":"free","pagination":{"page":2,"page_size":200,"total_pages":2,"has_more":false},"data":[{
@@ -82,12 +85,15 @@ func TestFetchPaginatesAndParsesV2(t *testing.T) {
 	if m1.Pricing.Output != 4.4 {
 		t.Errorf("nested pricing = %v, want 4.4", m1.Pricing.Output)
 	}
-	if m1.Performance.TokPerSec != 80.07 || m1.Performance.TTFTSeconds != 2.22 {
-		t.Errorf("nested performance = %+v", m1.Performance)
+	if m1.Performance.TokPerSec != 80.07 || m1.PerformanceV3.TokPerSec != 74.1 {
+		t.Errorf("nested performance = %+v / v3 %+v", m1.Performance, m1.PerformanceV3)
+	}
+	if tok, ttft := m1.Speed(); tok != 74.1 || ttft != 2.5 {
+		t.Errorf("Speed = %v, %v; want Performance v3 74.1, 2.5", tok, ttft)
 	}
 	m2 := models[1]
-	if m2.Performance.TokPerSec != 61.2 {
-		t.Errorf("page 2 speed = %v, want 61.2", m2.Performance.TokPerSec)
+	if tok, ttft := m2.Speed(); tok != 61.2 || ttft != 3.1 {
+		t.Errorf("legacy fallback Speed = %v, %v; want 61.2, 3.1", tok, ttft)
 	}
 	if m2.Evaluations.Terminal == nil || *m2.Evaluations.Terminal != 0.419 {
 		t.Errorf("terminalbench = %v", m2.Evaluations.Terminal)
@@ -181,5 +187,51 @@ func TestFetchNoKey(t *testing.T) {
 	_, err := Fetch(false, false, false)
 	if err == nil || !strings.Contains(err.Error(), "no Artificial Analysis key") {
 		t.Errorf("Fetch error = %v, want a missing-key error", err)
+	}
+}
+
+// TestSpeedPrefersPerformanceV3 covers the 2026-12-10 API change: the legacy
+// median block goes null, and the v3 means must win whenever measured.
+func TestSpeedPrefersPerformanceV3(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+		tok  float64
+		ttft float64
+	}{
+		{
+			name: "v3 wins over legacy",
+			body: `{"performance":{"median_output_tokens_per_second":80,"median_time_to_first_token_seconds":2.2},
+				"performance_v3":{"mean_output_tokens_per_second":74,"mean_time_to_first_token_seconds":2.5}}`,
+			tok: 74, ttft: 2.5,
+		},
+		{
+			name: "legacy fallback",
+			body: `{"performance":{"median_output_tokens_per_second":61.2,"median_time_to_first_token_seconds":3.1},
+				"performance_v3":null}`,
+			tok: 61.2, ttft: 3.1,
+		},
+		{
+			name: "v3 only",
+			body: `{"performance":{"median_output_tokens_per_second":null,"median_time_to_first_token_seconds":null},
+				"performance_v3":{"mean_output_tokens_per_second":55,"mean_time_to_first_token_seconds":4}}`,
+			tok: 55, ttft: 4,
+		},
+		{
+			name: "unmeasured",
+			body: `{"performance":{"median_output_tokens_per_second":null},"performance_v3":null}`,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var m Model
+			if err := json.Unmarshal([]byte(tc.body), &m); err != nil {
+				t.Fatal(err)
+			}
+			tok, ttft := m.Speed()
+			if tok != tc.tok || ttft != tc.ttft {
+				t.Errorf("Speed = %v, %v; want %v, %v", tok, ttft, tc.tok, tc.ttft)
+			}
+		})
 	}
 }

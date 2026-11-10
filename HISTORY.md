@@ -1,5 +1,10 @@
 # History
 
+- v1.0.2 2026-11-10 Artificial Analysis performance v3: the models endpoints
+  null the legacy median `performance` block on 2026-12-10, so `tok_s` and
+  `ttft_s` now read `performance_v3` (means over a trailing 5-day window) and
+  fall back to the legacy medians only when v3 has no measurement. Values
+  shift slightly (mean rather than median); no column changes.
 - v1.0.1 2026-11-08 Country availability: you can mark the models that
   refuse to serve your account ("this model is not available in your
   country") with `-unavail` (also the config key `unavail`; same

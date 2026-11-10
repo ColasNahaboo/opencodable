@@ -35,8 +35,8 @@ Piped header: `#name	cost_tok	cost_task	allowance	r_quota	tok_s	ttft_s	p_tok_s	p
 | 3 | `cost_task` | estimated USD per coding-agent request (OpenCode official token profile, base tier) |
 | 4 | `allowance` | monthly usage budget of this model in the plan; `unlimited` for free models |
 | 5 | `r_quota` | allowance ÷ cost_task ≈ requests per month (theoretical, full reset) |
-| 6 | `tok_s` | Artificial Analysis median output tok/s (V2 `performance`, reported, other hosts) |
-| 7 | `ttft_s` | AA median seconds to first token, thinking included (V2 `performance`) |
+| 6 | `tok_s` | Artificial Analysis output tok/s (V3 `performance_v3` mean; legacy median fallback) |
+| 7 | `ttft_s` | AA seconds to first token, thinking included (V3 `performance_v3` mean; legacy median fallback) |
 | 8 | `p_tok_s` | **measured** output tok/s on your subscription (from `-probe`; too-short or suspect measurements are omitted) |
 | 9 | `p_ttft_s` | **measured** seconds to first content token (from `-probe`; thinking time is included in the wait) |
 | 10 | `aa_int` | Artificial Analysis Intelligence Index (composite; Free and Pro) |

@@ -73,8 +73,8 @@ func Build(models []modelsdev.Model, aas []aa.Model, probes map[string]probe.Res
 	bySlug := map[string]aa.Model{}
 	for _, a := range aas {
 		slugs[a.Slug] = true
-		if a.Performance.TokPerSec > speeds[a.Slug] {
-			speeds[a.Slug] = a.Performance.TokPerSec
+		if tok, _ := a.Speed(); tok > speeds[a.Slug] {
+			speeds[a.Slug] = tok
 		}
 		bySlug[a.Slug] = a
 	}
@@ -112,7 +112,7 @@ func Build(models []modelsdev.Model, aas []aa.Model, probes map[string]probe.Res
 		if slug != "" {
 			a := bySlug[slug]
 			r.TokPerSec = speeds[slug]
-			r.TTFTSeconds = a.Performance.TTFTSeconds
+			_, r.TTFTSeconds = a.Speed()
 			r.AAIntel = a.Evaluations.Intel
 			r.AACoding = f(a.Evaluations.Coding)
 			r.AAMath = f(a.Evaluations.Math)

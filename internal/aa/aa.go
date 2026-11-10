@@ -54,12 +54,34 @@ type Model struct {
 		CacheHit   float64  `json:"price_1m_cache_hit_tokens"`
 		CacheWrite *float64 `json:"price_1m_cache_write_tokens"`
 	} `json:"pricing"`
+	// Performance is the legacy median block. Every field returns null from
+	// 2026-12-10; PerformanceV3 replaces it.
 	Performance struct {
 		TokPerSec   float64 `json:"median_output_tokens_per_second"`
 		TTFTSeconds float64 `json:"median_time_to_first_token_seconds"`
 		TTATSeconds float64 `json:"median_time_to_first_answer_token_seconds"`
 		E2ESeconds  float64 `json:"median_end_to_end_response_time_seconds"`
 	} `json:"performance"`
+	// PerformanceV3 carries the headline means over a trailing 5-day window.
+	// The Free shape has the three headline values; Pro adds the per-task
+	// time.
+	PerformanceV3 struct {
+		TokPerSec   float64 `json:"mean_output_tokens_per_second"`
+		TTFTSeconds float64 `json:"mean_time_to_first_token_seconds"`
+		TTATSeconds float64 `json:"mean_time_to_first_answer_token_seconds"`
+		TaskSeconds float64 `json:"time_per_task_seconds"` // Pro tier only
+	} `json:"performance_v3"`
+}
+
+// Speed returns the model's reported output speed and time to first token.
+// Performance v3 wins when present: the legacy median block returns null from
+// 2026-12-10 and v3 is the current methodology. The fallback keeps stale
+// caches and models not yet measured by v3 readable during the transition.
+func (m Model) Speed() (tokPerSec, ttftSec float64) {
+	if v := m.PerformanceV3; v.TokPerSec > 0 || v.TTFTSeconds > 0 {
+		return v.TokPerSec, v.TTFTSeconds
+	}
+	return m.Performance.TokPerSec, m.Performance.TTFTSeconds
 }
 
 // CacheKey names the disk cache entry for the active endpoint. Free and Pro
