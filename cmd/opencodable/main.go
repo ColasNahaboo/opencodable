@@ -31,7 +31,7 @@ import (
 )
 
 // version is displayed at the bottom of the -h help text.
-var version = "v1.0.2"
+var version = "v1.0.3-dev.1"
 
 // colList accumulates comma-separated -cols/-excols values. The flag may be
 // repeated and unions with the config-file default; output order always
@@ -1008,8 +1008,8 @@ func runUsage(jsonOut, withLegend, tty, nohead bool, ttl time.Duration, refresh 
 		type jsonWindow struct {
 			Window       string  `json:"window"`
 			Status       string  `json:"status"`
-			UsedPct      float64 `json:"used_pct"`
-			RemainingPct float64 `json:"remaining_pct"`
+			UsedPct      float64 `json:"used"`
+			RemainingPct float64 `json:"remain"`
 			ResetsAt     string  `json:"resets_at"`
 			ResetsIn     string  `json:"resets_in"`
 		}
@@ -1038,7 +1038,7 @@ func runUsage(jsonOut, withLegend, tty, nohead bool, ttl time.Duration, refresh 
 			w.ResetsAt.Local().Format(time.RFC3339),
 			resetIn(now, w.ResetsAt)}
 	}
-	head := []string{"#window", "status", "used_pct", "remaining_pct", "resets_at", "resets_in"}
+	head := []string{"#window", "status", "used", "remain", "resets_at", "resets_in"}
 	if withLegend {
 		for _, l := range useLegend {
 			fmt.Fprintln(os.Stdout, l)
@@ -1067,10 +1067,10 @@ func runUsage(jsonOut, withLegend, tty, nohead bool, ttl time.Duration, refresh 
 var useLegend = []string{
 	"# window        usage window: 5h = 20%, week = 50%, month = 100% of each model's monthly limit",
 	"# status        ok | throttled | exhausted (as reported by the endpoint)",
-	"# used_pct      percent of the window allowance already consumed",
-	"# remaining_pct 100 - used_pct",
+	"# used          percent of the window allowance already consumed",
+	"# remain        100 - used",
 	"# resets_at     local time when the window resets",
-	"# resets_in     humanized time until reset",
+	"# resets_in     time until reset, e.g. 4d 10h 15m (zero units omitted)",
 	"# note          the endpoint reports one aggregate set of windows; per-model caps are in -now",
 }
 

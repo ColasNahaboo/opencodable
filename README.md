@@ -172,10 +172,10 @@ minutes by default. `-ttl <seconds>` changes that (`0` turns the cache off), and
 `-refresh` forces an update.
 
 ```
-#window  status  used_pct  remaining_pct  resets_at                  resets_in
-5h       ok      35        65             2026-11-02T14:00:00+01:00  2h 10m 0s
-week     ok      40        60             2026-11-04T09:00:00+01:00  45h 20m 0s
-month    ok      21        79             2026-11-07T14:00:00+01:00  212h 30m 0s
+#window  status  used  remain  resets_at                  resets_in
+5h       ok      35    65      2026-11-02T14:00:00+01:00  2h 10m
+week     ok      40    60      2026-11-04T09:00:00+01:00  1d 21h 20m
+month    ok      21    79      2026-11-07T14:00:00+01:00  8d 20h 30m
 ```
 
 ## What's new (`-news`)
@@ -546,5 +546,5 @@ This repository is developed by me, a human hobbyist in my personal time, acting
 
 ## History
 
-Version v1.0.2 2026-11-10.
+Version v1.0.3-dev.1 2026-11-11.
 See [HISTORY.md](HISTORY.md).

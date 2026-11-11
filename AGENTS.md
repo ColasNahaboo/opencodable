@@ -70,12 +70,12 @@ internal/config/       opencodable.conf (key=value: API keys + option
 - **All CLI options** must also be settable in the config file (`-config`
   excepted, see gotchas).
 - **Boolean CLI options** can be unset by suffixing them by `=false`
-- **Commit, version and push each change** once it builds and passes the checks
-  in Build & test: bump the last number of the version (v1.0.0 → v1.0.1), or
-  the major on a TITLES.md-breaking change, tag
-  that commit, and push the commit and the tag. Author the commit with the
-  auto-commit skill's convention: your active model name, not a model name from
-  the catalog data.
+- **Commit each change** once it builds and passes the checks in Build & test.
+  While working on features, bump the version only to a pre-release dev number
+  (v1.0.2 → v1.0.3-dev.1, then v1.0.3-dev.2, …): never bump to a final version,
+  never create a tag or a release, and never push — unless explicitly asked.
+  Author the commit with the auto-commit skill's convention: your active model
+  name, not a model name from the catalog data.
 - **Doc-only changes** (no code touched): just commit them — no version bump,
   no tag, no push.
 - **No polling.** Never add loops, daemons or repeated requests against web

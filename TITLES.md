@@ -119,16 +119,16 @@ only `ERROR` lines skip the second mail.
 
 ## View: `-usage` (allowance windows)
 
-Piped header: `#window	status	used_pct	remaining_pct	resets_at	resets_in`
+Piped header: `#window	status	used	remain	resets_at	resets_in`
 
 | # | Column | Meaning |
 |---|---|---|
 | 1 | `#window` | usage window: `5h` = 20%, `week` = 50%, `month` = 100% of each model's monthly limit (the endpoint reports one aggregate set) |
 | 2 | `status` | `ok` / `throttled` / `exhausted`, as reported by the endpoint |
-| 3 | `used_pct` | percent of the window allowance already consumed |
-| 4 | `remaining_pct` | `100 - used_pct` |
+| 3 | `used` | percent of the window allowance already consumed |
+| 4 | `remain` | `100 - used` |
 | 5 | `resets_at` | local time (RFC3339) when the window resets |
-| 6 | `resets_in` | humanized time until reset, e.g. `4h 20m 0s` |
+| 6 | `resets_in` | time until reset, days rolled out of hours, zero units omitted, e.g. `4d 10h 15m` |
 
 ## View: `-now` (what is affordable right now)
 

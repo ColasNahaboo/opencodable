@@ -167,19 +167,34 @@ func Requests(b Budgets, burnPerReq float64) (five, week, month, usable int, bin
 	return
 }
 
-// HumanizeDuration formats a Go duration with spaces between components:
-// "4h23m0s" → "4h 23m 0s".
+// HumanizeDuration formats a Go duration with spaces between components and
+// days rolled out of hours: "4h23m0s" → "4h 23m", "106h15m" → "4d 10h 15m".
+// Zero components are omitted.
 func HumanizeDuration(d time.Duration) string {
-	s := d.String()
-	var b strings.Builder
-	for i, r := range s {
-		b.WriteRune(r)
-		if (r == 'h' || r == 'm' || r == 's') &&
-			i+1 < len(s) && s[i+1] >= '0' && s[i+1] <= '9' {
-			b.WriteByte(' ')
-		}
+	d = d.Round(time.Second)
+	if d < 0 {
+		d = 0
 	}
-	return b.String()
+	days := int64(d / (24 * time.Hour))
+	d -= time.Duration(days) * 24 * time.Hour
+	hours := int64(d / time.Hour)
+	d -= time.Duration(hours) * time.Hour
+	mins := int64(d / time.Minute)
+	secs := int64(d%time.Minute) / int64(time.Second)
+	parts := make([]string, 0, 4)
+	if days > 0 {
+		parts = append(parts, fmt.Sprintf("%dd", days))
+	}
+	if hours > 0 {
+		parts = append(parts, fmt.Sprintf("%dh", hours))
+	}
+	if mins > 0 {
+		parts = append(parts, fmt.Sprintf("%dm", mins))
+	}
+	if secs > 0 || len(parts) == 0 {
+		parts = append(parts, fmt.Sprintf("%ds", secs))
+	}
+	return strings.Join(parts, " ")
 }
 
 // ParseSpentFile reads a console "usage by model" paste (tab or 2+-space

@@ -37,10 +37,13 @@ func TestParseGarbage(t *testing.T) {
 
 func TestHumanizeDuration(t *testing.T) {
 	cases := map[time.Duration]string{
-		4*time.Hour + 23*time.Minute:                   "4h 23m 0s",
-		128*time.Hour + 11*time.Minute + 5*time.Second: "128h 11m 5s",
+		4*time.Hour + 23*time.Minute:                   "4h 23m",
+		128*time.Hour + 11*time.Minute + 5*time.Second: "5d 8h 11m 5s",
 		45 * time.Second:                               "45s",
 		2*time.Minute + 30*time.Second:                 "2m 30s",
+		4*24*time.Hour + 10*time.Hour:                  "4d 10h",
+		106*time.Hour + 15*time.Minute:                 "4d 10h 15m",
+		90 * time.Minute:                               "1h 30m",
 	}
 	for d, want := range cases {
 		if got := HumanizeDuration(d); got != want {

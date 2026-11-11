@@ -1,5 +1,8 @@
 # History
 
+- v1.0.3-dev.1 2026-11-11 `-usage` columns renamed `used_pct` → `used` and
+  `remaining_pct` → `remain` (JSON keys follow). `resets_in` now rolls days out
+  of hours and omits zero units: `106h 15m 0s` becomes `4d 10h 15m`.
 - v1.0.2 2026-11-10 Artificial Analysis performance v3: the models endpoints
   null the legacy median `performance` block on 2026-12-10, so `tok_s` and
   `ttft_s` now read `performance_v3` (means over a trailing 5-day window) and
