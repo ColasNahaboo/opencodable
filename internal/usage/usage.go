@@ -119,17 +119,17 @@ func windowLength(name string) time.Duration {
 // consumption rate: "used=N%" (projected end percent, under 95), "on pace"
 // (100% reached around the reset), or "throttle=Xh" (100% reached X before
 // the reset, i.e. throttled from then until the window ends). "-" when no
-// pace signal exists (no consumption, unknown window, reset already past).
+// pace signal exists (window not started, unknown window, reset past).
 func Forecast(w Window, now time.Time) string {
 	length := windowLength(w.Name)
 	left := w.ResetsAt.Sub(now)
-	if length == 0 || left <= 0 || w.Percent <= 0 {
+	elapsed := length - left
+	if length == 0 || left <= 0 || elapsed <= 0 {
 		return "-"
 	}
 	if w.Percent >= 100 {
 		return "throttle=now"
 	}
-	elapsed := length - left
 	pace := w.Percent / elapsed.Minutes() // percent per minute
 	end := pace * length.Minutes()
 	if end < 95 {

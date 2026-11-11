@@ -1,9 +1,12 @@
 # History
 
+- v1.0.3-dev.3 2026-11-11 `forecast` emits `used=0%` for a window with no
+  consumption; `-` is reserved for a window that has just started (elapsed
+  0) or whose reset is already past.
 - v1.0.3-dev.2 2026-11-11 `-usage` gains a `forecast` column: the
   end-of-window outlook at the current average rate — `used=N%` (projected
   end percent), `on pace` (100% around the reset), `throttle=X` (100%
-  reached X before the reset) or `-` (no pace signal).
+  reached X before the reset) or `-` (window just started).
 - v1.0.3-dev.1 2026-11-11 `-usage` columns renamed `used_pct` → `used` and
   `remaining_pct` → `remain` (JSON keys follow). `resets_in` now rolls days out
   of hours and omits zero units: `106h 15m 0s` becomes `4d 10h 15m`.

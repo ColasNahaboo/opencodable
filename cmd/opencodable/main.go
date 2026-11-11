@@ -31,7 +31,7 @@ import (
 )
 
 // version is displayed at the bottom of the -h help text.
-var version = "v1.0.3-dev.2"
+var version = "v1.0.3-dev.3"
 
 // colList accumulates comma-separated -cols/-excols values. The flag may be
 // repeated and unions with the config-file default; output order always
@@ -1075,7 +1075,7 @@ var useLegend = []string{
 	"# remain        100 - used",
 	"# resets_at     local time when the window resets",
 	"# resets_in     time until reset, e.g. 4d 10h 15m (zero units omitted)",
-	"# forecast      end-of-window outlook at the current average rate: used=N% (projected end), on pace (100% around the reset), throttle=X (100% reached X before the reset), - (no pace signal)",
+	"# forecast      end-of-window outlook at the current average rate: used=N% (projected end), on pace (100% around the reset), throttle=X (100% reached X before the reset), - (window just started)",
 	"# note          the endpoint reports one aggregate set of windows; per-model caps are in -now",
 }
 

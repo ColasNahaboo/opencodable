@@ -70,12 +70,16 @@ func TestForecast(t *testing.T) {
 		// 96% used, 1d left of the week: pace 16%/day -> 100% reached 18h
 		// before the reset.
 		{"week near", Window{Name: "week", Percent: 96, ResetsAt: now.Add(24 * time.Hour)}, "throttle=18h"},
-		// Nothing consumed: no pace signal.
-		{"week idle", Window{Name: "week", Percent: 0, ResetsAt: now.Add(week)}, "-"},
+		// Nothing consumed, 1d elapsed: pace 0 -> end 0%.
+		{"week idle", Window{Name: "week", Percent: 0, ResetsAt: now.Add(6 * 24 * time.Hour)}, "used=0%"},
+		// Nothing consumed, window half elapsed.
+		{"week idle half", Window{Name: "week", Percent: 0, ResetsAt: now.Add(3 * 24 * time.Hour)}, "used=0%"},
 		// Already exhausted.
 		{"exhausted", Window{Name: "week", Status: "exhausted", Percent: 100, ResetsAt: now.Add(24 * time.Hour)}, "throttle=now"},
 		// Window already past its reset: no forecast.
 		{"past reset", Window{Name: "5h", Percent: 60, ResetsAt: now.Add(-time.Minute)}, "-"},
+		// Window just started (elapsed 0): no pace signal.
+		{"just started", Window{Name: "week", Percent: 0, ResetsAt: now.Add(week)}, "-"},
 		// Unknown window name: no forecast.
 		{"unknown", Window{Name: "day", Percent: 50, ResetsAt: now.Add(24 * time.Hour)}, "-"},
 	}
