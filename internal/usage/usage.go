@@ -102,6 +102,47 @@ func parse(r io.Reader) ([]Window, error) {
 	}, nil
 }
 
+// windowLength is the nominal length of a usage window by name.
+func windowLength(name string) time.Duration {
+	switch name {
+	case "5h":
+		return 5 * time.Hour
+	case "week":
+		return 7 * 24 * time.Hour
+	case "month":
+		return 30 * 24 * time.Hour
+	}
+	return 0
+}
+
+// Forecast projects the end-of-window outcome at the current average
+// consumption rate: "used=N%" (projected end percent, under 95), "on pace"
+// (100% reached around the reset), or "throttle=Xh" (100% reached X before
+// the reset, i.e. throttled from then until the window ends). "-" when no
+// pace signal exists (no consumption, unknown window, reset already past).
+func Forecast(w Window, now time.Time) string {
+	length := windowLength(w.Name)
+	left := w.ResetsAt.Sub(now)
+	if length == 0 || left <= 0 || w.Percent <= 0 {
+		return "-"
+	}
+	if w.Percent >= 100 {
+		return "throttle=now"
+	}
+	elapsed := length - left
+	pace := w.Percent / elapsed.Minutes() // percent per minute
+	end := pace * length.Minutes()
+	if end < 95 {
+		return fmt.Sprintf("used=%d%%", int(end+0.5))
+	}
+	toFull := time.Duration((100-w.Percent)/pace) * time.Minute
+	beforeEnd := left - toFull
+	if beforeEnd < time.Hour {
+		return "on pace"
+	}
+	return "throttle=" + HumanizeDuration(beforeEnd.Round(time.Minute))
+}
+
 // WindowFactors are the remaining fractions of the aggregate 5h and weekly
 // windows. They let -now scale each model's caps by the account-wide usage
 // reported by the endpoint; this is an estimate, because the endpoint does

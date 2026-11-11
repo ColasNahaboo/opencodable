@@ -119,7 +119,7 @@ only `ERROR` lines skip the second mail.
 
 ## View: `-usage` (allowance windows)
 
-Piped header: `#window	status	used	remain	resets_at	resets_in`
+Piped header: `#window	status	used	remain	resets_at	resets_in	forecast`
 
 | # | Column | Meaning |
 |---|---|---|
@@ -129,6 +129,7 @@ Piped header: `#window	status	used	remain	resets_at	resets_in`
 | 4 | `remain` | `100 - used` |
 | 5 | `resets_at` | local time (RFC3339) when the window resets |
 | 6 | `resets_in` | time until reset, days rolled out of hours, zero units omitted, e.g. `4d 10h 15m` |
+| 7 | `forecast` | end-of-window outlook at the current average consumption rate: `used=N%` (projected end percent, under 95), `on pace` (100% reached around the reset), `throttle=X` (100% reached `X` before the reset, i.e. throttled from then on), `-` (no pace signal: nothing consumed yet, or the reset is past) |
 
 ## View: `-now` (what is affordable right now)
 

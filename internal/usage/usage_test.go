@@ -52,6 +52,40 @@ func TestHumanizeDuration(t *testing.T) {
 	}
 }
 
+func TestForecast(t *testing.T) {
+	now := time.Date(2026, 11, 11, 12, 0, 0, 0, time.UTC)
+	week := 7 * 24 * time.Hour
+	cases := []struct {
+		name string
+		w    Window
+		want string
+	}{
+		// 9% used, 4d 9h left of a 7d week: pace ~3.7%/day -> end ~26%.
+		{"week low pace", Window{Name: "week", Percent: 9, ResetsAt: now.Add(4*24*time.Hour + 9*time.Hour)}, "used=24%"},
+		// 75% used, 2h left of the 5h window: pace 25%/h -> 100% reached
+		// 1h before the reset.
+		{"5h over", Window{Name: "5h", Percent: 75, ResetsAt: now.Add(2 * time.Hour)}, "throttle=1h"},
+		// 50% used, 3d 12h left of the week: exactly on pace.
+		{"week on pace", Window{Name: "week", Percent: 50, ResetsAt: now.Add(3*24*time.Hour + 12*time.Hour)}, "on pace"},
+		// 96% used, 1d left of the week: pace 16%/day -> 100% reached 18h
+		// before the reset.
+		{"week near", Window{Name: "week", Percent: 96, ResetsAt: now.Add(24 * time.Hour)}, "throttle=18h"},
+		// Nothing consumed: no pace signal.
+		{"week idle", Window{Name: "week", Percent: 0, ResetsAt: now.Add(week)}, "-"},
+		// Already exhausted.
+		{"exhausted", Window{Name: "week", Status: "exhausted", Percent: 100, ResetsAt: now.Add(24 * time.Hour)}, "throttle=now"},
+		// Window already past its reset: no forecast.
+		{"past reset", Window{Name: "5h", Percent: 60, ResetsAt: now.Add(-time.Minute)}, "-"},
+		// Unknown window name: no forecast.
+		{"unknown", Window{Name: "day", Percent: 50, ResetsAt: now.Add(24 * time.Hour)}, "-"},
+	}
+	for _, c := range cases {
+		if got := Forecast(c.w, now); got != c.want {
+			t.Errorf("Forecast(%+v) = %q, want %q", c.w, got, c.want)
+		}
+	}
+}
+
 func TestRemainingFactors(t *testing.T) {
 	f := RemainingFactors([]Window{
 		{Name: "5h", Percent: 20},

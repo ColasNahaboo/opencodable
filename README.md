@@ -172,10 +172,10 @@ minutes by default. `-ttl <seconds>` changes that (`0` turns the cache off), and
 `-refresh` forces an update.
 
 ```
-#window  status  used  remain  resets_at                  resets_in
-5h       ok      35    65      2026-11-02T14:00:00+01:00  2h 10m
-week     ok      40    60      2026-11-04T09:00:00+01:00  1d 21h 20m
-month    ok      21    79      2026-11-07T14:00:00+01:00  8d 20h 30m
+#window  status  used  remain  resets_at                  resets_in  forecast
+5h       ok      95    5       2026-11-02T14:00:00+01:00  2h         throttle=1h 51m
+week     ok      50    50      2026-11-04T09:00:00+01:00  3d 12h     on pace
+month    ok      21    79      2026-11-07T14:00:00+01:00  8d 20h 30m used=30%
 ```
 
 ## What's new (`-news`)

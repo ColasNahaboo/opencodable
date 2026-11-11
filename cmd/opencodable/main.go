@@ -31,7 +31,7 @@ import (
 )
 
 // version is displayed at the bottom of the -h help text.
-var version = "v1.0.3-dev.1"
+var version = "v1.0.3-dev.2"
 
 // colList accumulates comma-separated -cols/-excols values. The flag may be
 // repeated and unions with the config-file default; output order always
@@ -1012,6 +1012,7 @@ func runUsage(jsonOut, withLegend, tty, nohead bool, ttl time.Duration, refresh 
 			RemainingPct float64 `json:"remain"`
 			ResetsAt     string  `json:"resets_at"`
 			ResetsIn     string  `json:"resets_in"`
+			Forecast     string  `json:"forecast"`
 		}
 		out := make([]jsonWindow, 0, len(ws))
 		for _, w := range ws {
@@ -1020,6 +1021,7 @@ func runUsage(jsonOut, withLegend, tty, nohead bool, ttl time.Duration, refresh 
 				UsedPct: w.Percent, RemainingPct: w.Remaining(),
 				ResetsAt: w.ResetsAt.Local().Format(time.RFC3339),
 				ResetsIn: resetIn(now, w.ResetsAt),
+				Forecast: usage.Forecast(w, now),
 			})
 		}
 		return json.NewEncoder(os.Stdout).Encode(out)
@@ -1030,15 +1032,17 @@ func runUsage(jsonOut, withLegend, tty, nohead bool, ttl time.Duration, refresh 
 				strconv.FormatFloat(w.Percent, 'f', 0, 64) + "%",
 				strconv.FormatFloat(w.Remaining(), 'f', 0, 64) + "%",
 				w.ResetsAt.Local().Format("2006-01-02 15:04"),
-				resetIn(now, w.ResetsAt)}
+				resetIn(now, w.ResetsAt),
+				usage.Forecast(w, now)}
 		}
 		return []string{w.Name, w.Status,
 			strconv.FormatFloat(w.Percent, 'f', 0, 64),
 			strconv.FormatFloat(w.Remaining(), 'f', 0, 64),
 			w.ResetsAt.Local().Format(time.RFC3339),
-			resetIn(now, w.ResetsAt)}
+			resetIn(now, w.ResetsAt),
+			usage.Forecast(w, now)}
 	}
-	head := []string{"#window", "status", "used", "remain", "resets_at", "resets_in"}
+	head := []string{"#window", "status", "used", "remain", "resets_at", "resets_in", "forecast"}
 	if withLegend {
 		for _, l := range useLegend {
 			fmt.Fprintln(os.Stdout, l)
@@ -1071,6 +1075,7 @@ var useLegend = []string{
 	"# remain        100 - used",
 	"# resets_at     local time when the window resets",
 	"# resets_in     time until reset, e.g. 4d 10h 15m (zero units omitted)",
+	"# forecast      end-of-window outlook at the current average rate: used=N% (projected end), on pace (100% around the reset), throttle=X (100% reached X before the reset), - (no pace signal)",
 	"# note          the endpoint reports one aggregate set of windows; per-model caps are in -now",
 }
 
