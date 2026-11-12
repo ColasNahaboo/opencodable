@@ -76,6 +76,10 @@ internal/config/       opencodable.conf (key=value: API keys + option
   never create a tag or a release, and never push — unless explicitly asked.
   Author the commit with the auto-commit skill's convention: your active model
   name, not a model name from the catalog data.
+- **Release description**: when the user requests a release, the release
+  description must not point to code diffs (too low level for humans at that
+  place) — recopy there what HISTORY.md gained between this release and the
+  previous one, verbatim.
 - **Doc-only changes** (no code touched): just commit them — no version bump,
   no tag, no push.
 - **No polling.** Never add loops, daemons or repeated requests against web

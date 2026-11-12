@@ -140,7 +140,7 @@ evidence, console cross-check and reproduction steps are in
 Four views help:
 
 - **`-now`**: for each model, how many requests fit in each window, given what you have already spent this month. Spending is fetched with your OpenCode key.
-- **`-usage`**: the account-wide percentages OpenCode reports for the 5-hour, weekly and monthly windows, with their reset times.
+- **`-usage`**: the account-wide percentages OpenCode reports for the 5-hour, weekly and monthly windows, with their reset times and a `forecast` column projecting how each window ends at the current pace.
 - **`-full`**: the main table and `-now` in one wide table.
 - **`-window-estimate`**: also takes out what you have probably used in the current 5-hour and weekly windows. OpenCode reports one aggregate percentage (an average of the per-model burn ratios), not per-model window spend, so the split across models is a heuristic; the method appears on stderr and, in JSON, as `window_method`. Without this flag, the 5-hour and weekly counts assume fresh windows, which gives an upper bound.
 
@@ -172,11 +172,35 @@ minutes by default. `-ttl <seconds>` changes that (`0` turns the cache off), and
 `-refresh` forces an update.
 
 ```
-#window  status  used  remain  resets_at                  resets_in  forecast
-5h       ok      95    5       2026-11-02T14:00:00+01:00  2h         throttle=1h 51m
-week     ok      50    50      2026-11-04T09:00:00+01:00  3d 12h     on pace
-month    ok      21    79      2026-11-07T14:00:00+01:00  8d 20h 30m used=30%
+#window  status  used  remain  resets_at                  resets_in    forecast
+5h       ok      95    5       2026-11-12T17:00:00+01:00  2h           throttle=1h 51m
+week     ok      50    50      2026-11-16T03:00:00+01:00  3d 12h       on pace
+month    ok      9     91      2026-12-07T14:56:00+01:00  24d 23h 56m  used=54%
 ```
+
+The `forecast` column projects the end of each window at the average rate
+consumed so far. The window's start is inferred from its nominal length (5
+hours, 7 days, 30 days) minus the time left before the reset, and the pace is a
+straight-line average over what has already elapsed. Four values:
+
+- **`used=N%`** — at this rate the window ends N% consumed. Shown while the
+  projection stays under 95%. The month row spent 9% in its first 5 days;
+  25 more days at that pace bring it to roughly `used=54%` — comfortable.
+- **`on pace`** — the projection lands on 100% around the reset itself. The
+  week row spent 50% in exactly half its 7 days, so it is heading straight for
+  the reset: no throttling expected, but no headroom either.
+- **`throttle=X`** — at this rate the window reaches 100% X **before** its
+  reset, and requests would be throttled from then until the window ends. The
+  5h row burned 95% in 3 of its 5 hours, so the last 5% is gone `1h 51m` before
+  the reset and the final 1h 51m would refuse requests. A window that is
+  already exhausted reads `throttle=now`.
+- **`-`** — no pace signal: the window has just started (nothing has elapsed
+  to average over), or its reset is already past.
+
+The projection assumes the future matches the past: a heavy session can
+exhaust a window long before its forecast, and quiet days pull the projection
+down. Treat `forecast` as a trend, and use `-now` for the binding per-model
+caps, which already subtract what the current windows really consumed.
 
 ## What's new (`-news`)
 
@@ -328,7 +352,7 @@ Pick one at a time; combining two is an error. Without a view, the main table is
 - `-main`: the main table, with cost, budget and quality. This is the default.
 - `-now`: what you can use right now, per model.
 - `-full`: the main table and `-now` in one wide table.
-- `-usage`: your remaining allowance in the 5-hour, weekly and monthly windows.
+- `-usage`: your remaining allowance in the 5-hour, weekly and monthly windows, with an end-of-window forecast at the current pace.
 - `-doctor`: a coverage check: missing data per model, Arena and benchmark coverage counts, a warning for each catalog cache that is missing or older than 24 hours, a hint when a model may have an Arena entry under another name, where keys were found, typos in your configuration file. It runs no probes.
 - `-news`: what changed in the plan since the previous `-news` run — models, costs, budgets, context windows, privacy, quality tier, and the country-availability list you maintain with `-unavail`. See [What's new](#whats-new-news).
 
