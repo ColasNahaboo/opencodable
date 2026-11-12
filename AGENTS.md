@@ -79,7 +79,9 @@ internal/config/       opencodable.conf (key=value: API keys + option
 - **Release description**: when the user requests a release, the release
   description must not point to code diffs (too low level for humans at that
   place) — recopy there what HISTORY.md gained between this release and the
-  previous one, verbatim.
+  previous one, verbatim. The release workflow (`.github/workflows/release.yml`)
+  follows the same rule when it creates the release on a tag push, and is
+  idempotent: an existing release only gains the freshly built archives.
 - **Doc-only changes** (no code touched): just commit them — no version bump,
   no tag, no push.
 - **No polling.** Never add loops, daemons or repeated requests against web

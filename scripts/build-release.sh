@@ -9,7 +9,6 @@ version="${1:-$(git describe --tags --always --dirty)}"
 out="${2:-dist}"
 mkdir -p "$out"
 outdir="$(cd "$out" && pwd)"
-rm -f "$outdir/checksums.txt"
 
 targets=(
   linux/amd64 linux/arm64
@@ -17,6 +16,7 @@ targets=(
   windows/amd64 windows/arm64
 )
 
+built=()
 for target in "${targets[@]}"; do
   os="${target%/*}"
   arch="${target#*/}"
@@ -34,13 +34,17 @@ for target in "${targets[@]}"; do
     -o "$stage/opencodable${ext}" ./cmd/opencodable
   cp LICENSE README.md "$stage/"
   if [ "$os" = windows ]; then
-    (cd "$stage" && zip -q -r "$outdir/${base}.zip" .)
+    archive="${base}.zip"
+    (cd "$stage" && zip -q -r "$outdir/$archive" .)
   else
-    tar -C "$stage" -czf "$outdir/${base}.tar.gz" .
+    archive="${base}.tar.gz"
+    tar -C "$stage" -czf "$outdir/$archive" .
   fi
   rm -rf "$stage"
+  built+=("$archive")
 done
 
-(cd "$outdir" && sha256sum opencodable_* > checksums.txt)
+# Checksum exactly what this run built, never stale archives left in dist/.
+(cd "$outdir" && sha256sum "${built[@]}" > checksums.txt)
 echo "built ${version} in ${outdir}"
 ls -lh "$outdir"

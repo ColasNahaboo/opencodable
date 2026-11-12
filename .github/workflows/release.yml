@@ -18,7 +18,23 @@ jobs:
           cache: false
       - name: build archives
         run: scripts/build-release.sh "${GITHUB_REF_NAME}" dist
-      - name: create release
-        run: gh release create "${GITHUB_REF_NAME}" dist/* --generate-notes
+      - name: attach release (create with HISTORY notes, or upload)
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          # Notes: recopy verbatim this tag's HISTORY.md entry. Never
+          # --generate-notes: the release description must not point to code
+          # diffs.
+          awk -v tag="- ${tag} " \
+            'index($0, tag)==1 {on=1; print; next}
+             on && index($0, "- ")==1 {exit}
+             on {print}' HISTORY.md > /tmp/notes.md
+          if [ ! -s /tmp/notes.md ]; then
+            echo "See [HISTORY.md](https://github.com/${GITHUB_REPOSITORY}/blob/master/HISTORY.md)." > /tmp/notes.md
+          fi
+          if gh release view "$tag" > /dev/null 2>&1; then
+            gh release upload "$tag" dist/* --clobber
+          else
+            gh release create "$tag" dist/* --notes-file /tmp/notes.md
+          fi
         env:
           GH_TOKEN: ${{ github.token }}
