@@ -1,15 +1,13 @@
 # History
 
-- v1.0.3-dev.3 2026-11-11 `forecast` emits `used=0%` for a window with no
-  consumption; `-` is reserved for a window that has just started (elapsed
-  0) or whose reset is already past.
-- v1.0.3-dev.2 2026-11-11 `-usage` gains a `forecast` column: the
-  end-of-window outlook at the current average rate — `used=N%` (projected
-  end percent), `on pace` (100% around the reset), `throttle=X` (100%
-  reached X before the reset) or `-` (window just started).
-- v1.0.3-dev.1 2026-11-11 `-usage` columns renamed `used_pct` → `used` and
-  `remaining_pct` → `remain` (JSON keys follow). `resets_in` now rolls days out
-  of hours and omits zero units: `106h 15m 0s` becomes `4d 10h 15m`.
+- v1.1.0 2026-11-12 `-usage` upgrade: the columns rename to `used` and
+  `remain` (JSON keys follow), `resets_in` rolls days out of hours and omits
+  zero units (`106h 15m 0s` becomes `4d 10h 15m`), and a new `forecast` column
+  projects the end-of-window outlook at the current average rate — `used=N%`
+  (projected end percent, shown under 95), `on pace` (100% reached around the
+  reset), `throttle=X` (100% reached X before the reset) or `-` (window just
+  started, or reset already past); a window with no consumption reads
+  `used=0%`. README documents the forecast with a worked example.
 - v1.0.2 2026-11-10 Artificial Analysis performance v3: the models endpoints
   null the legacy median `performance` block on 2026-12-10, so `tok_s` and
   `ttft_s` now read `performance_v3` (means over a trailing 5-day window) and

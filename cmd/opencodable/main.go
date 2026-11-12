@@ -31,7 +31,7 @@ import (
 )
 
 // version is displayed at the bottom of the -h help text.
-var version = "v1.0.3-dev.3"
+var version = "v1.1.0"
 
 // colList accumulates comma-separated -cols/-excols values. The flag may be
 // repeated and unions with the config-file default; output order always
