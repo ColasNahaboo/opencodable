@@ -1,5 +1,25 @@
 # History
 
+- v1.1.1-dev.1 2026-11-23 Plan snapshot source overhaul: OpenCode restructured
+  the Go docs page (the `/v2/docs/console/go/` URL now redirects to
+  `/docs/console/go/`, which no longer carries the pricing panels, the
+  model-ID table or the token-profile list), so every live plan refresh failed
+  with "ERROR plan: refresh failed; using a N-old cached snapshot" and new
+  models such as LongCat-2.5 showed `plan=unknown`. The snapshot now comes
+  from the Go models endpoint (token prices, peak-hour multipliers, per-plan
+  monthly usage limits, data-training flag) plus the console Go page
+  (estimated requests per 5 hours). The official cost per request is grounded
+  in those estimates — a 5-hour window covers 20% of the monthly allowance, so
+  `cost_task` = 20% × allowance ÷ estimated requests — and `cost_task`
+  descriptions change wording accordingly (columns, keys and order do not).
+  Validation gates updated: console↔endpoint monthly-limit agreement,
+  Go↔Plus per-request cost agreement and per-request cost bounds replace the
+  token-profile gates. The compiled-in fallback table is re-verified for
+  2026-11-23: GLM-5.3 $15→$200 and DeepSeek V4.1 Flash $80→$100 allowances,
+  LongCat-2.0/GEM-5.2/MiMo V2.5(+Pro) left the plan, LongCat-2.5/Hy4/Qwen4 Max
+  joined; privacy comes from the endpoint's training flag, so previously
+  unknown models resolve to safe/trains. Cached snapshots from the docs-page
+  era are rejected at load time (falling back to the builtin table).
 - v1.1.0 2026-11-12 `-usage` upgrade: the columns rename to `used` and
   `remain` (JSON keys follow), `resets_in` rolls days out of hours and omits
   zero units (`106h 15m 0s` becomes `4d 10h 15m`), and a new `forecast` column

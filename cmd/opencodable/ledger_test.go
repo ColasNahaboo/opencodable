@@ -29,14 +29,14 @@ func TestEstimateWindowSpendProportional(t *testing.T) {
 	kimi := testModel("kimi-k3.1-pro", "Kimi K3.1 Pro", 2, 10, 0.2)
 	ds := testModel("deepseek-v4.1-flash", "DeepSeek V4.1 Flash", 0.15, 0.60, 0.003)
 	models := []modelsdev.Model{kimi, ds}
-	// base5 = 0.2*15 + 0.2*80 = 19; used 50% → $9.5 implied, all on kimi.
+	// base5 = 0.2*15 + 0.2*100 = 23; used 50% → $11.5 implied, all on kimi.
 	spend := map[string]spendInfo{"kimi-k3.1-pro": {usd: 3.0, reqs: 10, known: true}}
 	got, method := estimateWindowSpend(models, spend, false, "go", 0.5, 0, nil)
 	if method != "proportional" {
 		t.Errorf("method = %q, want proportional", method)
 	}
-	if got["kimi-k3.1-pro"].five != 9.5 || got["deepseek-v4.1-flash"].five != 0 {
-		t.Errorf("proportional split = %v, want kimi 9.5, ds 0", got)
+	if got["kimi-k3.1-pro"].five != 11.5 || got["deepseek-v4.1-flash"].five != 0 {
+		t.Errorf("proportional split = %v, want kimi 11.5, ds 0", got)
 	}
 	if got["kimi-k3.1-pro"].week != 0 {
 		t.Errorf("unused week must stay zero: %v", got)
@@ -51,14 +51,14 @@ func TestEstimateWindowSpendLedger(t *testing.T) {
 		"kimi-k3.1-pro":       {usd: 3.0, reqs: 10, known: true},
 		"deepseek-v4.1-flash": {usd: 1.0, reqs: 10, known: true},
 	}
-	// P5 = 9.5, ds attributed 0.5 → remainder 9.0 split 3:1.
+	// P5 = 11.5, ds attributed 0.5 → remainder 11.0 split 3:1.
 	attr := map[string]windowSpend{"deepseek-v4.1-flash": {five: 0.5}}
 	got, method := estimateWindowSpend(models, spend, false, "go", 0.5, 0, attr)
 	if method != "ledger" {
 		t.Errorf("method = %q, want ledger", method)
 	}
-	if got["kimi-k3.1-pro"].five != 6.75 || got["deepseek-v4.1-flash"].five != 2.75 {
-		t.Errorf("ledger split = %v, want kimi 6.75, ds 2.75", got)
+	if got["kimi-k3.1-pro"].five != 8.25 || got["deepseek-v4.1-flash"].five != 3.25 {
+		t.Errorf("ledger split = %v, want kimi 8.25, ds 3.25", got)
 	}
 }
 

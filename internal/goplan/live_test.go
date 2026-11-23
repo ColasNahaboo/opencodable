@@ -20,92 +20,19 @@ func fixture(t *testing.T, name string) []byte {
 
 func mergedFixture(t *testing.T) *LiveSnapshot {
 	t.Helper()
-	docs, err := ParseDocsHTML(fixture(t, "go-docs.html"))
-	if err != nil {
-		t.Fatal(err)
-	}
 	ep, err := ParseEndpointModels(fixture(t, "go-models.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	snap, err := Merge(docs, ep)
+	console, err := ParseConsoleGo(fixture(t, "console-go.html"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	snap, err := Merge(ep, console)
 	if err != nil {
 		t.Fatal(err)
 	}
 	return snap
-}
-
-func TestParseDocsPricing(t *testing.T) {
-	docs, err := ParseDocsHTML(fixture(t, "go-docs.html"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(docs.Pricing["go"]) < 25 {
-		t.Fatalf("go pricing rows = %d, want >= 25", len(docs.Pricing["go"]))
-	}
-	var flash *PricingRow
-	var beam, gemini, dsPeak *PricingRow
-	for i := range docs.Pricing["go"] {
-		r := &docs.Pricing["go"][i]
-		switch r.Name {
-		case "GLM-5.3-Flash":
-			flash = r
-		case "Beam Free":
-			beam = r
-		case "Gemini 4 Argon":
-			gemini = r
-		}
-		if r.Peak && r.BaseName == "DeepSeek V4.1 Flash" {
-			dsPeak = r
-		}
-	}
-	if flash == nil || flash.GoAllowance != 60 || flash.In != 0.15 || flash.Out != 0.50 || flash.CacheRead != 0.03 {
-		t.Fatalf("GLM-5.3-Flash row = %+v", flash)
-	}
-	if beam == nil || !beam.Unlimited {
-		t.Fatalf("Beam Free row = %+v, want unlimited", beam)
-	}
-	// Strikethrough discount: the live price is the last number in the cell.
-	if gemini == nil || gemini.In != 2.00 || gemini.Out != 10.00 {
-		t.Fatalf("Gemini 4 Argon row = %+v, want discounted prices", gemini)
-	}
-	if dsPeak == nil || dsPeak.BaseName != "DeepSeek V4.1 Flash" {
-		t.Fatalf("peak row = %+v", dsPeak)
-	}
-	if plus := docs.Pricing["go-plus"]; len(plus) < 25 {
-		t.Fatalf("go-plus rows = %d", len(plus))
-	}
-	for _, r := range docs.Pricing["go-plus"] {
-		if r.Name == "GLM-5.3-Flash" && r.GoAllowance != 180 {
-			t.Fatalf("go-plus GLM-5.3-Flash allowance = %v, want 180", r.GoAllowance)
-		}
-	}
-}
-
-func TestParseDocsProfilesAndRequests(t *testing.T) {
-	docs, err := ParseDocsHTML(fixture(t, "go-docs.html"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	p := docs.Profiles["glm-5.3-flash"]
-	if p == nil || *p != (Profile{1000, 55000, 200}) {
-		t.Fatalf("profile GLM-5.3-Flash = %+v", p)
-	}
-	// Slash shorthand "GLM-5.3/5.2" must expand to both models.
-	for _, name := range []string{"glm-5.3", "glm-5.2"} {
-		if p := docs.Profiles[name]; p == nil || *p != (Profile{700, 52000, 150}) {
-			t.Fatalf("profile %s = %+v", name, p)
-		}
-	}
-	if r := docs.Requests["glm-5.3-flash"]; r != 31580 {
-		t.Fatalf("requests GLM-5.3-Flash = %v, want 31580", r)
-	}
-	if len(docs.NameToID) < 25 {
-		t.Fatalf("name→id map size = %d", len(docs.NameToID))
-	}
-	if got := docs.NameToID["deepseek v4.1 flash"]; got != "deepseek-v4.1-flash" {
-		t.Fatalf("name→id map missing DeepSeek: %q", got)
-	}
 }
 
 func TestParseEndpointModels(t *testing.T) {
@@ -117,8 +44,46 @@ func TestParseEndpointModels(t *testing.T) {
 	if m == nil || m.Factor != 2 || m.In != 0.15 || m.Out != 0.6 {
 		t.Fatalf("deepseek endpoint entry = %+v", m)
 	}
-	if other := ep["glm-5.3-flash"]; other == nil || other.Factor != 0 {
-		t.Fatalf("glm endpoint entry = %+v, want factor 0", other)
+	if m.GoAllowance != 100 || m.PlusAllowance != 200 {
+		t.Fatalf("deepseek allowances = %v/%v, want 100/200", m.GoAllowance, m.PlusAllowance)
+	}
+	if m.Training {
+		t.Fatal("deepseek reported as training")
+	}
+	if other := ep["glm-5.3-flash"]; other == nil || other.Factor != 0 || other.Unlimited {
+		t.Fatalf("glm endpoint entry = %+v", other)
+	}
+	// Free models: no usage block and zero prices.
+	if beam := ep["beam-free"]; beam == nil || !beam.Unlimited || beam.In != 0 {
+		t.Fatalf("beam-free endpoint entry = %+v", beam)
+	}
+	if ice := ep["iceman-contributor-free"]; ice == nil || !ice.Unlimited || !ice.Training {
+		t.Fatalf("iceman endpoint entry = %+v", ice)
+	}
+}
+
+func TestParseConsoleGo(t *testing.T) {
+	console, err := ParseConsoleGo(fixture(t, "console-go.html"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Display names are matched with punctuation and case stripped, so the
+	// endpoint's "LongCat-2.5" finds the console's "LongCat 2.5".
+	if k := console["longcat25"]; k.Name != "LongCat 2.5" {
+		t.Fatalf("longcat row = %+v", k)
+	}
+	if r := console["kimik3"]; r.Reqs["go"] != 98 || r.Reqs["go-plus"] != 392 {
+		t.Fatalf("kimi-k3 requests = %+v", r.Reqs)
+	}
+	if u := console["kimik3"]; u.Usage["go"] != 15 || u.Usage["go-plus"] != 60 {
+		t.Fatalf("kimi-k3 usage = %+v", u.Usage)
+	}
+	if r := console["glm53flash"]; r.Reqs["go"] != 6320 {
+		t.Fatalf("glm-5.3-flash requests = %+v", r.Reqs)
+	}
+	// Free models carry an infinity marker, parsed as absent.
+	if beam := console["beamfree"]; beam.Reqs["go"] != 0 {
+		t.Fatalf("beam-free requests = %+v", beam.Reqs)
 	}
 }
 
@@ -128,21 +93,27 @@ func TestMergeSnapshot(t *testing.T) {
 	if r == nil || r.GoAllowance != 60 || r.PlusAllowance != 180 {
 		t.Fatalf("glm-5.3-flash = %+v", r)
 	}
-	if r.Profile == nil || *r.Profile != (Profile{1000, 55000, 200}) {
-		t.Fatalf("glm profile = %+v", r.Profile)
-	}
-	if r.ReqsMo != 31580 {
-		t.Fatalf("glm reqs_mo = %v", r.ReqsMo)
+	// 5h budget $12 over 6320 requests; a month is 5 windows.
+	if r.CostReq < 0.00189 || r.CostReq > 0.00191 || r.ReqsMo != 5*r.Reqs5h {
+		t.Fatalf("glm-5.3-flash cost/reqs = %v/%v", r.CostReq, r.ReqsMo)
 	}
 	ds := snap.Rows["deepseek-v4.1-flash"]
 	if ds == nil || ds.Peak == nil || ds.Peak[0] != 0.30 || ds.Peak[1] != 1.20 {
 		t.Fatalf("deepseek peak = %+v", ds)
 	}
-	if ds.Factor != 2 {
-		t.Fatalf("deepseek factor = %v", ds.Factor)
+	if ds.Factor != 2 || ds.GoAllowance != 100 || ds.Reqs5h != 43300 {
+		t.Fatalf("deepseek = %+v", ds)
 	}
-	if beam := snap.Rows["beam-free"]; beam == nil || !beam.Unlimited {
+	// LongCat-2.5: the endpoint and console names differ in punctuation.
+	lc := snap.Rows["longcat-2.5"]
+	if lc == nil || lc.GoAllowance != 60 || lc.PlusAllowance != 240 || lc.CostReq <= 0 {
+		t.Fatalf("longcat-2.5 = %+v", lc)
+	}
+	if beam := snap.Rows["beam-free"]; beam == nil || !beam.Unlimited || beam.CostReq != 0 {
 		t.Fatalf("beam-free = %+v", beam)
+	}
+	if ice := snap.Rows["iceman-contributor-free"]; ice == nil || !ice.Training {
+		t.Fatalf("iceman = %+v", ice)
 	}
 	for id, row := range snap.Rows {
 		if row.ID != id {
@@ -151,6 +122,32 @@ func TestMergeSnapshot(t *testing.T) {
 	}
 	if len(snap.Rows) < 25 {
 		t.Fatalf("rows = %d", len(snap.Rows))
+	}
+}
+
+func TestMergeRejectsBrokenSources(t *testing.T) {
+	ep, err := ParseEndpointModels(fixture(t, "go-models.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	console, err := ParseConsoleGo(fixture(t, "console-go.html"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A console page that lost a model's row must fail the snapshot, not
+	// silently degrade cost_task to the generic profile.
+	delete(console, "kimik3")
+	if _, err := Merge(ep, console); err == nil || !strings.Contains(err.Error(), "kimi-k3") {
+		t.Fatalf("missing console row error = %v", err)
+	}
+	// Console/endpoint disagreement on the monthly limits must fail too.
+	console2, _ := ParseConsoleGo(fixture(t, "console-go.html"))
+	if c, ok := console2["kimik3"]; ok {
+		c.Usage["go"] = 16
+		console2["kimik3"] = c
+	}
+	if _, err := Merge(ep, console2); err == nil || !strings.Contains(err.Error(), "console go limit") {
+		t.Fatalf("usage mismatch error = %v", err)
 	}
 }
 
@@ -167,12 +164,15 @@ func TestMergeRoundTripsJSON(t *testing.T) {
 	if len(back.Rows) != len(snap.Rows) {
 		t.Fatalf("rows %d vs %d", len(back.Rows), len(snap.Rows))
 	}
-	if *back.Rows["glm-5.3-flash"].Profile != *snap.Rows["glm-5.3-flash"].Profile {
-		t.Fatal("profile lost in round-trip")
+	if back.Rows["glm-5.3-flash"].CostReq != snap.Rows["glm-5.3-flash"].CostReq {
+		t.Fatal("cost_req lost in round-trip")
+	}
+	if !hasCostReq(&back) {
+		t.Fatal("round-tripped snapshot flagged as legacy")
 	}
 }
 
-// modelsdevFixture prices the snapshot models at their docs prices so the
+// modelsdevFixture prices the snapshot models at their endpoint prices so the
 // cross-source gate passes unless mutated.
 func modelsdevFixture(t *testing.T, snap *LiveSnapshot) []modelsdev.Model {
 	t.Helper()
@@ -202,15 +202,17 @@ func TestValidateGates(t *testing.T) {
 	}{
 		{"empty snapshot", func(s *LiveSnapshot) { s.Rows = map[string]*LiveRow{} }, "rows"},
 		{"unknown model id", func(s *LiveSnapshot) {
-			s.Rows["not-a-model"] = &LiveRow{ID: "not-a-model", GoAllowance: 10, In: 1, Out: 2, CacheRead: 0.03, ReqsMo: 100}
+			s.Rows["not-a-model"] = &LiveRow{ID: "not-a-model", GoAllowance: 10, In: 1, Out: 2, CacheRead: 0.03, Reqs5h: 100, CostReq: 0.03}
 		}, "not-a-model"},
 		{"price out of domain", func(s *LiveSnapshot) { s.Rows["glm-5.3-flash"].Out = 900 }, "domain"},
 		{"allowance out of domain", func(s *LiveSnapshot) { s.Rows["glm-5.3-flash"].GoAllowance = 5000 }, "domain"},
-		{"requests arithmetic broken", func(s *LiveSnapshot) { s.Rows["glm-5.3-flash"].GoAllowance = 120 }, "requests"},
+		{"cost per request out of domain", func(s *LiveSnapshot) { s.Rows["glm-5.3-flash"].CostReq = 3 }, "domain"},
+		{"missing estimated requests", func(s *LiveSnapshot) { s.Rows["glm-5.3-flash"].Reqs5h = 0 }, "completeness"},
+		{"plus-plan cost disagrees", func(s *LiveSnapshot) { s.Rows["glm-5.3-flash"].Reqs5hPlus = 1 }, "requests"},
 		{"price disagrees with catalog", func(s *LiveSnapshot) {
 			r := s.Rows["glm-5.3-flash"]
 			r.Out *= 3
-			r.ReqsMo /= 3
+			r.CostReq /= 3
 		}, "catalog"},
 		{"drift beyond builtin", func(s *LiveSnapshot) {
 			r := s.Rows["kimi-k3"]
@@ -237,6 +239,25 @@ func TestValidateGates(t *testing.T) {
 	}
 }
 
+func TestLegacyCachedSnapshotRejected(t *testing.T) {
+	// Snapshots from the docs-page era carry token profiles but no
+	// derived per-request cost; they must not become the live overlay.
+	legacy := &LiveSnapshot{Rows: map[string]*LiveRow{
+		"glm-5.3-flash": {ID: "glm-5.3-flash", GoAllowance: 60, In: 0.15, Out: 0.5, CacheRead: 0.03},
+	}}
+	b, err := json.Marshal(legacy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var back LiveSnapshot
+	if err := json.Unmarshal(b, &back); err != nil {
+		t.Fatal(err)
+	}
+	if hasCostReq(&back) {
+		t.Fatal("legacy snapshot has cost_req")
+	}
+}
+
 func TestOverlayAccessors(t *testing.T) {
 	defer Use(nil)
 	snap := mergedFixture(t)
@@ -248,12 +269,26 @@ func TestOverlayAccessors(t *testing.T) {
 	if a, _ := Allowance("glm-5.3-flash", "go-plus"); a != 180 {
 		t.Fatalf("go-plus allowance = %v", a)
 	}
-	if p := ProfileFor("glm-5.3-flash"); p != (Profile{1000, 55000, 200}) {
-		t.Fatalf("profile = %+v", p)
+	if c, ok := CostRequest("glm-5.3-flash"); !ok || c < 0.0018 || c > 0.002 {
+		t.Fatalf("cost request = %v %v", c, ok)
 	}
-	pk, ok := PeakPrice("deepseek-v4.1-flash")
-	if !ok || pk[0] != 0.30 {
-		t.Fatalf("peak = %v %v", pk, ok)
+	if _, ok := CostRequest("totally-unknown-model"); ok {
+		t.Fatal("unknown model has a live cost request")
+	}
+	if _, ok := CostRequest("beam-free"); ok {
+		t.Fatal("free model has a live cost request")
+	}
+	if f, ok := PeakFactor("deepseek-v4.1-flash"); !ok || f != 2 {
+		t.Fatalf("peak factor = %v %v", f, ok)
+	}
+	if _, ok := PeakFactor("glm-5.3-flash"); ok {
+		t.Fatal("flat-priced model has a peak factor")
+	}
+	if trains, known := Privacy("iceman-contributor-free"); !trains || !known {
+		t.Fatalf("privacy = %v/%v, want true/true", trains, known)
+	}
+	if trains, known := Privacy("longcat-2.5"); trains || !known {
+		t.Fatalf("privacy = %v/%v, want false/true", trains, known)
 	}
 	// Built-in-only models keep answering after the overlay is installed.
 	if !Known("gemini-4-argon") {

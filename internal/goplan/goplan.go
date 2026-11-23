@@ -1,9 +1,11 @@
 // Package goplan holds the OpenCode Go subscription data that models.dev does
 // not carry: per-model monthly allowances (USD-equivalent usage budget), the
-// official estimated token profile per request, and peak-hour price overrides.
+// official allowance cost per request, and peak-hour price overrides.
 //
-// Source: https://opencode.ai/v2/docs/console/go/ (public pricing tables,
-// verified 2026-10-27).
+// Sources (verified 2026-11-23): the Go models endpoint
+// https://opencode.ai/inference/go/v1/models (token prices, peak
+// multipliers, monthly usage limits, data-training flag) and the console Go
+// page https://opencode.ai/console/go (estimated requests per 5 hours).
 package goplan
 
 import (
@@ -32,25 +34,22 @@ type entry struct {
 }
 
 // SnapshotDate is the date the plan data below was verified against the
-// public docs; -doctor prints it.
-const SnapshotDate = "2026-10-27"
+// live sources; -doctor prints it.
+const SnapshotDate = "2026-11-23"
 
 // allowances by models.dev model ID.
 var table = map[string]entry{
 	"glm-5.3-flash":              {60, 180, &Profile{1000, 55000, 200}, nil, false},
-	"glm-5.3":                    {15, 120, &Profile{700, 52000, 150}, nil, false},
-	"glm-5.2":                    {60, 180, &Profile{700, 52000, 150}, nil, false},
+	"glm-5.3":                    {200, 400, &Profile{700, 52000, 150}, nil, false},
 	"kimi-k3.1-pro":              {15, 60, &Profile{1050, 76500, 300}, nil, false},
 	"kimi-k3":                    {15, 60, &Profile{1050, 76500, 300}, nil, false},
 	"kimi-k2.7-code":             {60, 180, &Profile{870, 55000, 200}, nil, false},
-	"longcat-2.0":                {60, 240, &Profile{920, 88900, 200}, nil, false},
+	"longcat-2.5":                {60, 240, nil, nil, false},
 	"step-5-preview":             {15, 60, &Profile{1000, 55000, 200}, nil, false},
 	"beam-free":                  {0, 0, nil, nil, false},
 	"iceman-contributor-free":    {0, 0, nil, nil, true},
 	"mimo-v2.6-flash":            {60, 120, &Profile{830, 71500, 295}, nil, false},
 	"mimo-v2.6-pro":              {15, 60, &Profile{790, 86000, 305}, nil, false},
-	"mimo-v2.5":                  {60, 120, &Profile{830, 71500, 295}, nil, false},
-	"mimo-v2.5-pro":              {15, 60, &Profile{790, 86000, 305}, nil, false},
 	"minimax-m3.1-flash":         {20, 80, &Profile{500, 49400, 360}, nil, false},
 	"minimax-m3":                 {60, 180, &Profile{510, 56000, 190}, nil, false},
 	"muse-spark-1.3-contributor": {60, 120, &Profile{620, 71400, 300}, nil, true},
@@ -58,14 +57,16 @@ var table = map[string]entry{
 	"qwen3.8-max":                {15, 60, &Profile{420, 66000, 200}, nil, false},
 	"qwen3.8-flash":              {30, 90, &Profile{600, 58000, 200}, nil, false},
 	"qwen3.7-plus":               {60, 180, &Profile{500, 57000, 190}, nil, false},
-	"deepseek-v4.1-flash":        {80, 160, &Profile{410, 71300, 310}, &[3]float64{0.30, 1.20, 0.006}, false},
+	"deepseek-v4.1-flash":        {100, 200, &Profile{410, 71300, 310}, &[3]float64{0.30, 1.20, 0.006}, false},
 	"deepseek-v4-pro":            {15, 60, &Profile{750, 82000, 290}, &[3]float64{1.32, 3.96, 0.044}, false},
+	"hy4":                        {60, 240, nil, nil, false},
 	"hy4-preview":                {30, 120, &Profile{830, 71500, 295}, nil, false},
 	"hy3":                        {60, 240, &Profile{830, 71500, 295}, nil, false},
 	"grok-4.7":                   {15, 60, &Profile{390, 32500, 120}, nil, false},
 	"gpt-6-luna":                 {15, 60, &Profile{1000, 50000, 220}, nil, false},
 	"gpt-5.6-luna":               {15, 60, &Profile{1000, 50000, 220}, nil, false},
 	"claude-haiku-5-5":           {15, 60, &Profile{1100, 55000, 240}, nil, false},
+	"qwen4-max":                  {15, 60, nil, nil, false},
 	"gemini-4-argon":             {30, 120, nil, nil, false},
 }
 
@@ -147,15 +148,34 @@ func Allowance(id, plan string) (usd float64, unlimited bool) {
 	return a, false
 }
 
-// ProfileFor returns the official per-request token profile.
+// ProfileFor returns the official per-request token profile of the
+// compiled-in table, or the generic one. Live snapshots carry a derived
+// allowance cost per request instead (see CostRequest).
 func ProfileFor(id string) Profile {
-	if r := liveRow(id); r != nil && r.Profile != nil {
-		return *r.Profile
-	}
 	if e, ok := table[id]; ok && e.Profile != nil {
 		return *e.Profile
 	}
 	return GenericProfile
+}
+
+// CostRequest returns the official estimated allowance cost of one coding
+// agent request for the model (USD, base tier). It is grounded in the
+// console's estimated requests per 5-hour window: ok=false means no live
+// estimate, and callers should fall back to ProfileFor.
+func CostRequest(id string) (usd float64, ok bool) {
+	if r := liveRow(id); r != nil && r.CostReq > 0 {
+		return r.CostReq, true
+	}
+	return 0, false
+}
+
+// PeakFactor returns the endpoint's peak-hours price multiplier for the
+// model when it bills by time of day. Peak costs scale the base cost by it.
+func PeakFactor(id string) (factor float64, ok bool) {
+	if r := liveRow(id); r != nil && r.Factor > 1 {
+		return r.Factor, true
+	}
+	return 0, false
 }
 
 // PeakPrice returns the peak-hours [input, output, cache_read] prices, if any.
@@ -173,6 +193,9 @@ func PeakPrice(id string) ([3]float64, bool) {
 // snapshot knows the answer. Unknown "contributor" models count as training
 // by convention; other unknown IDs have no privacy verdict.
 func Privacy(id string) (trains, known bool) {
+	if r := liveRow(id); r != nil {
+		return r.Training, true
+	}
 	if e, ok := table[id]; ok {
 		return e.TrainsOnData, true
 	}

@@ -60,8 +60,8 @@ func TestBuildNowRowsUsesPerModelLimits(t *testing.T) {
 	if d.burn != dt {
 		t.Errorf("DeepSeek burn = %v, want %v", d.burn, dt)
 	}
-	if d.five != int(0.2*80/dt+1e-9) {
-		t.Errorf("DeepSeek 5h = %d, want %d", d.five, int(0.2*80/dt+1e-9))
+	if d.five != int(0.2*100/dt+1e-9) {
+		t.Errorf("DeepSeek 5h = %d, want %d", d.five, int(0.2*100/dt+1e-9))
 	}
 	if tw := byID["deepseek-v4.1-flash-peak"]; !tw.known || tw.burn != cost.PerRequest(deepseek, true) {
 		t.Errorf("peak twin must price the official peak profile: %+v", tw)
@@ -105,7 +105,7 @@ func TestBuildNowRowsUsesMeasuredBurn(t *testing.T) {
 	if math.Abs(r.burn-0.005) > 1e-12 {
 		t.Errorf("measured burn = %v, want 0.005", r.burn)
 	}
-	wantUsable := int(0.2 * 80 / 0.005)
+	wantUsable := int(0.2 * 100 / 0.005)
 	if r.usable != wantUsable {
 		t.Errorf("usable = %d, want 5h cap %d", r.usable, wantUsable)
 	}

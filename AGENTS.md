@@ -151,14 +151,22 @@ internal/config/       opencodable.conf (key=value: API keys + option
   console's list cost, not the allowance cost. `-window-estimate` turns the
   endpoint's aggregate percentages into implied window dollars and attributes
   them (see Spend ledger); it is an estimate, never per-model window spend.
-- **goplan snapshot**: allowances, profiles and privacy flags are hardcoded
-  from the public docs; new OpenCode models need new entries (unknown models
-  fall back to a generic profile). A live refresh (`goplan.Fetch`, weekly via
-  `-plan-ttl`) scrapes the docs page + Go models endpoint and overlays the
-  table via `goplan.Use` — only after `Validate` passes every gate (domains,
-  models.dev price agreement, requests arithmetic ±33%, drift caps, peak
-  factor); any failure keeps the built-in table silently. Privacy flags are
-  never scraped. Tests use the HTML/JSON fixtures in `testdata/`.
+- **goplan snapshot**: allowances and privacy flags are hardcoded from the
+  live sources; new OpenCode models need new entries (unknown models fall
+  back to a generic per-request cost). A live refresh (`goplan.Fetch`, weekly
+  via `-plan-ttl`) fetches the Go models endpoint (token prices, peak
+  multipliers, per-plan monthly usage limits, data-training flag) + the
+  console Go page (estimated requests per 5 hours, monthly-limit
+  cross-check) and overlays the table via `goplan.Use` — only after
+  `Validate` passes every gate (domains, console↔endpoint limit agreement,
+  Go↔Plus per-request cost agreement ±5%, models.dev price agreement,
+  drift caps, peak factor); any failure keeps the built-in table silently.
+  The official per-request cost (`cost_task`) is derived, not scraped: a
+  5-hour window covers 20% of the monthly allowance, so 20% × allowance ÷
+  estimated requests; the compiled-in table keeps token profiles only for
+  offline fallback. Cached snapshots from the retired docs-page era (no
+  `cost_req`) are rejected at load time. Tests use the HTML/JSON fixtures in
+  `testdata/`.
   `goplan.Privacy` is tri-state
   (`safe`/`trains`/`unknown`); `-privacy` fails closed, hiding both training
   and unknown models. Free variants missing from the snapshot are inferred

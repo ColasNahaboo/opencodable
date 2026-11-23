@@ -31,7 +31,7 @@ import (
 )
 
 // version is displayed at the bottom of the -h help text.
-var version = "v1.1.0"
+var version = "v1.1.1-dev.1"
 
 // colList accumulates comma-separated -cols/-excols values. The flag may be
 // repeated and unions with the config-file default; output order always
@@ -130,7 +130,7 @@ func registerFlags(fs *flag.FlagSet) {
 	mainView = fs.Bool("main", false, "show the default ranking table (static cost/speed/quality); the default when no view is given")
 	nohead = fs.Bool("nohead", false, "omit the header row (data rows only); no-op in -vertical/-json, which have no header")
 	ttlSecs = fs.Int("ttl", 600, "cache lifetime in seconds for live usage endpoints (console + windows); 0 disables caching")
-	planTTL = fs.Int("plan-ttl", 604800, "cache lifetime in seconds for the live plan snapshot scraped from the OpenCode Go docs (default one week)")
+	planTTL = fs.Int("plan-ttl", 604800, "cache lifetime in seconds for the live plan snapshot fetched from the OpenCode Go sources (default one week)")
 	winEst = fs.Bool("window-estimate", false, "scale -now/-full 5h/week caps by the account-wide usage percentages (estimate)")
 	doctor = fs.Bool("doctor", false, "audit plan/AA/SWE/probe coverage and exit")
 	newsView = fs.Bool("news", false, "report what changed in the Go plan since the previous -news run")
@@ -1135,7 +1135,7 @@ var nowLegend = []string{
 	"# opencodable -now — requests affordable per model in each Go window",
 	"# note       all $ figures are OpenCode Go credits: the plan's internal allowance unit, priced at Go rates — not purchasable dollars",
 	"# name       model display name (models.dev catalog; [peak] = peak-hours twin of the same model)",
-	"# cost_task  official allowance cost per request (OpenCode token profile, base tier)",
+	"# cost_task  official allowance cost per request (OpenCode per-request estimate, base tier)",
 	"# burn_req   credits one request burns: measured from console tokens when the model has >=50 requests this period, else cost_task; [peak] twins scale that measured burn by the official peak/base price ratio",
 	"# spent_mo   credits spent this period (console tokens at Go prices, or -spent); subtracted from the model's monthly limit",
 	"# reqs_5h    requests in the model's 5h cap (20% of its monthly limit) after estimated window spend; -window-estimate method on stderr",

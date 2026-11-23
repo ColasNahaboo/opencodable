@@ -3,7 +3,6 @@ package goplan
 import (
 	"encoding/json"
 	"fmt"
-	"html"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -14,13 +13,19 @@ import (
 	"github.com/ColasNahaboo/opencodable/internal/modelsdev"
 )
 
-// Live plan snapshots: the docs page and the Go models endpoint, parsed and
-// validated at fetch time. The compiled-in table above stays as the offline
-// fallback; Use installs a live snapshot over it.
+// Live plan snapshots: the Go models endpoint and the console Go page,
+// parsed and validated at fetch time. The compiled-in table stays as the
+// offline fallback; Use installs a live snapshot over it.
+//
+// The models endpoint carries every model's token prices, peak-hour
+// multipliers, per-plan monthly usage limits and data-training flag. The
+// console page carries the per-model estimated requests per 5 hours, which
+// grounds the official allowance cost per request (a 5-hour window covers
+// 20% of the monthly allowance).
 
 const (
-	docsURL     = "https://opencode.ai/v2/docs/console/go/"
 	endpointURL = "https://opencode.ai/inference/go/v1/models"
+	consoleURL  = "https://opencode.ai/console/go"
 	cacheKey    = "goplan-live.json"
 )
 
@@ -28,16 +33,19 @@ const (
 type LiveRow struct {
 	ID            string      `json:"id"`
 	Name          string      `json:"name"`
-	GoAllowance   float64     `json:"go_allowance"` // USD; 0 when Unlimited
+	GoAllowance   float64     `json:"go_allowance"` // USD; 0 when free
 	PlusAllowance float64     `json:"plus_allowance"`
-	Unlimited     bool        `json:"unlimited"`
-	Profile       *Profile    `json:"profile,omitempty"`
-	Peak          *[3]float64 `json:"peak,omitempty"` // input, output, cache_read
-	Factor        float64     `json:"factor"`         // endpoint peak multiplier (0 = none)
-	In            float64     `json:"in"`             // off-peak USD/1M
+	Unlimited     bool        `json:"unlimited"` // free models
+	In            float64     `json:"in"`        // off-peak USD/1M
 	Out           float64     `json:"out"`
 	CacheRead     float64     `json:"cache_read"`
-	ReqsMo        float64     `json:"reqs_mo"` // docs "requests per month" figure
+	Factor        float64     `json:"factor"`         // endpoint peak multiplier (0 = flat pricing)
+	Peak          *[3]float64 `json:"peak,omitempty"` // input, output, cache_read = base × factor
+	Training      bool        `json:"training"`       // trains on request data
+	Reqs5h        float64     `json:"reqs_5h"`        // console estimated requests per 5 hours, Go plan
+	Reqs5hPlus    float64     `json:"reqs_5h_plus"`   // same, Go Plus plan
+	ReqsMo        float64     `json:"reqs_mo"`        // Reqs5h scaled to a month (×5)
+	CostReq       float64     `json:"cost_req"`       // official allowance cost per request, USD
 }
 
 // LiveSnapshot is a validated live plan snapshot.
@@ -47,285 +55,116 @@ type LiveSnapshot struct {
 	Rows      map[string]*LiveRow `json:"rows"`
 }
 
-// PricingRow is one pricing-table row before ID resolution.
-type PricingRow struct {
-	Name        string // base name, parenthesized suffixes stripped
-	Peak        bool   // "(Peak)" row
-	BaseName    string // for peak rows: the off-peak model's base name
-	In          float64
-	Out         float64
-	CacheRead   float64
-	Unlimited   bool
-	GoAllowance float64
-}
-
-// DocsPlan is the parsed Go docs page.
-type DocsPlan struct {
-	Pricing  map[string][]PricingRow // "go" | "go-plus"
-	Requests map[string]float64      // base name → requests per month
-	Profiles map[string]*Profile     // base name → official token profile
-	NameToID map[string]string       // lower-cased display name → model ID
-}
-
 var (
-	trRe    = regexp.MustCompile(`(?s)<tr[^>]*>(.*?)</tr>`)
-	tdRe    = regexp.MustCompile(`(?s)<t[dh][^>]*>(.*?)</t[dh]>`)
-	delRe   = regexp.MustCompile(`(?s)<del[^>]*>.*?</del>`)
-	tagRe   = regexp.MustCompile(`<[^>]*>`)
-	wsRe    = regexp.MustCompile(`\s+`)
-	parenRe = regexp.MustCompile(`\s*\([^()]*\)\s*$`)
+	trRe     = regexp.MustCompile(`(?s)<tr[^>]*>(.*?)</tr>`)
+	planRe   = regexp.MustCompile(`data-plan="([\w-]+)"[^>]*>\s*<span[^>]*data-layer="current-value">([^<]*)<`)
+	nameRe   = regexp.MustCompile(`data-layer="model-name"[^>]*title="([^"]*)"`)
+	tableRe  = regexp.MustCompile(`(?s)<table.*?</table>`)
+	nonAlnum = regexp.MustCompile(`[^a-z0-9]+`)
 )
 
-func cellText(s string) string {
-	s = delRe.ReplaceAllString(s, "") // strikethrough discount: keep the live price
-	s = tagRe.ReplaceAllString(s, "")
-	return strings.TrimSpace(html.UnescapeString(s))
-}
-
-func parseMoney(s string) (float64, error) {
-	s = strings.TrimSpace(s)
-	switch {
-	case s == "" || s == "-" || strings.EqualFold(s, "free"):
-		return 0, nil
-	}
-	s = strings.NewReplacer("$", "", ",", "", " ", "").Replace(s)
-	return strconv.ParseFloat(strings.TrimPrefix(s, "~"), 64)
-}
+// normKey lower-cases a display name and drops everything but letters and
+// digits, so "LongCat-2.5" (endpoint) matches "LongCat 2.5" (console).
+func normKey(s string) string { return nonAlnum.ReplaceAllString(strings.ToLower(s), "") }
 
 func parseCount(s string) (float64, error) {
 	return strconv.ParseFloat(strings.ReplaceAll(strings.TrimSpace(s), ",", ""), 64)
 }
 
-// normName lower-cases and collapses whitespace for cross-table matching.
-func normName(s string) string {
-	return strings.ToLower(wsRe.ReplaceAllString(strings.TrimSpace(s), " "))
+func parseMoney(s string) (float64, error) {
+	s = strings.TrimSpace(s)
+	if s == "" || s == "-" {
+		return 0, fmt.Errorf("empty money value")
+	}
+	s = strings.NewReplacer("$", "", ",", "", " ", "").Replace(s)
+	return strconv.ParseFloat(strings.TrimPrefix(s, "~"), 64)
 }
 
-// baseName strips trailing parenthesized qualifiers like "(Peak)" or
-// "(≤ 256K tokens)".
-func baseName(s string) string { return strings.TrimSpace(parenRe.ReplaceAllString(s, "")) }
-
-// panel returns the HTML between two element IDs (endID may be "").
-func panel(h, startID, endID string) (string, error) {
-	i := strings.Index(h, `id="`+startID+`"`)
-	if i < 0 {
-		return "", fmt.Errorf("docs page missing section %q", startID)
-	}
-	if endID == "" {
-		return h[i:], nil
-	}
-	j := strings.Index(h[i:], `id="`+endID+`"`)
-	if j < 0 {
-		return "", fmt.Errorf("docs page section %q unterminated", startID)
-	}
-	return h[i : i+j], nil
-}
-
-// parseTableRows returns the cell texts of every row in the first table of seg.
-func parseTableRows(seg string) ([][]string, error) {
-	t := regexp.MustCompile(`(?s)<table.*?</table>`).FindString(seg)
-	if t == "" {
-		return nil, fmt.Errorf("no table found")
-	}
-	var out [][]string
-	for _, r := range trRe.FindAllStringSubmatch(t, -1) {
-		var cells []string
-		for _, c := range tdRe.FindAllStringSubmatch(r[1], -1) {
-			cells = append(cells, cellText(c[1]))
-		}
-		out = append(out, cells)
-	}
-	if len(out) < 2 {
-		return nil, fmt.Errorf("table has %d rows", len(out))
-	}
-	return out, nil
-}
-
-// ParseDocsHTML extracts pricing tables, request estimates, token profiles
-// and the model-ID map from the Go docs page.
-func ParseDocsHTML(h []byte) (*DocsPlan, error) {
-	page := string(h)
-	docs := &DocsPlan{
-		Pricing:  map[string][]PricingRow{},
-		Requests: map[string]float64{},
-		Profiles: map[string]*Profile{},
-		NameToID: map[string]string{},
-	}
-
-	// Model ID table: display name → models.dev ID.
-	for _, rows := range allTables(page) {
-		if len(rows[0]) < 2 || rows[0][1] != "Model ID" {
-			continue
-		}
-		for _, r := range rows[1:] {
-			if len(r) >= 2 && r[1] != "" {
-				docs.NameToID[normName(r[0])] = r[1]
+// planValues extracts each plan's value from one console cell of the
+// requests/usage kind. Unparseable values (empty, "∞") are skipped.
+func planValues(seg string) map[string]float64 {
+	out := map[string]float64{}
+	for _, m := range planRe.FindAllStringSubmatch(seg, -1) {
+		v, err := parseCount(m[2])
+		if err != nil {
+			if mv, merr := parseMoney(m[2]); merr == nil {
+				v = mv
+			} else {
+				continue
 			}
 		}
-	}
-	if len(docs.NameToID) < 10 {
-		return nil, fmt.Errorf("docs page: model ID table not found (%d entries)", len(docs.NameToID))
-	}
-
-	for _, plan := range []struct{ id, end, key string }{
-		{"go-pricing-panel-go", "go-pricing-panel-go-plus", "go"},
-		{"go-pricing-panel-go-plus", "go-pricing-panel-go-teams", "go-plus"},
-	} {
-		seg, err := panel(page, plan.id, plan.end)
-		if err != nil {
-			return nil, err
-		}
-		rows, err := parseTableRows(seg)
-		if err != nil {
-			return nil, fmt.Errorf("pricing %s: %w", plan.key, err)
-		}
-		pricing, err := parsePricingRows(rows)
-		if err != nil {
-			return nil, fmt.Errorf("pricing %s: %w", plan.key, err)
-		}
-		docs.Pricing[plan.key] = pricing
-	}
-
-	seg, err := panel(page, "go-requests-panel-go", "go-requests-panel-go-plus")
-	if err != nil {
-		return nil, err
-	}
-	rows, err := parseTableRows(seg)
-	if err != nil {
-		return nil, fmt.Errorf("requests table: %w", err)
-	}
-	for _, r := range rows[1:] {
-		if len(r) < 4 {
-			continue
-		}
-		v, err := parseCount(r[3]) // requests per month
-		if err == nil {
-			docs.Requests[normName(baseName(r[0]))] = v
-		}
-	}
-
-	if err := parseProfileBullets(page, docs); err != nil {
-		return nil, err
-	}
-	return docs, nil
-}
-
-func allTables(page string) [][][]string {
-	var out [][][]string
-	for _, t := range regexp.MustCompile(`(?s)<table.*?</table>`).FindAllString(page, -1) {
-		var rows [][]string
-		for _, r := range trRe.FindAllStringSubmatch(t, -1) {
-			var cells []string
-			for _, c := range tdRe.FindAllStringSubmatch(r[1], -1) {
-				cells = append(cells, cellText(c[1]))
-			}
-			rows = append(rows, cells)
-		}
-		out = append(out, rows)
+		out[m[1]] = v
 	}
 	return out
 }
 
-func parsePricingRows(rows [][]string) ([]PricingRow, error) {
-	var out []PricingRow
-	seen := map[string]bool{}
-	for _, r := range rows[1:] {
-		if len(r) < 6 {
+// ConsoleRow is one console Go page model row.
+type ConsoleRow struct {
+	Name  string
+	Reqs  map[string]float64 // plan → estimated requests per 5 hours
+	Usage map[string]float64 // plan → monthly limit, USD
+}
+
+// ParseConsoleGo reads the model table of the console Go page: one row per
+// model, with per-plan estimated requests per 5 hours and monthly limits.
+func ParseConsoleGo(b []byte) (map[string]ConsoleRow, error) {
+	var tbl string
+	for _, t := range tableRe.FindAllString(string(b), -1) {
+		if strings.Contains(t, `data-layer="model-name"`) {
+			tbl = t
+			break
+		}
+	}
+	if tbl == "" {
+		return nil, fmt.Errorf("console page: models table not found")
+	}
+	out := map[string]ConsoleRow{}
+	for _, r := range trRe.FindAllStringSubmatch(tbl, -1) {
+		row := r[1]
+		nm := nameRe.FindStringSubmatch(row)
+		if nm == nil {
+			continue // header or spacer row
+		}
+		c := ConsoleRow{Name: nm[1], Reqs: map[string]float64{}, Usage: map[string]float64{}}
+		if i := strings.Index(row, `data-layer="requests"`); i >= 0 {
+			seg := row[i:]
+			if j := strings.Index(seg, `data-layer="usage"`); j > 0 {
+				seg = seg[:j]
+			}
+			c.Reqs = planValues(seg)
+		}
+		if i := strings.Index(row, `data-layer="usage"`); i >= 0 {
+			c.Usage = planValues(row[i:])
+		}
+		if len(c.Reqs) == 0 && len(c.Usage) == 0 {
 			continue
 		}
-		name := baseName(r[0])
-		isPeak := strings.EqualFold(strings.TrimSpace(parenRe.FindString(r[0])), "(peak)")
-		if !strings.HasSuffix(strings.ToLower(strings.TrimSpace(r[0])), "(peak)") {
-			isPeak = false // parenRe may have matched a version qualifier, not the regime
-		}
-		key := normName(name)
-		if isPeak {
-			key += "|peak"
-		} else if seen[key] {
-			continue // context-tier duplicate: keep the base tier
-		}
-		seen[key] = true
-		pr := PricingRow{Name: name, Peak: isPeak, BaseName: name}
-		if isPeak {
-			pr.BaseName = name
-		}
-		var err error
-		if pr.In, err = parseMoney(r[1]); err != nil {
-			return nil, fmt.Errorf("row %q input: %w", r[0], err)
-		}
-		if pr.Out, err = parseMoney(r[2]); err != nil {
-			return nil, fmt.Errorf("row %q output: %w", r[0], err)
-		}
-		if pr.CacheRead, err = parseMoney(r[3]); err != nil {
-			return nil, fmt.Errorf("row %q cache read: %w", r[0], err)
-		}
-		if strings.HasPrefix(r[5], "Unlimited") {
-			pr.Unlimited = true
-		} else if pr.GoAllowance, err = parseMoney(r[5]); err != nil {
-			return nil, fmt.Errorf("row %q allowance: %w", r[0], err)
-		}
-		out = append(out, pr)
+		out[normKey(c.Name)] = c
 	}
 	if len(out) < 10 {
-		return nil, fmt.Errorf("pricing table has only %d rows", len(out))
+		return nil, fmt.Errorf("console page: parsed only %d model rows", len(out))
 	}
 	return out, nil
 }
 
-var bulletRe = regexp.MustCompile(`^(.*?) — ([\d,]+) input, ([\d,]+) cached, ([\d,]+) output tokens per request$`)
-
-func parseProfileBullets(page string, docs *DocsPlan) error {
-	i := strings.Index(page, "The estimates use the following token counts")
-	if i < 0 {
-		return fmt.Errorf("docs page: token profile list not found")
-	}
-	ul := regexp.MustCompile(`(?s)<ul.*?</ul>`).FindString(page[i:])
-	if ul == "" {
-		return fmt.Errorf("docs page: token profile list has no list")
-	}
-	n := 0
-	for _, li := range regexp.MustCompile(`(?s)<li>(.*?)</li>`).FindAllStringSubmatch(ul, -1) {
-		m := bulletRe.FindStringSubmatch(cellText(li[1]))
-		if m == nil {
-			continue
-		}
-		in, e1 := parseCount(m[2])
-		ca, e2 := parseCount(m[3])
-		out, e3 := parseCount(m[4])
-		if e1 != nil || e2 != nil || e3 != nil {
-			continue
-		}
-		p := &Profile{int64(in), int64(ca), int64(out)}
-		parts := strings.Split(m[1], "/") // "GLM-5.3/5.2" shorthand
-		first := strings.TrimSpace(parts[0])
-		docs.Profiles[normName(first)] = p
-		n++
-		if len(parts) > 1 {
-			// Trailing parts drop the leading token: "5.2" → "GLM-5.2".
-			pre, _, _ := strings.Cut(first, "-")
-			for _, rest := range parts[1:] {
-				docs.Profiles[normName(pre+"-"+strings.TrimSpace(rest))] = p
-				n++
-			}
-		}
-	}
-	if n < 10 {
-		return fmt.Errorf("docs page: parsed only %d token profiles", n)
-	}
-	return nil
-}
-
-// EndpointModel is one model's live pricing from the Go models endpoint.
+// EndpointModel is one model's live data from the Go models endpoint.
 type EndpointModel struct {
-	In        float64 `json:"in"`
-	Out       float64 `json:"out"`
-	CacheRead float64 `json:"cache_read"`
-	Factor    float64 `json:"factor"` // peak multiplier (0 = flat pricing)
+	ID            string
+	Name          string
+	GoAllowance   float64
+	PlusAllowance float64
+	Unlimited     bool
+	In            float64
+	Out           float64
+	CacheRead     float64
+	Factor        float64
+	Training      bool
 }
 
 type endpointDoc struct {
 	Data []struct {
 		ID   string `json:"id"`
+		Name string `json:"name"`
 		Cost struct {
 			Text struct {
 				Input struct {
@@ -337,14 +176,15 @@ type endpointDoc struct {
 				Output struct {
 					Price float64 `json:"price"`
 				} `json:"output"`
-				Multipliers []struct {
-					Factor float64 `json:"factor"`
-				} `json:"multipliers"`
 			} `json:"text"`
 			Multipliers []struct {
 				Factor float64 `json:"factor"`
 			} `json:"multipliers"`
 		} `json:"cost"`
+		Go *struct {
+			MonthlyUsage map[string]float64 `json:"monthly_usage"`
+			Training     bool               `json:"training"`
+		} `json:"go"`
 	} `json:"data"`
 }
 
@@ -360,62 +200,74 @@ func ParseEndpointModels(b []byte) (map[string]*EndpointModel, error) {
 	out := map[string]*EndpointModel{}
 	for _, m := range d.Data {
 		e := &EndpointModel{
+			ID:        m.ID,
+			Name:      m.Name,
 			In:        m.Cost.Text.Input.Price,
 			CacheRead: m.Cost.Text.Input.CacheRead.Read,
 			Out:       m.Cost.Text.Output.Price,
+			Training:  m.Go != nil && m.Go.Training,
 		}
 		for _, mu := range m.Cost.Multipliers {
 			if mu.Factor > e.Factor {
 				e.Factor = mu.Factor
 			}
 		}
+		if g := m.Go; g != nil {
+			e.GoAllowance = g.MonthlyUsage["go"]
+			e.PlusAllowance = g.MonthlyUsage["go-plus"]
+		}
+		// Free models have no usage block and zero prices.
+		e.Unlimited = m.Go == nil ||
+			(e.GoAllowance == 0 && e.PlusAllowance == 0 && e.In == 0 && e.Out == 0)
 		out[m.ID] = e
 	}
 	return out, nil
 }
 
-// Merge joins the docs page and endpoint data into a snapshot keyed by
-// models.dev model ID.
-func Merge(docs *DocsPlan, ep map[string]*EndpointModel) (*LiveSnapshot, error) {
-	snap := &LiveSnapshot{FetchedAt: time.Now(), Source: docsURL, Rows: map[string]*LiveRow{}}
-	plus := map[string]PricingRow{}
-	for _, r := range docs.Pricing["go-plus"] {
-		if !r.Peak {
-			plus[normName(r.Name)] = r
-		}
-	}
-	peaks := map[string]PricingRow{}
-	for _, r := range docs.Pricing["go"] {
-		if r.Peak {
-			peaks[normName(r.BaseName)] = r
-		}
-	}
-	for _, r := range docs.Pricing["go"] {
-		if r.Peak {
-			continue
-		}
-		id, ok := docs.NameToID[normName(r.Name)]
-		if !ok {
-			return nil, fmt.Errorf("no model ID for docs model %q", r.Name)
-		}
+// Merge joins the endpoint and console data into a snapshot keyed by
+// models.dev model ID. A 5-hour window covers 20% of the monthly allowance,
+// so the official allowance cost per request is that window's budget divided
+// by the console's estimated requests for it.
+func Merge(ep map[string]*EndpointModel, console map[string]ConsoleRow) (*LiveSnapshot, error) {
+	snap := &LiveSnapshot{FetchedAt: time.Now(), Source: endpointURL, Rows: map[string]*LiveRow{}}
+	for id, m := range ep {
 		row := &LiveRow{
-			ID: id, Name: r.Name, GoAllowance: r.GoAllowance,
-			Unlimited: r.Unlimited, In: r.In, Out: r.Out, CacheRead: r.CacheRead,
+			ID: id, Name: m.Name,
+			GoAllowance: m.GoAllowance, PlusAllowance: m.PlusAllowance,
+			Unlimited: m.Unlimited,
+			In:        m.In, Out: m.Out, CacheRead: m.CacheRead,
+			Factor: m.Factor, Training: m.Training,
 		}
-		if p, ok := plus[normName(r.Name)]; ok {
-			row.PlusAllowance = p.GoAllowance
+		if c, ok := console[normKey(m.Name)]; ok {
+			row.Reqs5h = c.Reqs["go"]
+			row.Reqs5hPlus = c.Reqs["go-plus"]
+			// The console page and the endpoint must agree on the monthly
+			// limits: a mismatch means one of the two changed shape.
+			if got, want := c.Usage["go"], row.GoAllowance; got > 0 && want > 0 && !closeEnough(want, got) {
+				return nil, fmt.Errorf("%s: console go limit %v != endpoint %v", id, got, want)
+			}
+			if got, want := c.Usage["go-plus"], row.PlusAllowance; got > 0 && want > 0 && !closeEnough(want, got) {
+				return nil, fmt.Errorf("%s: console go-plus limit %v != endpoint %v", id, got, want)
+			}
 		}
-		if p, ok := docs.Profiles[normName(r.Name)]; ok {
-			row.Profile = p
-		}
-		row.ReqsMo = docs.Requests[normName(r.Name)]
-		if pk, ok := peaks[normName(r.Name)]; ok {
-			row.Peak = &[3]float64{pk.In, pk.Out, pk.CacheRead}
-		}
-		if e, ok := ep[id]; ok {
-			row.Factor = e.Factor
+		if !row.Unlimited {
+			if m.Factor > 1 {
+				row.Peak = &[3]float64{m.In * m.Factor, m.Out * m.Factor, m.CacheRead * m.Factor}
+			}
+			switch {
+			case row.Reqs5h > 0 && row.GoAllowance > 0:
+				row.CostReq = 0.2 * row.GoAllowance / row.Reqs5h
+			case row.Reqs5hPlus > 0 && row.PlusAllowance > 0:
+				row.CostReq = 0.2 * row.PlusAllowance / row.Reqs5hPlus
+			default:
+				return nil, fmt.Errorf("%s: no console estimated requests for a paid model", id)
+			}
+			row.ReqsMo = 5 * row.Reqs5h
 		}
 		snap.Rows[id] = row
+	}
+	if len(snap.Rows) < 10 {
+		return nil, fmt.Errorf("models endpoint: only %d usable models", len(snap.Rows))
 	}
 	return snap, nil
 }
@@ -425,15 +277,11 @@ func Merge(docs *DocsPlan, ep map[string]*EndpointModel) (*LiveSnapshot, error) 
 // validation. Errors mean "keep using the compiled-in snapshot".
 func Fetch(refresh, offline bool, ttl time.Duration, catalog []modelsdev.Model) (*LiveSnapshot, error) {
 	payload, err := cache.Load(cacheKey, ttl, refresh, offline, func() ([]byte, error) {
-		docsB, err := httpGet(docsURL)
-		if err != nil {
-			return nil, err
-		}
 		epB, err := httpGet(endpointURL)
 		if err != nil {
 			return nil, err
 		}
-		docs, err := ParseDocsHTML(docsB)
+		conB, err := httpGet(consoleURL)
 		if err != nil {
 			return nil, err
 		}
@@ -441,7 +289,11 @@ func Fetch(refresh, offline bool, ttl time.Duration, catalog []modelsdev.Model) 
 		if err != nil {
 			return nil, err
 		}
-		snap, err := Merge(docs, ep)
+		console, err := ParseConsoleGo(conB)
+		if err != nil {
+			return nil, err
+		}
+		snap, err := Merge(ep, console)
 		if err != nil {
 			return nil, err
 		}
@@ -449,11 +301,7 @@ func Fetch(refresh, offline bool, ttl time.Duration, catalog []modelsdev.Model) 
 			return nil, fmt.Errorf("plan snapshot rejected: %s", errJoin(errs))
 		}
 		snap.FetchedAt = time.Now()
-		b, err := json.Marshal(snap)
-		if err != nil {
-			return nil, err
-		}
-		return b, nil
+		return json.Marshal(snap)
 	})
 	if err != nil {
 		return nil, err
@@ -465,7 +313,22 @@ func Fetch(refresh, offline bool, ttl time.Duration, catalog []modelsdev.Model) 
 	if len(snap.Rows) == 0 {
 		return nil, fmt.Errorf("cached plan snapshot has no rows")
 	}
+	if !hasCostReq(&snap) {
+		return nil, fmt.Errorf("cached plan snapshot predates the console request estimates")
+	}
 	return &snap, nil
+}
+
+// hasCostReq reports whether the snapshot carries derived per-request costs.
+// Snapshots from the docs-page era (before the console page became the
+// requests source) do not, and must not be used as the live overlay.
+func hasCostReq(snap *LiveSnapshot) bool {
+	for _, r := range snap.Rows {
+		if r.CostReq > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 func httpGet(url string) ([]byte, error) {

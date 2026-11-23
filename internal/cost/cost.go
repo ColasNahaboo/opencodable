@@ -7,9 +7,20 @@ import (
 )
 
 // PerRequest estimates the USD cost of one coding-agent request for the
-// model, using the official Go token profile and base-tier prices
-// (or peak prices when requested).
+// model. Live snapshots carry an official allowance cost per request
+// (grounded in the console's estimated requests per 5 hours); peak regimes
+// scale it by the endpoint's factor. Without a live estimate the compiled-in
+// token profile is priced at base-tier rates instead.
 func PerRequest(m modelsdev.Model, peak bool) float64 {
+	if c, ok := goplan.CostRequest(m.ID); ok {
+		if peak {
+			if f, hasPeak := goplan.PeakFactor(m.ID); hasPeak && f > 1 {
+				return c * f
+			}
+			return c
+		}
+		return c
+	}
 	p := goplan.ProfileFor(m.ID)
 	// Context tiers: the official profile stays far below tier thresholds,
 	// so base-tier pricing is the right default for per-request cost.

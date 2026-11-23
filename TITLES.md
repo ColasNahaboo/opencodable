@@ -32,7 +32,7 @@ Piped header: `#name	cost_tok	cost_task	allowance	r_quota	tok_s	ttft_s	p_tok_s	p
 |---|---|---|
 | 1 | `#name` | model display name (models.dev catalog) |
 | 2 | `cost_tok` | retail USD per 1M output tokens |
-| 3 | `cost_task` | estimated USD per coding-agent request (OpenCode official token profile, base tier) |
+| 3 | `cost_task` | estimated USD per coding-agent request (OpenCode official per-request allowance cost, base tier) |
 | 4 | `allowance` | monthly usage budget of this model in the plan; `unlimited` for free models |
 | 5 | `r_quota` | allowance ÷ cost_task ≈ requests per month (theoretical, full reset) |
 | 6 | `tok_s` | Artificial Analysis output tok/s (V3 `performance_v3` mean; legacy median fallback) |
