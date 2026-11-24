@@ -572,5 +572,5 @@ This repository is developed by me, a human hobbyist in my personal time, acting
 
 ## History
 
-Version v1.1.1-dev.2 2026-11-24.
+Version v1.1.1 2026-11-24.
 See [HISTORY.md](HISTORY.md).

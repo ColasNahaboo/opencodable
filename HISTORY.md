@@ -1,11 +1,11 @@
 # History
 
-- v1.1.1-dev.2 2026-11-24 `-news` no longer mails cost changes invisible at
-  print precision: a derived `cost_task` can drift ~0.1% between refreshes,
-  which on cheap models (e.g. $0.00046) moves the value below the 5-decimal
-  display, so the line read `$0.00046->$0.00046 (-0.1%)`. COST_* and
-  PEAK_COST_* lines now require the printed money strings to actually differ.
-- v1.1.1-dev.1 2026-11-23 Plan snapshot source overhaul: OpenCode restructured
+- v1.1.1 2026-11-24 `-news` no longer mails cost changes invisible at print
+  precision: a derived `cost_task` can drift ~0.1% between refreshes, which on
+  cheap models (e.g. $0.00046) moves the value below the 5-decimal display, so
+  the line read `$0.00046->$0.00046 (-0.1%)`. COST_* and PEAK_COST_* lines now
+  require the printed money strings to actually differ.
+  Plan snapshot source overhaul: OpenCode restructured
   the Go docs page (the `/v2/docs/console/go/` URL now redirects to
   `/docs/console/go/`, which no longer carries the pricing panels, the
   model-ID table or the token-profile list), so every live plan refresh failed
