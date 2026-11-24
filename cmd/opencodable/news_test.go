@@ -150,6 +150,30 @@ func TestDiffNewsCost(t *testing.T) {
 	}
 }
 
+func TestDiffNewsCostInvisibleAtPrintPrecision(t *testing.T) {
+	// A 0.1% move on a $0.00046 cost is below the 5-decimal print precision:
+	// both sides render "$0.00046", so the line would be noise.
+	prev := map[string]newsModel{"m": newsTestModel("m", "M", 0.0004619)}
+	cur := map[string]newsModel{"m": newsTestModel("m", "M", 0.0004614)}
+	if lines := diffNews(prev, cur); len(lines) != 0 {
+		t.Errorf("invisible cost move produced %v", lines)
+	}
+	// Same for the peak twin.
+	p, c := prev["m"], cur["m"]
+	p.HasPeak, p.PeakTask = true, 0.0009238
+	c.HasPeak, c.PeakTask = true, 0.0009228
+	prev["m"], cur["m"] = p, c
+	if lines := diffNews(prev, cur); len(lines) != 0 {
+		t.Errorf("invisible peak cost move produced %v", lines)
+	}
+	// A visible move still reports.
+	c.PeakTask = 0.00093
+	cur["m"] = c
+	if lines := diffNews(prev, cur); len(lines) != 1 || !strings.HasPrefix(lines[0], "PEAK_COST_UP m ") {
+		t.Errorf("visible peak cost move = %v", lines)
+	}
+}
+
 func TestDiffNewsAllowance(t *testing.T) {
 	prev := map[string]newsModel{"m": newsTestModel("m", "M", 0.01)}
 	cur := map[string]newsModel{"m": newsTestModel("m", "M", 0.01)}

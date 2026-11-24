@@ -228,7 +228,9 @@ line about a model you marked with `-unavail` also carries an `unavail=yes`
 field just before the quoted name, and adding or removing a model from that
 list reports `UNAVAIL_ON` / `UNAVAIL_OFF`.
 
-The changes reported are:
+The changes reported are (cost lines only when the printed amounts actually
+differ: a derived cost can drift ~0.1% between refreshes, which on cheap
+models stays invisible at 5 decimals and is not news):
 
 | Keyword | Meaning |
 |---|---|
@@ -570,5 +572,5 @@ This repository is developed by me, a human hobbyist in my personal time, acting
 
 ## History
 
-Version v1.1.1-dev.1 2026-11-23.
+Version v1.1.1-dev.2 2026-11-24.
 See [HISTORY.md](HISTORY.md).

@@ -346,7 +346,10 @@ func newsChangeLines(p, c newsModel) []string {
 		out = append(out, allowanceLines(c.ID, "go-plus", p.PlusAllow, p.PlusUnlimited, c.PlusAllow, c.PlusUnlimited, tag)...)
 	}
 
-	if newsChanged(p.CostTask, c.CostTask) {
+	// A derived cost can drift below the print precision (0.1% of $0.00046
+	// is invisible at 5 decimals): report only moves the reader can see.
+	costVisible := newsChanged(p.CostTask, c.CostTask) && newsMoney(p.CostTask) != newsMoney(c.CostTask)
+	if costVisible {
 		keyword := "COST_UP"
 		if c.CostTask < p.CostTask {
 			keyword = "COST_DOWN"
@@ -374,7 +377,8 @@ func newsChangeLines(p, c newsModel) []string {
 			c.ID, newsMoney(c.PeakTask), tag))
 	case p.HasPeak && !c.HasPeak:
 		out = append(out, fmt.Sprintf("PEAK_OFF %s %s", c.ID, tag))
-	case p.HasPeak && c.HasPeak && newsChanged(p.PeakTask, c.PeakTask):
+	case p.HasPeak && c.HasPeak && newsChanged(p.PeakTask, c.PeakTask) &&
+		newsMoney(p.PeakTask) != newsMoney(c.PeakTask):
 		keyword := "PEAK_COST_UP"
 		if c.PeakTask < p.PeakTask {
 			keyword = "PEAK_COST_DOWN"
